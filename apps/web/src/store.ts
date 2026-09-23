@@ -127,6 +127,7 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
     case 'busy':
       return { ...s, busy: ev.busy }
     case 'recap':
+    case 'background':
       return s
     case 'error':
       return { ...s, chat: [...s.chat, { kind: 'error', text: ev.message, at }] }

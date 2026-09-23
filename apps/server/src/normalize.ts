@@ -87,6 +87,8 @@ export class Normalizer {
         this.monkByTask.delete(m.task_id)
         return [{ t: 'monk.done', monkId, status: m.status, summary: m.summary }]
       }
+      case 'background_tasks_changed':
+        return [{ t: 'background', tasks: m.tasks.filter((k) => !k.ambient).map((k) => ({ id: k.task_id, type: k.task_type, description: k.description })) }]
       default:
         return []
     }

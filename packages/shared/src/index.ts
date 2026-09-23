@@ -32,6 +32,8 @@ export type MonasteryEvent =
   | { t: 'turn.done'; ok: boolean; costUsdEquiv: number; durationMs: number; usage: Usage }
   | { t: 'quota'; quota: Quota }
   | { t: 'busy'; busy: boolean }
+  /** Background work still running (a script launched in the background, a novice…): the full set, replacing the last one. */
+  | { t: 'background'; tasks: { id: string; type: string; description: string }[] }
   /** Micro recap written when a priest stops: what was done, what is left (or awaited from you). */
   | { t: 'recap'; done: string; next: string }
   | { t: 'error'; message: string }

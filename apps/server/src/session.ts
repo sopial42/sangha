@@ -63,7 +63,7 @@ class Inbox {
 }
 
 // Events that change what the monastery overview shows.
-const SUMMARY_EVENTS = new Set<MonasteryEvent['t']>(['busy', 'monk.summoned', 'monk.tool', 'monk.done', 'buddha.tool', 'turn.done', 'error', 'user.message', 'recap'])
+const SUMMARY_EVENTS = new Set<MonasteryEvent['t']>(['busy', 'background', 'monk.summoned', 'monk.tool', 'monk.done', 'buddha.tool', 'turn.done', 'error', 'user.message', 'recap'])
 
 /**
  * One priest (or Buddha) = one long-lived Claude Code process in streaming-input mode.
@@ -79,6 +79,8 @@ class LiveSession {
   busy = false
   activity: string | null = null
   novices = new Map<string, NoviceSummary>()
+  /** Background work the turn left running (a script, a novice): he waits on it, so he is still at work. */
+  private background: { id: string; type: string; description: string }[] = []
 
   constructor(
     row: SessionRow,
@@ -143,7 +145,11 @@ class LiveSession {
         break
       case 'turn.done':
         this.turnRunning = false
-        this.activity = null
+        this.activity = this.waitingOn()
+        break
+      case 'background':
+        this.background = ev.tasks
+        if (!this.turnRunning) this.activity = this.waitingOn()
         break
     }
   }
@@ -163,14 +169,21 @@ class LiveSession {
     } finally {
       this.turnRunning = false
       this.novices.clear()
+      this.background = []
       this.activity = null
       this.refreshBusy()
       this.onClosed()
     }
   }
 
+  /** What he waits on once his turn is over: the background script still running, if any. */
+  private waitingOn() {
+    const t = this.background.find((k) => k.type !== 'local_agent')
+    return t ? `En attente · ${t.description}` : null
+  }
+
   private refreshBusy() {
-    const busy = this.turnRunning || this.novices.size > 0
+    const busy = this.turnRunning || this.novices.size > 0 || this.background.length > 0
     if (busy !== this.busy) {
       this.busy = busy
       this.emit({ t: 'busy', busy })

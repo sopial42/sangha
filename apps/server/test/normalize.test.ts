@@ -74,3 +74,18 @@ describe('summarizeInput', () => {
     expect(summarizeInput(null)).toBe('')
   })
 })
+
+describe('Normalizer on background work', () => {
+  it('reports the live background set, without ambient watchers', () => {
+    const n = new Normalizer()
+    const msg = {
+      type: 'system',
+      subtype: 'background_tasks_changed',
+      tasks: [
+        { task_id: 'b1', task_type: 'local_bash', description: 'Run the e2e suite' },
+        { task_id: 'w1', task_type: 'local_bash', description: 'watcher', ambient: true },
+      ],
+    }
+    expect(n.push(msg as never)).toEqual([{ t: 'background', tasks: [{ id: 'b1', type: 'local_bash', description: 'Run the e2e suite' }] }])
+  })
+})
