@@ -85,9 +85,7 @@ Pour chaque projet, un prêtre peut être :
 | Prêtre | Ce qu'il fait | Modèle |
 |---|---|---|
 | **Un agent du projet** (`.claude/agents/*.md`, ex. `kiat-team-lead`) | Tourne comme agent principal, exactement comme `claude --agent kiat-team-lead`, et lance ses propres sous-agents | celui de sa définition |
-| Team lead | Rôle Sangha : délègue à ses novices (architecte, back, front, reviewer) | `SANGHA_LEAD_MODEL` (opus) |
-| Conversation | Discute du code, explore, modifie si tu le demandes | `SANGHA_WORKER_MODEL` (sonnet) |
-| Review | Relit une branche ou un diff, lance les tests, rend une review | `SANGHA_WORKER_MODEL` (sonnet) |
+| Team lead | Rôle Sangha : fait le travail lui-même et délègue à ses novices (architecte, back, front, reviewer) | `SANGHA_LEAD_MODEL` (opus) |
 
 Les agents du projet sont lus dans le worktree : ils doivent être **commités** dans le repo.
 Bouddha tourne en `SANGHA_BUDDHA_MODEL` (sonnet). Les plugins chargés pour les prêtres (versions épinglées

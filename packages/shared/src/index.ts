@@ -40,7 +40,7 @@ export type MonasteryEvent =
 export type Envelope = { seq: number; at: number; ev: MonasteryEvent }
 
 /**
- * What a priest is. Either a Sangha role (lead, chat, review) or an agent defined by the
+ * What a priest is. Either the Sangha role (lead) or an agent defined by the
  * project itself in .claude/agents (e.g. kiat-team-lead), run as the session's main thread.
  */
 export type AgentOption = {

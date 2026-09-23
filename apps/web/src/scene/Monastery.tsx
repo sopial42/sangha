@@ -26,12 +26,19 @@ const PER_ROW = 6
 const slotWidth = (priests: number) => Math.max(MIN_SLOT, Math.min(priests, PER_ROW) * PRIEST_W * PRIEST_SCALE + 30)
 
 /** Seats in front of a pavilion at (cx, baseY): rows of up to PER_ROW priests. */
-function seats(count: number, cx: number, baseY: number): { x: number; y: number; scale: number }[] {
+function seats(count: number, cx: number, baseY: number): { x: number; y: number; scale: number; bubbleSide: 1 | -1 }[] {
   return Array.from({ length: count }, (_, i) => {
     const row = Math.floor(i / PER_ROW)
     const inRow = Math.min(PER_ROW, count - row * PER_ROW)
     const col = i % PER_ROW
-    return { x: cx + (col - (inRow - 1) / 2) * PRIEST_W * PRIEST_SCALE, y: baseY + PRIESTS_BELOW + row * 120, scale: PRIEST_SCALE }
+    const offset = col - (inRow - 1) / 2
+    return {
+      x: cx + offset * PRIEST_W * PRIEST_SCALE,
+      y: baseY + PRIESTS_BELOW + row * 120,
+      scale: PRIEST_SCALE,
+      // His activity bubble opens away from the pavilion's own column, behind him, never toward it.
+      bubbleSide: offset >= 0 ? 1 : -1,
+    }
   })
 }
 

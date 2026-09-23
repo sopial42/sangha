@@ -184,6 +184,10 @@ export type CreateSession = { project: string; agent: string; prompt: string; ba
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30)
 
+/** Sent to an outside session once its work has moved on to a fresh session. */
+export const FAREWELL =
+  'La suite de ton travail continue dans une session neuve, qui a reçu ta passation. Arrête ici tout travail : ne lance ni ne relance plus de sous-agents, et ne réponds plus aux notifications de tâches. Tu peux être fermée.'
+
 export class Sessions {
   private live = new Map<string, LiveSession>()
   private listeners = new Map<string, Set<Listener>>()
@@ -489,6 +493,10 @@ export class Sessions {
     const k = Math.round((s.context ?? 0) / 1000)
     const text = `Ton contexte pèse maintenant environ ${k}K tokens. Nous allons continuer dans une session neuve pour repartir avec un contexte léger. Penses-tu que c'est une bonne idée maintenant ?
 
+Le fait que ce soit la fin de la journée, ou que tu t'apprêtes à t'arrêter pour ce soir, n'est pas une raison de refuser : c'est même le cas où une session neuve est la plus utile, puisque c'est elle qui permettra de reprendre le travail demain matin, l'esprit frais, dans la même lignée.
+
+Avant de répondre, vérifie que ce qui compte pour le projet à long terme est bien écrit dans les fichiers que le repo prévoit pour ça (README, docs, CLAUDE.md…) ; sans excès de zèle, ajoute seulement ce qui manque vraiment.
+
 Réponds sur la première ligne par OUI, NON ou PLUS TARD.
 Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle session aura besoin pour continuer sans toi : l'objectif, les décisions prises, l'état actuel, les prochaines étapes, et les fichiers et pièges importants.`
     const askedAt = Date.now()
@@ -583,7 +591,14 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       this.live.delete(old.id)
       this.store.archive(old.id)
       for (const fn of this.globalListeners) fn({ kind: 'removed', id: old.id })
-    } else this.observer?.hide(s.id, true)
+    } else {
+      // Still open in its terminal, it could pick the same work back up alongside the fresh one: tell it
+      // to stop. Only while its terminal runs: reply() would otherwise take the old session over here.
+      if (this.observer?.procOf(s.id)) {
+        await this.reply(s.id, FAREWELL).catch((e) => console.error('[renewal farewell]', e instanceof Error ? e.message : e))
+      }
+      this.observer?.hide(s.id, true)
+    }
     this.send(
       row.id,
       `Tu reprends un travail en cours, dans une session neuve : la précédente avait un contexte trop lourd. Voici la passation qu'elle a écrite pour toi :\n\n${handoff}\n\nRelis-la, puis continue le travail.`,

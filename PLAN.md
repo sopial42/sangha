@@ -11,7 +11,7 @@
 > **v2 (même jour) : le monastère multi-projets.** Un seul Bouddha, qui est maintenant un agent dispatcher avec
 > ses propres outils MCP, et un seul pavillon. Autant de prêtres que de sessions, la robe à la couleur du projet,
 > chacun dans son git worktree, avec ses novices à ses pieds. Un prêtre peut être un agent du repo
-> (`kiat-team-lead` via l'option SDK `agent`) ou un rôle Sangha (lead, chat, review). Quand un prêtre ouvre les
+> (`kiat-team-lead` via l'option SDK `agent`) ou le rôle Sangha (lead). Quand un prêtre ouvre les
 > yeux (il a fini), la cloche sonne, une notification navigateur s'affiche et l'onglet affiche un badge.
 > Pas d'auth ni d'intégration tickets pour l'instant (décision utilisateur).
 

@@ -12,7 +12,9 @@ export const STATUS_LABEL: Record<SessionStatus, string> = {
 
 // Robes tell the agent, not the project (the pavilion does that): a given agent always wears the same.
 const AGENT_ROBES = ['#c2703d', '#8e2f2f', '#b8860b', '#7a4f8e', '#a0522d', '#3f7f7a', '#9c6b98', '#6b8e4e']
-const FIXED_ROBES: Record<string, string> = { lead: '#c2703d', chat: '#4f7a8e', review: '#6b4e3d', claude: '#c2703d' }
+// Sessions may still carry an old agent id ('chat', 'review') from before those roles were removed;
+// robeOfAgent and agentTitle fall back to the generic hash/pretty-print, so they render fine, unlabeled.
+const FIXED_ROBES: Record<string, string> = { lead: '#c2703d', claude: '#c2703d' }
 
 export function robeOfAgent(agent: string): string {
   if (FIXED_ROBES[agent]) return FIXED_ROBES[agent]

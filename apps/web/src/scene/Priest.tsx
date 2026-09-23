@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
+import type { ReactNode } from 'react'
 import type { MonkProfile, NoviceSummary, SessionSummary } from '@sangha/shared'
 import { CONTEXT_COLOR, contextLevel, formatCost, formatTokens } from '../priests'
 import { profileFor, toolIcon } from '../profiles'
@@ -40,54 +41,77 @@ function wrapAll(text: string, width: number): string[] {
   return lines
 }
 
-/** Above a working priest: what he is doing, in full. Plain SVG text (Safari-safe). */
-function DoingBubble({ text }: { text: string }) {
-  const lines = wrapAll(text, 30)
-  const lh = 14
-  const h = lines.length * lh + 12
-  const top = -100 - h
+/**
+ * A parchment callout beside a priest's head, a small tail pointing at him. Anchored to one side
+ * (away from his pavilion behind him) so it never covers his incense or the pavilion itself.
+ * Plain SVG text (Safari-safe), a flat offset silhouette stands in for a drop shadow (no blur:
+ * Safari does not blur SVG).
+ */
+function Callout({ w, h, side, children }: { w: number; h: number; side: 1 | -1; children: ReactNode }) {
+  const bottom = -92 // just above his head, clear of his feet and his incense below
+  const top = bottom - h
+  const near = 56 // gap from his axis to the callout, clear of his shoulders
+  const left = side === 1 ? near : -near - w
+  const innerX = side * near
+  const tipX = side * 18
+  const tail = `M${innerX} ${bottom - 4} L${tipX} -80 L${innerX} ${bottom - 17} Z`
   return (
     <g>
-      <rect x="-92" y={top} width="184" height={h} rx="11" fill="#fdf6e3" opacity="0.96" />
-      <path d="M-6 -100 L0 -93 L6 -100 Z" fill="#fdf6e3" opacity="0.96" />
-      {lines.map((l, i) => (
-        <text key={i} y={top + 6 + lh * (i + 1) - 3} textAnchor="middle" className="bubble-text">
-          {l}
-        </text>
-      ))}
+      <g transform={`translate(${side * 2} 3)`} fill="#150d08" opacity="0.16">
+        <path d={tail} />
+        <rect x={left} y={top} width={w} height={h} rx="10" />
+      </g>
+      <g fill="#fdf6e3" opacity="0.97">
+        <path d={tail} />
+        <rect x={left} y={top} width={w} height={h} rx="10" />
+      </g>
+      <g transform={`translate(${left} ${top})`}>{children}</g>
     </g>
   )
 }
 
-/**
- * What he did and what he waits for, above his head. Plain SVG text (no foreignObject), so every
- * browser draws it, Safari included.
- */
-function RecapBubble({ done, next }: { done: string; next: string }) {
+/** Above a working priest: what he is doing, in full. */
+function DoingBubble({ text, side }: { text: string; side: 1 | -1 }) {
+  const lines = wrapAll(text, 20)
+  const lh = 14
+  const pad = 8
+  const w = 148
+  const h = lines.length * lh + pad * 2
+  return (
+    <Callout w={w} h={h} side={side}>
+      {lines.map((l, i) => (
+        <text key={i} x={w / 2} y={pad + lh * (i + 1) - 4} textAnchor="middle" className="bubble-text">
+          {l}
+        </text>
+      ))}
+    </Callout>
+  )
+}
+
+/** What he did and what he waits for, beside his head, in full. */
+function RecapBubble({ done, next, side }: { done: string; next: string; side: 1 | -1 }) {
   // Always the whole text: more lines rather than a cut.
-  const doneLines = wrapAll(`✓ ${done}`, 30)
-  const nextLines = wrapAll(`→ ${next}`, 30)
+  const doneLines = wrapAll(`✓ ${done}`, 20)
+  const nextLines = wrapAll(`→ ${next}`, 20)
   const lh = 13
-  const pad = 6
+  const pad = 7
+  const w = 156
   const h1 = doneLines.length * lh + pad * 2
   const h2 = nextLines.length * lh + pad * 2
-  const top = -100 - h1 - h2
   return (
-    <g>
-      <rect x="-90" y={top} width="180" height={h1 + h2} rx="9" fill="#fdf6e3" opacity="0.96" />
-      <line x1="-84" x2="84" y1={top + h1} y2={top + h1} stroke="#e0c98f" />
+    <Callout w={w} h={h1 + h2} side={side}>
+      <line x1="6" x2={w - 6} y1={h1} y2={h1} stroke="#e0c98f" />
       {doneLines.map((l, i) => (
-        <text key={`d${i}`} x="-82" y={top + pad + lh * (i + 1) - 3} className="recap-text">
+        <text key={`d${i}`} x="8" y={pad + lh * (i + 1) - 4} className="recap-text">
           {l}
         </text>
       ))}
       {nextLines.map((l, i) => (
-        <text key={`n${i}`} x="-82" y={top + h1 + pad + lh * (i + 1) - 3} className="recap-text recap-next-text">
+        <text key={`n${i}`} x="8" y={h1 + pad + lh * (i + 1) - 4} className="recap-text recap-next-text">
           {l}
         </text>
       ))}
-      <path d="M-6 -100 L0 -93 L6 -100 Z" fill="#fdf6e3" opacity="0.96" />
-    </g>
+    </Callout>
   )
 }
 
@@ -133,6 +157,7 @@ export function Priest({
   onSelect,
   onSelectNovice,
   onIncense,
+  bubbleSide = 1,
 }: {
   x: number
   y: number
@@ -146,6 +171,8 @@ export function Priest({
   onSelectNovice: (monkId: string) => void
   /** Click on his incense: choose silence (or relight) or dismissal. */
   onIncense?: () => void
+  /** Which side his activity/recap bubble opens on: away from his pavilion behind him. */
+  bubbleSide?: 1 | -1
 }) {
   const { status } = session
   const working = status === 'working'
@@ -243,12 +270,12 @@ export function Priest({
           <AnimatePresence>
             {activity && (
               <motion.g key="activity" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                <DoingBubble text={activity} />
+                <DoingBubble text={activity} side={bubbleSide} />
               </motion.g>
             )}
             {!working && session.recap && (
               <motion.g key="recap" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <RecapBubble done={session.recap.done} next={session.recap.next} />
+                <RecapBubble done={session.recap.done} next={session.recap.next} side={bubbleSide} />
               </motion.g>
             )}
           </AnimatePresence>
