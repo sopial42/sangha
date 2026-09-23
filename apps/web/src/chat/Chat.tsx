@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, openSession } from '../api'
 import { Md } from '../Md'
 import { profileFor, toolIcon } from '../profiles'
@@ -27,12 +27,24 @@ export function Chat({ author, external = null }: { author: string; external?: {
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const logRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   // Scroll the log itself (not the page) so the latest words stay visible.
   useEffect(() => {
     const el = logRef.current
     if (el) el.scrollTop = el.scrollHeight
   }, [view.chat.length, view.draft])
+
+  // Recall past messages with ArrowUp/ArrowDown, like a shell history: -1 means "not browsing".
+  const [histIndex, setHistIndex] = useState(-1)
+  const sentMessages = useMemo(() => view.chat.filter((i): i is Extract<ChatItem, { kind: 'user' }> => i.kind === 'user').map((i) => i.text), [view.chat])
+  useEffect(() => setHistIndex(-1), [sessionId])
+  // Only after we move the caret ourselves (browsing history), not on every keystroke.
+  useEffect(() => {
+    if (histIndex < 0) return
+    const el = inputRef.current
+    el?.setSelectionRange(el.value.length, el.value.length)
+  }, [histIndex])
 
   const monkName = (id: string) => {
     const m = view.monks[id]
@@ -134,12 +146,29 @@ export function Chat({ author, external = null }: { author: string; external?: {
       </div>
       <form className="chat-input" onSubmit={submit}>
         <textarea
+          ref={inputRef}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            setText(e.target.value)
+            setHistIndex(-1) // typing by hand always leaves history browsing
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
               void submit(e)
+            } else if (e.key === 'ArrowUp') {
+              // Only recall history from an empty field, or while already browsing it.
+              if ((histIndex >= 0 || text === '') && sentMessages.length > 0) {
+                e.preventDefault()
+                const next = Math.min(histIndex + 1, sentMessages.length - 1)
+                setHistIndex(next)
+                setText(sentMessages[sentMessages.length - 1 - next] ?? '')
+              }
+            } else if (e.key === 'ArrowDown' && histIndex >= 0) {
+              e.preventDefault()
+              const next = histIndex - 1
+              setHistIndex(next)
+              setText(next === -1 ? '' : (sentMessages[sentMessages.length - 1 - next] ?? ''))
             }
           }}
           placeholder={
@@ -155,7 +184,15 @@ export function Chat({ author, external = null }: { author: string; external?: {
         />
         <div className="chat-actions">
           {view.busy && sessionId && !external && (
-            <button type="button" className="btn btn-ghost" onClick={() => void api.interrupt(sessionId)}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() => {
+                // Mark before calling: the bell must not ring when the priest stops because we asked him to.
+                useApp.getState().markInterrupted(sessionId)
+                void api.interrupt(sessionId)
+              }}
+            >
               Interrompre
             </button>
           )}

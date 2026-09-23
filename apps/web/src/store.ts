@@ -148,6 +148,10 @@ type AppState = {
   view: SessionView
   selectedMonk: string | null
   dialog: Dialog
+  /** Sessions the user just interrupted: their next status change must not ring the bell or notify. */
+  interruptedIds: Set<string>
+  markInterrupted: (id: string) => void
+  clearInterrupted: (id: string) => void
   apply: (env: Envelope) => void
   /** Apply a batch of events with a single re-render (a session's history arrives in bulk). */
   applyMany: (envs: Envelope[]) => void
@@ -163,6 +167,15 @@ export const useApp = create<AppState>((set) => ({
   view: emptyView(),
   selectedMonk: null,
   dialog: null,
+  interruptedIds: new Set(),
+  markInterrupted: (id) => set((st) => ({ interruptedIds: new Set(st.interruptedIds).add(id) })),
+  clearInterrupted: (id) =>
+    set((st) => {
+      if (!st.interruptedIds.has(id)) return {}
+      const next = new Set(st.interruptedIds)
+      next.delete(id)
+      return { interruptedIds: next }
+    }),
   apply: (env) =>
     set((st) => {
       const view = reduce(st.view, env)

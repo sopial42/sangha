@@ -70,7 +70,7 @@ export function requestNotifications() {
 export function watchPriests() {
   let previous: Record<string, SessionStatus> | null = null
   return useApp.subscribe((state) => {
-    const { sessions, selectedId, projects } = state
+    const { sessions, selectedId, projects, interruptedIds, clearInterrupted } = state
     // Silenced priests (incense out) never call for you.
     const waiting = Object.values(sessions).filter((s) => ATTENTION.includes(s.status) && !s.silenced)
     document.title = waiting.length ? `(${waiting.length}) Sangha` : 'Sangha'
@@ -78,7 +78,10 @@ export function watchPriests() {
     const now = Object.fromEntries(Object.values(sessions).map((s) => [s.id, s.status]))
     if (previous) {
       const lookingAt = (s: SessionSummary) => s.id === selectedId && document.visibilityState === 'visible'
-      const finished = waiting.filter((s) => previous![s.id] && !ATTENTION.includes(previous![s.id]!))
+      const changed = Object.values(sessions).filter((s) => previous![s.id] && previous![s.id] !== s.status)
+      // A status change right after the user's own "Interrompre" is consumed silently, not treated as a finish.
+      const finished = waiting.filter((s) => previous![s.id] && !ATTENTION.includes(previous![s.id]!) && !interruptedIds.has(s.id))
+      for (const s of changed) if (interruptedIds.has(s.id)) clearInterrupted(s.id)
       // The bowl rings for every session that finishes; the system notification only if you look elsewhere.
       if (finished.length) bowl()
       const fresh = finished.filter((s) => !lookingAt(s))
