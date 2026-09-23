@@ -128,6 +128,8 @@ class LiveSession {
   }
 
   private track(ev: MonasteryEvent) {
+    // He may start a turn on his own (woken by a background task's notification): any word or tool of his means a turn runs.
+    if (ev.t === 'buddha.delta' || ev.t === 'buddha.text' || ev.t === 'buddha.tool' || ev.t === 'monk.summoned') this.turnRunning = true
     switch (ev.t) {
       case 'monk.summoned':
         this.novices.set(ev.monkId, { monkId: ev.monkId, agentType: ev.agentType, description: ev.description, lastTool: null })
