@@ -1,0 +1,179 @@
+import { useEffect, useRef, useState } from 'react'
+import { api, openSession } from '../api'
+import { Md } from '../Md'
+import { profileFor, toolIcon } from '../profiles'
+import { useApp, type ChatItem } from '../store'
+
+// Plumbing that says nothing to the user.
+const HIDDEN_TOOLS = new Set(['ToolSearch', 'TodoWrite'])
+// Buddha's own tools, in words.
+const SANGHA_TOOLS: Record<string, string> = {
+  list_projects: 'Consulte les projets',
+  list_sessions: 'Regarde les prêtres',
+  start_session: 'Lance un prêtre',
+  send_to_session: 'Parle à un prêtre',
+  read_session: 'Écoute un prêtre',
+}
+
+/** Conversation with one priest (or Buddha). `author` is how his words are signed. */
+/**
+ * Conversation with one priest (or Buddha). `external`: a session running in a terminal; replies are
+ * relayed to it (alive) or resume it in Sangha (ended).
+ */
+export function Chat({ author, external = null }: { author: string; external?: { alive: boolean } | null }) {
+  const { view, selectedId: sessionId, profiles, set } = useApp()
+  const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  const logRef = useRef<HTMLDivElement>(null)
+
+  // Scroll the log itself (not the page) so the latest words stay visible.
+  useEffect(() => {
+    const el = logRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [view.chat.length, view.draft])
+
+  const monkName = (id: string) => {
+    const m = view.monks[id]
+    return m ? profileFor(m.agentType, profiles).name : 'un moine'
+  }
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!sessionId || !text.trim()) return
+    setSending(true)
+    setError(null)
+    setNote(external?.alive ? 'Transmission à la session du terminal…' : null)
+    try {
+      const r = await api.send(sessionId, text)
+      setText('')
+      if (r?.via === 'peer') setNote(`Transmis à ${r.to} ; sa réponse apparaîtra ici.`)
+      else if (r?.via === 'adopted') {
+        setNote(null)
+        openSession(r.id)
+      } else setNote(null)
+    } catch (err) {
+      setNote(null)
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const render = (item: ChatItem, i: number) => {
+    switch (item.kind) {
+      case 'user':
+        return (
+          <div key={i} className="msg msg-user">
+            {item.text}
+          </div>
+        )
+      case 'buddha':
+        return (
+          <div key={i} className="msg msg-buddha">
+            <span className="msg-author">{author}</span>
+            <Md text={item.text} />
+          </div>
+        )
+      case 'tool': {
+        if (HIDDEN_TOOLS.has(item.tool)) return null
+        const name = item.tool.replace(/^mcp__sangha__/, '')
+        return (
+          <div key={i} className="chip">
+            {toolIcon(item.tool)} <b>{SANGHA_TOOLS[name] ?? name}</b> {item.summary}
+          </div>
+        )
+      }
+      case 'summon':
+        return (
+          <button key={i} className="scroll-card" onClick={() => set({ selectedMonk: item.monkId })}>
+            🔔 {author} convoque <b>{monkName(item.monkId)}</b> : {view.monks[item.monkId]?.description}
+          </button>
+        )
+      case 'done': {
+        const m = view.monks[item.monkId]
+        return (
+          <button key={i} className={`scroll-card ${m?.status === 'completed' ? 'ok' : 'ko'}`} onClick={() => set({ selectedMonk: item.monkId })}>
+            {m?.status === 'completed' ? '🙏' : '🏮'} <b>{monkName(item.monkId)}</b> {m?.status === 'completed' ? 'a terminé' : `: ${m?.status}`}
+          </button>
+        )
+      }
+      case 'turn':
+        return (
+          <div key={i} className="turn-sep">
+            {(item.durationMs / 1000).toFixed(1)} s · ≈ {item.costUsdEquiv.toFixed(3)} $ équivalent quota
+          </div>
+        )
+      case 'error':
+        return (
+          <div key={i} className="msg msg-error" role="alert">
+            {item.text}
+          </div>
+        )
+    }
+  }
+
+  const empty = view.chat.length === 0 && !view.draft
+  return (
+    <section className="chat" aria-label={`Conversation avec ${author}`}>
+      <div className="chat-log" aria-live="polite" ref={logRef}>
+        {empty && (
+          <div className="chat-empty">
+            <p className="chat-empty-title">Silence.</p>
+            <p>{`Écris à ${author}.`}</p>
+          </div>
+        )}
+        {view.chat.map(render)}
+        {view.draft && (
+          <div className="msg msg-buddha streaming">
+            <span className="msg-author">{author}</span>
+            {view.draft}
+          </div>
+        )}
+      </div>
+      <form className="chat-input" onSubmit={submit}>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              void submit(e)
+            }
+          }}
+          placeholder={
+            external
+              ? external.alive
+                ? `Réponds à ${author} (transmis à sa session du terminal)…`
+                : `Réponds à ${author} (son terminal est fermé : Sangha reprend la session)…`
+              : `Parle à ${author}…`
+          }
+          disabled={!sessionId || sending}
+          rows={2}
+          aria-label={`Message à ${author}`}
+        />
+        <div className="chat-actions">
+          {view.busy && sessionId && !external && (
+            <button type="button" className="btn btn-ghost" onClick={() => void api.interrupt(sessionId)}>
+              Interrompre
+            </button>
+          )}
+          <button type="submit" className="btn btn-primary" disabled={!sessionId || sending || !text.trim()}>
+            Envoyer
+          </button>
+        </div>
+        {note && (
+          <p className="hint" role="status">
+            {note}
+          </p>
+        )}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+      </form>
+    </section>
+  )
+}

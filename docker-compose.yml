@@ -1,0 +1,21 @@
+services:
+  sangha:
+    build: { context: ., dockerfile: docker/Dockerfile }
+    image: sangha:local
+    env_file: .env
+    environment:
+      # Quota only: an API key would take precedence over the OAuth token and bill the API.
+      ANTHROPIC_API_KEY: ""
+      # Same absolute path as on the host, so git worktrees stay valid for `make dev` and `make up` alike.
+      SANGHA_WORKSPACES: ${PWD}/workspaces
+    ports:
+      # Localhost only: this UI runs code. Put real auth in front before exposing it.
+      - "127.0.0.1:${SANGHA_PORT:-8787}:8787"
+    volumes:
+      - ./workspaces:${PWD}/workspaces
+      - ./data:/data
+      - claude-home:/home/node/.claude
+    restart: unless-stopped
+
+volumes:
+  claude-home:

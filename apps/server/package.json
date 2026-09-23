@@ -1,0 +1,27 @@
+{
+  "name": "@sangha/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx --env-file-if-exists=../../.env src/index.ts",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/index.js --packages=external --alias:@sangha/shared=../../packages/shared/src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "dev:watch": "tsx watch --env-file-if-exists=../../.env src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.280",
+    "@hono/node-server": "^1.19.0",
+    "hono": "^4.9.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@sangha/shared": "*",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

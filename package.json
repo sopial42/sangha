@@ -1,0 +1,13 @@
+{
+  "name": "sangha",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "dev": "npm run dev -w @sangha/server & npm run dev -w @sangha/web & wait",
+    "build": "npm run build -w @sangha/server && npm run build -w @sangha/web",
+    "test": "npm test -w @sangha/server",
+    "typecheck": "tsc -p apps/server --noEmit && tsc -p apps/web --noEmit"
+  }
+}
