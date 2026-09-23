@@ -61,12 +61,18 @@ export function Buddha({
           <stop offset="0.6" stopColor="#b87f22" />
           <stop offset="1" stopColor="#7d5013" />
         </radialGradient>
-        {/* lighter gold: his bare skin — face, neck, bare arm, hands, foot */}
+        {/* lighter gold: his bare skin — bare arm, hands, foot, neck, ears */}
         <linearGradient id="skinGold" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#ffe4a3" />
           <stop offset="0.6" stopColor="#f3bd6e" />
           <stop offset="1" stopColor="#e0983f" />
         </linearGradient>
+        {/* his face: lighter at the centre, warming toward the edges — a gradient stands in for a soft shade */}
+        <radialGradient id="faceSkin" cx="0.42" cy="0.36" r="0.8">
+          <stop offset="0" stopColor="#ffedc0" />
+          <stop offset="0.6" stopColor="#f3bd6e" />
+          <stop offset="1" stopColor="#dd9640" />
+        </radialGradient>
         <linearGradient id="petalOuter" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#f3b8c8" />
           <stop offset="1" stopColor="#d97a95" />
@@ -85,8 +91,8 @@ export function Buddha({
         transition={{ duration: busy ? 1.8 : 6, repeat: Infinity, ease: 'easeInOut' }}
       />
       <motion.circle
-        cy="-141"
-        r="44"
+        cy="-147"
+        r="42"
         fill="url(#haloInner)"
         animate={{ opacity: busy ? [0.7, 1, 0.7] : [0.45, 0.75, 0.45] }}
         transition={{ duration: busy ? 1.8 : 5, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
@@ -94,7 +100,7 @@ export function Buddha({
       {speaking && (
         <motion.g animate={{ rotate: 360 }} transition={{ duration: 24, repeat: Infinity, ease: 'linear' }}>
           {Array.from({ length: 12 }, (_, i) => (
-            <line key={i} x1="0" y1="-170" x2="0" y2="-190" stroke="#ffe9a8" strokeWidth="3" strokeLinecap="round" opacity="0.6" transform={`rotate(${i * 30} 0 -141)`} />
+            <line key={i} x1="0" y1="-178" x2="0" y2="-197" stroke="#ffe9a8" strokeWidth="3" strokeLinecap="round" opacity="0.6" transform={`rotate(${i * 30} 0 -147)`} />
           ))}
         </motion.g>
       )}
@@ -162,51 +168,92 @@ export function Buddha({
         <circle cx="12" cy="-18" r="1.6" fill="#c98d24" opacity="0.55" />
 
         {/* neck: short and clearly narrower than head and shoulders, with the three auspicious folds */}
-        <path d="M-11 -115 Q-10 -104 0 -104 Q10 -104 11 -115 L9 -104 L-9 -104 Z" fill="url(#skinGold)" />
-        <ellipse cy="-108" rx="10" ry="8" fill="url(#skinGold)" />
-        <path d="M-7 -112 Q0 -110 7 -112 M-7 -108 Q0 -106 7 -108 M-7 -104 Q0 -102 7 -104" fill="none" stroke="#c9922f" strokeWidth="0.9" opacity="0.5" />
+        <path d="M-10 -118 Q-11 -110 -9 -104 L9 -104 Q11 -110 10 -118 Q0 -121 -10 -118 Z" fill="url(#skinGold)" />
+        <path d="M-7 -114 Q0 -112 7 -114 M-7 -110 Q0 -108 7 -110 M-7 -106 Q0 -104.5 7 -106" fill="none" stroke="#c9922f" strokeWidth="0.9" opacity="0.5" />
 
-        {/* head: a slightly elongated oval, long earlobes, a conical ushnisha of curls, calm face */}
-        <path d="M-20 -148 Q-31 -140 -29 -124 Q-27 -114 -20 -118 Q-23 -134 -17 -150 Z" fill="url(#skinGold)" />
-        <path d="M20 -148 Q31 -140 29 -124 Q27 -114 20 -118 Q23 -134 17 -150 Z" fill="url(#skinGold)" />
-        <ellipse cy="-141" rx="23" ry="26" fill="url(#skinGold)" />
-        {/* the ushnisha: a distinct cone, not a dome, so the head doesn't read as a second ball */}
-        <path d="M-12 -164 L-4 -184 Q0 -188 4 -184 L12 -164 Q6 -158 0 -157 Q-6 -158 -12 -164 Z" fill="url(#gold)" />
-        {/* rows of small curls covering the crown, kept off the face */}
-        {[
-          [-12, -179], [-4, -181], [4, -181], [12, -179],
-          [-17, -173], [-8, -176], [0, -177], [8, -176], [17, -173],
-          [-20, -166], [-11, -170], [0, -171], [11, -170], [20, -166],
-          [-21, -159], [21, -159],
-          [-4, -191], [4, -191],
-        ].map(([cx, cy]) => (
-          <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="1.6" fill="#8a5e18" opacity="0.8" />
+        {/* head: a soft oval, wider at the cheeks, a rounded chin, no harsh outline */}
+        <path
+          d="M0 -176 Q21 -176 21 -155 Q24 -148 24 -140 Q24 -128 14 -124 Q7 -118 0 -118 Q-7 -118 -14 -124 Q-24 -128 -24 -140 Q-24 -148 -21 -155 Q-21 -176 0 -176 Z"
+          fill="url(#faceSkin)"
+        />
+        <path
+          d="M0 -176 Q21 -176 21 -155 Q24 -148 24 -140 Q24 -128 14 -124 Q7 -118 0 -118 Q-7 -118 -14 -124 Q-24 -128 -24 -140 Q-24 -148 -21 -155 Q-21 -176 0 -176 Z"
+          fill="none"
+          stroke="#a8701a"
+          strokeWidth="0.8"
+          opacity="0.3"
+        />
+        {/* long earlobes, close to the head, hanging to about chin level */}
+        <path d="M-21 -153 Q-30 -146 -28 -130 Q-26 -118 -19 -121 Q-23 -136 -18 -153 Z" fill="url(#skinGold)" />
+        <path d="M21 -153 Q30 -146 28 -130 Q26 -118 19 -121 Q23 -136 18 -153 Z" fill="url(#skinGold)" />
+        <path d="M-23 -149 Q-27 -137 -22 -123 M23 -149 Q27 -137 22 -123" fill="none" stroke="#c9922f" strokeWidth="0.9" opacity="0.5" />
+
+        {/* hair: the whole cranium above the hairline, neat rows of small snail-shell curls */}
+        <path d="M-21 -155 Q0 -163 21 -155 Q21 -176 0 -176 Q-21 -176 -21 -155 Z" fill="url(#gold)" />
+        {(
+          [
+            [-18, -162], [-12, -162], [-6, -162], [0, -162], [6, -162], [12, -162], [18, -162],
+            [-15, -167], [-9, -167], [-3, -167], [3, -167], [9, -167], [15, -167],
+            [-12, -171.5], [-6, -171.5], [0, -171.5], [6, -171.5], [12, -171.5],
+            [-6, -175], [0, -175], [6, -175],
+          ] as [number, number][]
+        ).map(([cx, cy]) => (
+          <g key={`${cx}-${cy}`}>
+            <circle cx={cx} cy={cy} r="1.7" fill="#8a5e18" opacity="0.88" />
+            <circle cx={cx - 0.5} cy={cy - 0.5} r="0.55" fill="#f3c765" opacity="0.7" />
+          </g>
         ))}
-        <path d="M-12 -155 q5 -3 9.5 -0.3 M2.5 -155 q5 -3 9.5 -0.3" fill="none" stroke="#7a4d10" strokeWidth="1.2" strokeLinecap="round" opacity="0.65" />
-        <circle cy="-160" r="2" fill="#fff3c4" />
-        <path d="M-2 -147 L-3 -141 Q0 -139 3 -141 Z" fill="none" stroke="#7a4d10" strokeWidth="0.9" opacity="0.45" />
+        {/* the ushnisha: a rounded mound of the same curls, tiered narrower, a smooth knob on top */}
+        <ellipse cy="-179" rx="11" ry="6.5" fill="url(#gold)" />
+        {[-6, 0, 6].map((cx) => (
+          <g key={`t1-${cx}`}>
+            <circle cx={cx} cy="-179" r="1.4" fill="#8a5e18" opacity="0.85" />
+            <circle cx={cx - 0.4} cy="-179.4" r="0.45" fill="#f3c765" opacity="0.7" />
+          </g>
+        ))}
+        <ellipse cy="-186" rx="7.5" ry="5" fill="url(#gold)" />
+        {[-3.5, 3.5].map((cx) => (
+          <g key={`t2-${cx}`}>
+            <circle cx={cx} cy="-186" r="1.1" fill="#8a5e18" opacity="0.85" />
+          </g>
+        ))}
+        <circle cy="-192" r="4" fill="url(#gold)" />
+        <circle cx="-1.2" cy="-193.2" r="1.1" fill="#f8d77a" opacity="0.7" />
+
+        {/* eyebrows: long smooth arches flowing down into the nose bridge, and the urna between them */}
+        <path d="M-18 -149 Q-10 -153 -2 -149" fill="none" stroke="#7a4d10" strokeWidth="1.3" strokeLinecap="round" opacity="0.75" />
+        <path d="M2 -149 Q10 -153 18 -149" fill="none" stroke="#7a4d10" strokeWidth="1.3" strokeLinecap="round" opacity="0.75" />
+        <path d="M-2 -149 Q-3 -142 -2 -136 M2 -149 Q3 -142 2 -136" fill="none" stroke="#7a4d10" strokeWidth="1" strokeLinecap="round" opacity="0.55" />
+        <path d="M-4 -136 Q0 -132.5 4 -136" fill="none" stroke="#7a4d10" strokeWidth="1" strokeLinecap="round" opacity="0.55" />
+        <circle cy="-152" r="1.7" fill="#fff3c4" />
         {eyesOpen ? (
-          // Idle: serene, half-closed eyes, downcast rather than wide open.
-          [-7, 7].map((ex) => (
+          // Idle: calm almond eyes, small dark pupils, under the same arched brows.
+          [-9, 9].map((ex) => (
             <g key={ex}>
-              <path d={`M${ex - 4} -149.6 Q${ex} -151.9 ${ex + 4} -149.6 Q${ex} -148.5 ${ex - 4} -149.6 Z`} fill="#3a2508" />
-              <circle cx={ex} cy="-149.3" r="0.55" fill="#fff8e1" opacity="0.65" />
+              <path d={`M${ex - 5} -144.4 Q${ex} -147.2 ${ex + 5} -144.4 Q${ex} -142.6 ${ex - 5} -144.4 Z`} fill="#fdf1cf" />
+              <circle cx={ex} cy="-144.4" r="1.6" fill="#3a2508" />
+              <circle cx={ex - 0.4} cy="-144.9" r="0.5" fill="#fff8e1" opacity="0.75" />
             </g>
           ))
         ) : (
-          // Meditating: fully closed, calm eyes.
-          <path d="M-11 -150 q5 3.3 10 0 M1 -150 q5 3.3 10 0" fill="none" stroke="#7a4d10" strokeWidth="1.8" strokeLinecap="round" />
+          // Meditating: closed, downcast lids — an arc each, with a fine lower lash line.
+          <>
+            <path d="M-16 -144 Q-9 -147 -2 -144 M2 -144 Q9 -147 16 -144" fill="none" stroke="#7a4d10" strokeWidth="1.7" strokeLinecap="round" />
+            <path d="M-13 -142.5 Q-9 -141.3 -5 -142.5 M5 -142.5 Q9 -141.3 13 -142.5" fill="none" stroke="#7a4d10" strokeWidth="0.8" strokeLinecap="round" opacity="0.5" />
+          </>
         )}
+        {/* full lips, a faint serene smile; the upper line animates when he speaks */}
         <motion.path
-          d="M-5 -136 q5.5 3 11 0"
+          d="M-6 -128 Q0 -125.5 6 -128"
           fill="none"
           stroke="#7a4d10"
-          strokeWidth="1.8"
+          strokeWidth="1.6"
           strokeLinecap="round"
           initial={false}
-          animate={{ d: speaking ? ['M-5 -136 q5.5 3 11 0', 'M-5 -136 q5.5 6.3 11 0', 'M-5 -136 q5.5 3 11 0'] : 'M-5 -136 q5.5 3 11 0' }}
+          animate={{ d: speaking ? ['M-6 -128 Q0 -125.5 6 -128', 'M-6 -128 Q0 -120 6 -128', 'M-6 -128 Q0 -125.5 6 -128'] : 'M-6 -128 Q0 -125.5 6 -128' }}
           transition={speaking ? { duration: 0.5, repeat: Infinity } : { duration: 0.2 }}
         />
+        <path d="M-5 -124.5 Q0 -123 5 -124.5" fill="none" stroke="#7a4d10" strokeWidth="1.1" strokeLinecap="round" opacity="0.55" />
       </motion.g>
 
       {selected && <ellipse cy="4" rx="90" ry="22" fill="none" stroke="#ffe9a8" strokeWidth="2.5" strokeDasharray="6 5" />}
