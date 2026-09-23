@@ -231,19 +231,23 @@ export function Buddha({
             <path d="M-12.5 -141.3 Q-8.5 -142.6 -4.5 -141.3 M4.5 -141.3 Q8.5 -142.6 12.5 -141.3" fill="none" stroke="#7a4d10" strokeWidth="0.7" strokeLinecap="round" opacity="0.35" />
           </>
         )}
-        {/* small full lips, a faint serene smile; the line opens when he speaks */}
+        {/* small full lips: a bowed upper lip, a fuller lower one, corners tucked in a faint smile;
+            the parting line opens when he speaks */}
+        <path d="M-5 -121 Q-2.5 -123.3 0 -122.3 Q2.5 -123.3 5 -121 Q0 -120.2 -5 -121 Z" fill="#c07a3e" opacity="0.6" />
+        <path d="M-4.6 -120.8 Q0 -120.1 4.6 -120.8 Q3.6 -117.5 0 -117.3 Q-3.6 -117.5 -4.6 -120.8 Z" fill="#d49050" opacity="0.5" />
+        <path d="M-2 -118.5 Q0 -118.1 2 -118.5" fill="none" stroke="#ffe6b5" strokeWidth="0.7" strokeLinecap="round" opacity="0.6" />
         <motion.path
-          d="M-5 -121.5 Q0 -119.6 5 -121.5"
+          d="M-5 -121 Q0 -119.9 5 -121"
           fill="none"
           stroke="#7a4d10"
-          strokeWidth="1.2"
-          opacity="0.85"
+          strokeWidth="0.9"
           strokeLinecap="round"
+          opacity="0.85"
           initial={false}
-          animate={{ d: speaking ? ['M-5 -121.5 Q0 -119.6 5 -121.5', 'M-5 -121.5 Q0 -115.5 5 -121.5', 'M-5 -121.5 Q0 -119.6 5 -121.5'] : 'M-5 -121.5 Q0 -119.6 5 -121.5' }}
+          animate={{ d: speaking ? ['M-5 -121 Q0 -119.9 5 -121', 'M-5 -121 Q0 -116.8 5 -121', 'M-5 -121 Q0 -119.9 5 -121'] : 'M-5 -121 Q0 -119.9 5 -121' }}
           transition={speaking ? { duration: 0.5, repeat: Infinity } : { duration: 0.2 }}
         />
-        <path d="M-3.5 -118.4 Q0 -117.2 3.5 -118.4" fill="none" stroke="#7a4d10" strokeWidth="1" strokeLinecap="round" opacity="0.4" />
+        <path d="M-5.7 -121.7 Q-5.3 -120.9 -4.7 -120.8 M5.7 -121.7 Q5.3 -120.9 4.7 -120.8" fill="none" stroke="#7a4d10" strokeWidth="0.6" strokeLinecap="round" opacity="0.45" />
       </motion.g>
 
       {selected && <ellipse cy="4" rx="90" ry="22" fill="none" stroke="#ffe9a8" strokeWidth="2.5" strokeDasharray="6 5" />}
