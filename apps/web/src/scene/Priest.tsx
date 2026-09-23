@@ -45,12 +45,12 @@ function wrapAll(text: string, width: number): string[] {
  * A parchment callout beside a priest's head, a small tail pointing at him. Anchored to one side
  * (away from his pavilion behind him) so it never covers his incense or the pavilion itself.
  * Plain SVG text (Safari-safe), a flat offset silhouette stands in for a drop shadow (no blur:
- * Safari does not blur SVG).
+ * Safari does not blur SVG). `near` narrows on a mobile column, so the callout stays clear of the
+ * courtyard's edges instead of running off screen.
  */
-function Callout({ w, h, side, children }: { w: number; h: number; side: 1 | -1; children: ReactNode }) {
+function Callout({ w, h, side, near = 56, children }: { w: number; h: number; side: 1 | -1; near?: number; children: ReactNode }) {
   const bottom = -92 // just above his head, clear of his feet and his incense below
   const top = bottom - h
-  const near = 56 // gap from his axis to the callout, clear of his shoulders
   const left = side === 1 ? near : -near - w
   const innerX = side * near
   const tipX = side * 18
@@ -70,15 +70,15 @@ function Callout({ w, h, side, children }: { w: number; h: number; side: 1 | -1;
   )
 }
 
-/** Above a working priest: what he is doing, in full. */
-function DoingBubble({ text, side }: { text: string; side: 1 | -1 }) {
-  const lines = wrapAll(text, 20)
+/** Above a working priest: what he is doing, in full. `compact`: a narrower wrap for a mobile column. */
+function DoingBubble({ text, side, compact }: { text: string; side: 1 | -1; compact?: boolean }) {
+  const lines = wrapAll(text, compact ? 15 : 20)
   const lh = 14
   const pad = 8
-  const w = 148
+  const w = compact ? 112 : 148
   const h = lines.length * lh + pad * 2
   return (
-    <Callout w={w} h={h} side={side}>
+    <Callout w={w} h={h} side={side} near={compact ? 34 : 56}>
       {lines.map((l, i) => (
         <text key={i} x={w / 2} y={pad + lh * (i + 1) - 4} textAnchor="middle" className="bubble-text">
           {l}
@@ -88,18 +88,18 @@ function DoingBubble({ text, side }: { text: string; side: 1 | -1 }) {
   )
 }
 
-/** What he did and what he waits for, beside his head, in full. */
-function RecapBubble({ done, next, side }: { done: string; next: string; side: 1 | -1 }) {
+/** What he did and what he waits for, beside his head, in full. `compact`: a narrower wrap for a mobile column. */
+function RecapBubble({ done, next, side, compact }: { done: string; next: string; side: 1 | -1; compact?: boolean }) {
   // Always the whole text: more lines rather than a cut.
-  const doneLines = wrapAll(`✓ ${done}`, 20)
-  const nextLines = wrapAll(`→ ${next}`, 20)
+  const doneLines = wrapAll(`✓ ${done}`, compact ? 15 : 20)
+  const nextLines = wrapAll(`→ ${next}`, compact ? 15 : 20)
   const lh = 13
   const pad = 7
-  const w = 156
+  const w = compact ? 118 : 156
   const h1 = doneLines.length * lh + pad * 2
   const h2 = nextLines.length * lh + pad * 2
   return (
-    <Callout w={w} h={h1 + h2} side={side}>
+    <Callout w={w} h={h1 + h2} side={side} near={compact ? 34 : 56}>
       <line x1="6" x2={w - 6} y1={h1} y2={h1} stroke="#e0c98f" />
       {doneLines.map((l, i) => (
         <text key={`d${i}`} x="8" y={pad + lh * (i + 1) - 4} className="recap-text">
@@ -158,6 +158,7 @@ export function Priest({
   onSelectNovice,
   onIncense,
   bubbleSide = 1,
+  compact = false,
 }: {
   x: number
   y: number
@@ -173,6 +174,8 @@ export function Priest({
   onIncense?: () => void
   /** Which side his activity/recap bubble opens on: away from his pavilion behind him. */
   bubbleSide?: 1 | -1
+  /** A narrow mobile column: his bubbles wrap tighter so they never run off screen. */
+  compact?: boolean
 }) {
   const { status } = session
   const working = status === 'working'
@@ -270,12 +273,12 @@ export function Priest({
           <AnimatePresence>
             {activity && (
               <motion.g key="activity" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                <DoingBubble text={activity} side={bubbleSide} />
+                <DoingBubble text={activity} side={bubbleSide} compact={compact} />
               </motion.g>
             )}
             {!working && session.recap && (
               <motion.g key="recap" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <RecapBubble done={session.recap.done} next={session.recap.next} side={bubbleSide} />
+                <RecapBubble done={session.recap.done} next={session.recap.next} side={bubbleSide} compact={compact} />
               </motion.g>
             )}
           </AnimatePresence>

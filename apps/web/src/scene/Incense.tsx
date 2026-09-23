@@ -61,7 +61,8 @@ export function Incense({
       }}
     >
       <title>{label}</title>
-      <rect x="-16" y="-44" width="32" height="48" fill="transparent" />
+      {/* invisible, a bit wider than the drawing itself: a comfortable tap target even at the small priest scale */}
+      <rect x="-26" y="-52" width="52" height="60" fill="transparent" />
       {/* soft ground shadow: grounds the burner without any blur filter */}
       <ellipse cy="7" rx="13" ry="3" fill="#00000038" />
       {/* warm halo when awake: two layered gradients stand in for a soft blur */}
