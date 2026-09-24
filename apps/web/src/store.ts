@@ -136,7 +136,8 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
 
 export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-project' } | { kind: 'dismiss'; id: string; working?: boolean }
   | { kind: 'remove-project'; name: string }
-  | { kind: 'incense'; id: string } | null
+  | { kind: 'incense'; id: string }
+  | { kind: 'nirvana' } | null
 
 type AppState = {
   profiles: MonkProfile[]
@@ -144,6 +145,8 @@ type AppState = {
   /** Every priest (and Buddha), kept live by the monastery-wide stream. */
   sessions: Record<string, SessionSummary>
   quota: Quota | null
+  /** Bumped on every `{kind:'nirvana'}` global event: the moon glows, and its open dialog refetches. */
+  nirvanaTick: number
   /** Session shown in the panel: a priest id, 'buddha', or null. */
   selectedId: string | null
   view: SessionView
@@ -164,6 +167,7 @@ export const useApp = create<AppState>((set) => ({
   projects: [],
   sessions: {},
   quota: null,
+  nirvanaTick: 0,
   selectedId: null,
   view: emptyView(),
   selectedMonk: null,

@@ -1,4 +1,4 @@
-import type { Envelope, GlobalEvent, MonkProfile, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
+import type { Envelope, GlobalEvent, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
 import { emptyView, useApp } from './store'
 
 export class ApiError extends Error {
@@ -43,6 +43,10 @@ export const api = {
   seen: (id: string) => json<void>(`/api/sessions/${id}/seen`, post()),
   removeProject: (name: string, force = false) => json<void>(`/api/projects/${encodeURIComponent(name)}${force ? '?force=1' : ''}`, { method: 'DELETE' }),
   archive: (id: string, force = false) => json<void>(`/api/sessions/${id}${force ? '?force=1' : ''}`, { method: 'DELETE' }),
+  /** The moon's history: every priest sent to nirvana, newest first. */
+  nirvana: () => json<NirvanaEntry[]>('/api/nirvana'),
+  /** Bring him back to the courtyard, in a fresh session. */
+  reincarnate: (id: string) => json<SessionSummary>(`/api/sessions/${id}/reincarnate`, post()),
 }
 
 /** Follow the whole monastery: every session's status, novices and the plan quota. */
@@ -50,7 +54,7 @@ export function openMonastery(onError: () => void) {
   const es = new EventSource('/api/events')
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data) as GlobalEvent
-    const { set, sessions } = useApp.getState()
+    const { set, sessions, nirvanaTick } = useApp.getState()
     switch (ev.kind) {
       case 'snapshot':
         set({ sessions: Object.fromEntries(ev.sessions.map((s) => [s.id, s])), ...(ev.quota ? { quota: ev.quota } : {}) })
@@ -66,6 +70,11 @@ export function openMonastery(onError: () => void) {
       }
       case 'quota':
         set({ quota: ev.quota })
+        break
+      case 'nirvana':
+        // The moon's history changed (arrival, summary written, reincarnation): bump a counter the
+        // dialog watches to refetch, and that also triggers the moon's glow.
+        set({ nirvanaTick: nirvanaTick + 1 })
         break
       case 'projects':
         void api.projects().then((projects) => set({ projects }))

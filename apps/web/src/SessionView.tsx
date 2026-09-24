@@ -247,7 +247,7 @@ export function SessionView() {
             )}
             {!isBuddha && !s.external && (
               <button className="btn btn-ghost" onClick={() => set({ dialog: { kind: 'dismiss', id: s.id } })}>
-                Congédier
+                Envoyer au nirvana
               </button>
             )}
             <button className="icon-btn big" onClick={closeSession} aria-label="Fermer (Échap)" title="Fermer (Échap)">
