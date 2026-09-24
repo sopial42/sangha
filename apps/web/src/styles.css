@@ -759,6 +759,53 @@ select {
   font-weight: 600;
 }
 
+/* nirvana dialog */
+.nirvana-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+
+.nirvana-entry {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.nirvana-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.nirvana-entry-head b {
+  font: 700 16px var(--serif);
+}
+
+.nirvana-meta {
+  margin: 0;
+}
+
+.nirvana-summary {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.nirvana-entry-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .pavilion-name {
   font: 700 15px var(--serif);
   fill: #f3e9d8;
@@ -776,6 +823,11 @@ select {
 }
 
 .incense.clickable {
+  cursor: pointer;
+  outline: none;
+}
+
+.moon.clickable {
   cursor: pointer;
   outline: none;
 }

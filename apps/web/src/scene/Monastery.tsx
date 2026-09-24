@@ -7,8 +7,9 @@ import { useApp } from '../store'
 import { Backdrop, FLOOR_Y, HALL_SCALE, hallTransform } from './Backdrop'
 import { Buddha } from './Buddha'
 import { IncenseDefs } from './Incense'
+import { moonPosition, Moon } from './Moon'
 import { AddProjectMarker, Pavilion } from './Pavilion'
-import { Priest } from './Priest'
+import { BUBBLE_METRICS, PRIEST_BODY_HALF, Priest } from './Priest'
 
 const MIN_SLOT = 230 // courtyard width of a pavilion with few priests
 const PAVILION_W = 140
@@ -130,8 +131,56 @@ function useBox<T extends Element>() {
 // A session whose project is not loaded (removed from disk…) still needs a pavilion to sit before.
 const orphanProject = (name: string): ProjectInfo => ({ name, path: '', local: true, color: '#6b6258', isGit: false, branch: null, agents: [] })
 
+type Seated = { id: string; x: number; y: number; scale: number; side: 1 | -1 }
+
+/** Horizontal span (world x) a bubble would occupy, opening on `side`: same geometry as `Callout`. */
+function bubbleSpan(x: number, s: number, side: 1 | -1): [number, number] {
+  const { w, near } = BUBBLE_METRICS.wide
+  return side === 1 ? [x + near * s, x + (near + w) * s] : [x - (near + w) * s, x - near * s]
+}
+
+/** Horizontal span a priest's own body occupies, at his shoulders (the widest point of his robe). */
+const bodySpan = (x: number, s: number): [number, number] => [x - PRIEST_BODY_HALF * s, x + PRIEST_BODY_HALF * s]
+
+const spanOverlap = (a: [number, number], b: [number, number]) => Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]))
+
+/**
+ * Bubbles from neighbouring priests can land stacked in the gap between two pavilions: seats() only
+ * knows a priest's offset in front of his own pavilion, not who else sits at the same height nearby.
+ * Here, once every priest's seat is placed in scene coordinates, group them by row and settle it:
+ * left to right, each keeps his preferred side unless it collides with an already-placed bubble or a
+ * neighbour's body — then he takes the other side, or whichever side collides least if both do.
+ */
+function resolveBubbleSides(seated: Seated[]): Record<string, 1 | -1> {
+  const rows = new Map<number, Seated[]>()
+  for (const p of seated) {
+    const key = Math.round(p.y)
+    const row = rows.get(key)
+    if (row) row.push(p)
+    else rows.set(key, [p])
+  }
+  const sides: Record<string, 1 | -1> = {}
+  for (const row of rows.values()) {
+    const sorted = [...row].sort((a, b) => a.x - b.x)
+    const bodies = sorted.map((p) => bodySpan(p.x, p.scale))
+    const taken: [number, number][] = []
+    sorted.forEach((p, i) => {
+      const obstacles = [...taken, ...bodies.filter((_, j) => j !== i)]
+      const overlapOn = (side: 1 | -1) => {
+        const span = bubbleSpan(p.x, p.scale, side)
+        return obstacles.reduce((worst, o) => Math.max(worst, spanOverlap(span, o)), 0)
+      }
+      const preferred = overlapOn(p.side)
+      const chosen = preferred > 0 && overlapOn(p.side === 1 ? -1 : 1) < preferred ? (p.side === 1 ? -1 : 1) : p.side
+      sides[p.id] = chosen
+      taken.push(bubbleSpan(p.x, p.scale, chosen))
+    })
+  }
+  return sides
+}
+
 export function Monastery() {
-  const { sessions, projects, profiles, selectedId, view, set } = useApp()
+  const { sessions, projects, profiles, selectedId, view, set, nirvanaTick } = useApp()
   const priests: SessionSummary[] = priestsOf(sessions)
   const buddha = sessions[BUDDHA_SESSION_ID]
 
@@ -158,6 +207,7 @@ export function Monastery() {
   // to match: less empty space above a smaller hall.
   const hallScale = mobile ? Math.max(0.4, Math.min(HALL_SCALE, width / 620)) : HALL_SCALE
   const top = mobile ? Math.round(FLOOR_Y - (FLOOR_Y - TOP) * (hallScale / HALL_SCALE)) : TOP
+  const moon = moonPosition(width, mobile, top)
 
   const anyWorking = priests.some((p) => p.status === 'working') || buddha?.status === 'working'
   const buddhaSpeaking = selectedId === BUDDHA_SESSION_ID && view.draft.length > 0
@@ -172,6 +222,19 @@ export function Monastery() {
     if (id === selectedId) return
     openSession(id)
   }
+
+  // Every priest's seat, across all pavilions, in scene coordinates: needed once, both to render
+  // them and to settle bubble sides between neighbours of different pavilions (only on desktop —
+  // the mobile column stacks one priest per row, where this collision never arises).
+  const seatsByPavilion = pavilions.map((p, i) => {
+    const mine = priests.filter((s) => s.project === p.name)
+    return { p, mine, spots: seats(mine.length, places[i]!.x, places[i]!.y, perRow, mobile ? MOBILE_ROW_GAP : 120) }
+  })
+  const bubbleSides = mobile
+    ? {}
+    : resolveBubbleSides(
+        seatsByPavilion.flatMap(({ mine, spots }) => mine.map((s, j) => ({ id: s.id, x: spots[j]!.x, y: spots[j]!.y, scale: spots[j]!.scale, side: spots[j]!.bubbleSide }))),
+      )
 
   return (
     <svg ref={svgRef} className="scene" viewBox={`0 ${top} ${width} ${height - top}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label="Le monastère">
@@ -204,13 +267,12 @@ export function Monastery() {
       </g>
 
       <AnimatePresence>
-        {pavilions.flatMap((p, i) => {
-          const mine = priests.filter((s) => s.project === p.name)
-          const spots = seats(mine.length, places[i]!.x, places[i]!.y, perRow, mobile ? MOBILE_ROW_GAP : 120)
-          return mine.map((s, j) => (
+        {seatsByPavilion.flatMap(({ mine, spots }) =>
+          mine.map((s, j) => (
             <Priest
               key={s.id}
               {...spots[j]!}
+              bubbleSide={bubbleSides[s.id] ?? spots[j]!.bubbleSide}
               compact={mobile}
               session={s}
               robe={robeOfAgent(s.agent)}
@@ -223,10 +285,14 @@ export function Monastery() {
                 set({ selectedMonk: monkId })
               }}
               onIncense={() => set({ dialog: { kind: 'incense', id: s.id } })}
+              moon={moon}
             />
-          ))
-        })}
+          )),
+        )}
       </AnimatePresence>
+
+      {/* Last: above every other layer, so nothing sky- or hall-shaped can steal its clicks. */}
+      <Moon x={moon.x} y={moon.y} r={moon.r} tick={nirvanaTick} onOpen={() => set({ dialog: { kind: 'nirvana' } })} />
     </svg>
   )
 }

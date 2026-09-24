@@ -37,7 +37,9 @@ export function formatTime(at: number) {
   return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString('fr', { day: 'numeric', month: 'short' })} ${time}`
 }
 
-export const formatCost = (usd: number) => (usd < 100 ? `${usd.toFixed(2)} $` : `${Math.round(usd).toLocaleString('fr-FR')} $`)
+// A non-breaking space before the currency sign: narrow layouts (the mobile Nirvana dialog…) never
+// split the amount from its "$" onto its own line.
+export const formatCost = (usd: number) => (usd < 100 ? `${usd.toFixed(2)} $` : `${Math.round(usd).toLocaleString('fr-FR')} $`)
 
 export const robeOf = (project: string, projects: ProjectInfo[]) => projects.find((p) => p.name === project)?.color ?? DEFAULT_ROBE
 

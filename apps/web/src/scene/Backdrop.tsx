@@ -48,7 +48,7 @@ export function Backdrop({ width, height, busy, hallScale = HALL_SCALE }: { widt
       <rect x={-3000} y={-2000} width={width + 6000} height={FLOOR_Y + 2000} fill="#1b1733" />
       <rect x={-3000} y={0} width={width + 6000} height={FLOOR_Y} fill="url(#sky)" />
       <rect x={-3000} y={FLOOR_Y} width={width + 6000} height={height - FLOOR_Y + 3000} fill="#2a2019" />
-      <circle cx={width - 160} cy="170" r="30" fill="#f6e3b4" opacity="0.85" />
+      {/* The moon itself is interactive (Nirvana's history): rendered by Monastery, above every layer here. */}
 
       {/* distant mountains: two continuous ridges, far beyond the frame on both sides */}
       <path d={ridge(width, 300, 70, 0)} fill="#2b2238" opacity="0.8" />

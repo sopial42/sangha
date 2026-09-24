@@ -1,9 +1,18 @@
-import { AnimatePresence, motion } from 'motion/react'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useState, type ReactNode } from 'react'
 import type { MonkProfile, NoviceSummary, SessionSummary } from '@sangha/shared'
 import { CONTEXT_COLOR, contextLevel, formatCost, formatTokens } from '../priests'
 import { profileFor, toolIcon } from '../profiles'
 import { Incense } from './Incense'
+
+/**
+ * The widest bubble a priest can show (RecapBubble), desktop and compact (mobile) sizes: what
+ * Monastery needs to know to resolve bubble-vs-bubble and bubble-vs-body collisions between
+ * neighbouring priests of different pavilions.
+ */
+export const BUBBLE_METRICS = { wide: { w: 156, near: 56 }, compact: { w: 118, near: 34 } }
+/** A priest's own silhouette, half-width at scale 1 (his shoulders, the widest part of his robe). */
+export const PRIEST_BODY_HALF = 44
 
 
 /** Eyes closed while he meditates on work, open whenever he is doing nothing; heavy-lidded when tired. */
@@ -182,6 +191,7 @@ export function Priest({
   onIncense,
   bubbleSide = 1,
   compact = false,
+  moon,
 }: {
   x: number
   y: number
@@ -199,6 +209,8 @@ export function Priest({
   bubbleSide?: 1 | -1
   /** A narrow mobile column: his bubbles wrap tighter so they never run off screen. */
   compact?: boolean
+  /** The moon's scene coordinates: where he flies to when sent to nirvana. */
+  moon?: { x: number; y: number }
 }) {
   const { status } = session
   const working = status === 'working'
@@ -218,9 +230,36 @@ export function Priest({
   const level = contextLevel(session.context)
   const tired = session.context == null ? 0 : Math.max(0, Math.min(1, (session.context - 200_000) / 600_000))
   const label = `${title} sur ${session.project}${session.branch ? ` (${session.branch})` : ''} : ${session.title} (${status})${session.external ? ', lancé hors de Sangha' : ''}`
-  // He leaves toward the nearest edge of the courtyard.
+  // He leaves toward the nearest edge of the courtyard, if the moon's own position is not known yet.
   const away = x < 500 ? -700 : 700
-
+  const reducedMotion = useReducedMotion()
+  // This group sits inside `translate(x,y) scale(scale)`: the moon's scene coordinates, converted
+  // into that local frame, are exactly where his flight has to land.
+  const moonLocal = moon ? { x: (moon.x - x) / scale, y: (moon.y - y) / scale } : null
+  const exitToNirvana = reducedMotion
+    ? { opacity: 0, transition: { duration: 0.35 } }
+    : moonLocal
+      ? {
+          // A gentle arc: he rises well above the straight line before curving in toward the moon.
+          x: [0, moonLocal.x * 0.5, moonLocal.x],
+          y: [0, moonLocal.y * 0.5 - 130, moonLocal.y],
+          // Rolling on himself, several turns, ease-in: slow at first, faster and faster.
+          rotate: [0, 1440],
+          // Shrinks into the moon; only fades right at the end, so he reads as flying in, not fading out.
+          scale: [1, 0.7, 0.22, 0],
+          opacity: [1, 1, 1, 0],
+          transition: {
+            // Framer only falls back to this top-level duration for values *without* their own
+            // override below — each animated value here needs its own explicit duration too.
+            duration: 3,
+            x: { duration: 3, times: [0, 0.55, 1], ease: 'easeIn' as const },
+            y: { duration: 3, times: [0, 0.55, 1], ease: 'easeIn' as const },
+            rotate: { duration: 3, ease: 'easeIn' as const },
+            scale: { duration: 3, times: [0, 0.4, 0.78, 1], ease: 'easeIn' as const },
+            opacity: { duration: 3, times: [0, 0, 0.82, 1], ease: 'easeIn' as const },
+          },
+        }
+      : { x: away, opacity: 0, transition: { duration: 2, ease: 'easeIn' as const } }
 
   return (
     // Slides to his new seat when the rows reflow.
@@ -229,7 +268,7 @@ export function Priest({
       <motion.g
         initial={{ opacity: 0, scale: 0.7 }}
         animate={{ opacity: status === 'interrupted' ? 0.55 : 1, scale: 1, x: 0 }}
-        exit={{ x: away, opacity: 0, transition: { duration: 2, ease: 'easeIn' } }}
+        exit={exitToNirvana}
       >
         <motion.g
           className="priest clickable"
@@ -321,38 +360,41 @@ export function Priest({
               </motion.g>
             )}
           </AnimatePresence>
-          <text y="30" textAnchor="middle" className="scene-name">
-            {title}
-          </text>
-          <text y="48" textAnchor="middle" className="scene-repo">
-            {session.external ? '⌨ ' : '⎇ '}
-            {session.branch ?? 'sans branche'}
-          </text>
-          {session.context != null && level && (
-            <g transform={`translate(0 58)`} aria-label={`Contexte : ${formatTokens(session.context)} tokens`}>
-              <title>{`Contexte : ${formatTokens(session.context)} tokens${session.renewal === 'asked' ? ' · session neuve proposée, en attente de sa réponse' : session.renewal === 'postponed' ? ' · session neuve reportée (redemandé 100K plus loin)' : ''}`}</title>
-              <rect x="-40" y="0" width="80" height="5" rx="2.5" fill="#00000055" />
-              <rect x="-40" y="0" width={80 * Math.min(1, session.context / 800_000)} height="5" rx="2.5" fill={CONTEXT_COLOR[level]} />
-              <text x="46" y="6" className="scene-context" fill={CONTEXT_COLOR[level]}>
-                {formatTokens(session.context)}
-                {session.renewal === 'asked' ? ' · ↻ ?' : ''}
-              </text>
-            </g>
-          )}
-          {session.cost != null && session.cost >= 0.01 && (
-            <text y={session.context != null && level ? 78 : 64} textAnchor="middle" className="scene-cost">
-              <title>Ce qu'aurait coûté cette session au prix de l'API (sous-agents et sessions précédentes compris). Elle tourne sur ton abonnement.</title>
-              {formatCost(session.cost)}
+          {/* His own exit takes a few seconds; these leave fast so nothing lags behind, still sliding. */}
+          <motion.g exit={{ opacity: 0, transition: { duration: 0.4 } }}>
+            <text y="30" textAnchor="middle" className="scene-name">
+              {title}
             </text>
-          )}
+            <text y="48" textAnchor="middle" className="scene-repo">
+              {session.external ? '⌨ ' : '⎇ '}
+              {session.branch ?? 'sans branche'}
+            </text>
+            {session.context != null && level && (
+              <g transform={`translate(0 58)`} aria-label={`Contexte : ${formatTokens(session.context)} tokens`}>
+                <title>{`Contexte : ${formatTokens(session.context)} tokens${session.renewal === 'asked' ? ' · session neuve proposée, en attente de sa réponse' : session.renewal === 'postponed' ? ' · session neuve reportée (redemandé 100K plus loin)' : ''}`}</title>
+                <rect x="-40" y="0" width="80" height="5" rx="2.5" fill="#00000055" />
+                <rect x="-40" y="0" width={80 * Math.min(1, session.context / 800_000)} height="5" rx="2.5" fill={CONTEXT_COLOR[level]} />
+                <text x="46" y="6" className="scene-context" fill={CONTEXT_COLOR[level]}>
+                  {formatTokens(session.context)}
+                  {session.renewal === 'asked' ? ' · ↻ ?' : ''}
+                </text>
+              </g>
+            )}
+            {session.cost != null && session.cost >= 0.01 && (
+              <text y={session.context != null && level ? 78 : 64} textAnchor="middle" className="scene-cost">
+                <title>Ce qu'aurait coûté cette session au prix de l'API (sous-agents et sessions précédentes compris). Elle tourne sur ton abonnement.</title>
+                {formatCost(session.cost)}
+              </text>
+            )}
+          </motion.g>
         </motion.g>
         {onIncense && (
           <g transform="translate(46 16)">
             <Incense
               size={0.8}
               lit={!session.silenced}
-              label={session.silenced ? 'Encens éteint : il est silencieux. Rallumer ou congédier' : 'Encens : faire silence ou congédier'}
-              hint={session.silenced ? 'Rallumer ou congédier' : 'Silence ou congédier'}
+              label={session.silenced ? 'Encens éteint : il est silencieux. Rallumer ou envoyer au nirvana' : 'Encens : faire silence ou envoyer au nirvana'}
+              hint={session.silenced ? 'Rallumer ou nirvana' : 'Silence ou nirvana'}
               hintSide="above"
               onSnuff={onIncense}
             />

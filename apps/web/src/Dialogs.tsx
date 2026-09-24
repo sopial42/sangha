@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { ProjectSuggestion } from '@sangha/shared'
+import type { NirvanaEntry, ProjectSuggestion } from '@sangha/shared'
 import { ApiError, api, openSession } from './api'
+import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
 
 /** Native modal <dialog>: focus trap, Escape and backdrop come for free. */
@@ -242,7 +243,7 @@ function Dismiss({ id, working, onClose }: { id: string; working?: boolean; onCl
   }
 
   return (
-    <Modal title={external ? 'Renvoyer cette session de la cour ?' : 'Congédier ce prêtre ?'} onClose={onClose}>
+    <Modal title={external ? 'Renvoyer cette session de la cour ?' : 'Envoyer ce prêtre au nirvana ?'} onClose={onClose}>
       <div className="form">
         <p>
           <b>{session?.title}</b>
@@ -281,7 +282,7 @@ function Dismiss({ id, working, onClose }: { id: string; working?: boolean; onCl
             Le garder
           </button>
           <button className={`btn ${dirty !== null || (working && !external) ? 'btn-danger' : 'btn-primary'}`} disabled={busy} onClick={() => void run()}>
-            {dirty !== null ? 'Congédier quand même' : external ? 'Renvoyer' : 'Congédier'}
+            {dirty !== null ? 'Envoyer au nirvana quand même' : external ? 'Renvoyer' : 'Envoyer au nirvana'}
           </button>
         </div>
       </div>
@@ -328,7 +329,7 @@ function IncenseChoice({ id, onClose }: { id: string; onClose: () => void }) {
             <span className="choice-icon" aria-hidden>
               🚪
             </span>
-            <b>{session.external ? 'Le renvoyer de la cour' : 'Le congédier'}</b>
+            <b>{session.external ? 'Le renvoyer de la cour' : "L'envoyer au nirvana"}</b>
             <span className="muted small">
               {session.external ? 'Il disparaît de la cour ; son terminal continue.' : 'Sa session est fermée et son espace de travail supprimé.'}
             </span>
@@ -371,7 +372,7 @@ function RemoveProject({ name, onClose }: { name: string; onClose: () => void })
         <p>
           {priests > 0 && (
             <>
-              Ses {priests} prêtre(s) seront congédiés et leurs worktrees supprimés (les branches avec des commits restent).{' '}
+              Ses {priests} prêtre(s) seront envoyés au nirvana et leurs worktrees supprimés (les branches avec des commits restent).{' '}
             </>
           )}
           {project?.local ? (
@@ -414,6 +415,89 @@ function RemoveProject({ name, onClose }: { name: string; onClose: () => void })
   )
 }
 
+/** The moon's history: every priest sent to nirvana, and a way to bring one back. */
+function Nirvana({ onClose }: { onClose: () => void }) {
+  const projects = useApp((s) => s.projects)
+  const nirvanaTick = useApp((s) => s.nirvanaTick)
+  const [entries, setEntries] = useState<NirvanaEntry[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
+
+  const load = () => api.nirvana().then(setEntries, (err) => setError(message(err)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => void load(), [])
+  // The moon's history changed (arrival, summary written, another reincarnation): reload it live.
+  useEffect(() => {
+    if (entries !== null) void load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nirvanaTick])
+
+  const reincarnate = async (id: string) => {
+    setBusyId(id)
+    setError(null)
+    try {
+      await api.reincarnate(id)
+      // He reappears in the courtyard through the stream; here, he just leaves the list.
+      setEntries((prev) => prev?.filter((e) => e.id !== id) ?? prev)
+    } catch (err) {
+      setError(message(err))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <Modal title="Nirvana" onClose={onClose}>
+      <div className="form">
+        {entries === null && !error && <p className="hint">Ouverture des archives…</p>}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        {entries?.length === 0 && <p className="hint">Personne n’a encore rejoint le nirvana. Ceux que tu y enverras attendront ici, en paix.</p>}
+        {entries && entries.length > 0 && (
+          <ul className="nirvana-list">
+            {entries.map((e) => (
+              <li key={e.id} className="nirvana-entry">
+                <div className="nirvana-entry-head">
+                  <span className="robe-dot small-dot" style={{ background: robeOfAgent(e.agent) }} aria-hidden />
+                  <b>{e.title}</b>
+                  <span className="project-tag" style={{ borderColor: robeOf(e.project, projects) }}>
+                    {e.project}
+                  </span>
+                </div>
+                <p className="muted small nirvana-meta">
+                  {agentTitle(e, projects)}
+                  {e.branch && (
+                    <>
+                      {' · '}
+                      <code>⎇ {e.branch}</code>
+                    </>
+                  )}
+                  {' · '}
+                  {formatTime(e.archivedAt)}
+                  {e.cost != null && e.cost >= 0.01 && <> · {formatCost(e.cost)}</>}
+                </p>
+                <p className="nirvana-summary">{e.summary ?? <span className="muted small">résumé en cours…</span>}</p>
+                <div className="nirvana-entry-actions">
+                  {e.renewed ? (
+                    <span className="badge">continué dans une session neuve</span>
+                  ) : (
+                    <button className="btn btn-ghost" disabled={busyId === e.id} onClick={() => void reincarnate(e.id)}>
+                      {busyId === e.id ? 'Réincarnation…' : 'Réincarner'}
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 export function Dialogs() {
   const { dialog, set } = useApp()
   const close = () => set({ dialog: null })
@@ -422,5 +506,6 @@ export function Dialogs() {
   if (dialog.kind === 'add-project') return <AddProject onClose={close} />
   if (dialog.kind === 'remove-project') return <RemoveProject name={dialog.name} onClose={close} />
   if (dialog.kind === 'incense') return <IncenseChoice id={dialog.id} onClose={close} />
+  if (dialog.kind === 'nirvana') return <Nirvana onClose={close} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
 }
