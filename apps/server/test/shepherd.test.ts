@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isHandoff, nextDelay, parseAnswer, parseDelay } from '../src/shepherd'
+import { isHandoff, nextDelay, parseAnswer, parseDelay, readDecision } from '../src/shepherd'
 
 const MIN = 60_000
 
@@ -57,5 +57,22 @@ describe('isHandoff', () => {
     expect(isHandoff('## Passation\n...')).toBe(true)
     expect(isHandoff('**PASSATION** :\n...')).toBe(true)
     expect(isHandoff("J'ai préparé la passation de l'acte chez le notaire.")).toBe(false)
+  })
+})
+
+describe('readDecision', () => {
+  it('finds the answer after what he said first', () => {
+    const a = readDecision(['Avant de répondre, je vérifie que les décisions sont écrites.', 'J’ajoute l’étude au dépôt.', 'OUI\n\nJ’ai arrêté ma boucle.\n\nPASSATION\nObjectif : X'])
+    expect(a.kind).toBe('yes')
+    expect(a.kind === 'yes' && a.handoff).toContain('PASSATION')
+  })
+
+  it('keeps a handoff written over several messages', () => {
+    const a = readDecision(['OUI', 'PASSATION\nObjectif : X'])
+    expect(a).toEqual({ kind: 'yes', handoff: 'PASSATION\nObjectif : X' })
+  })
+
+  it('without a decision word, it is not a yes', () => {
+    expect(readDecision(['Je regarde encore un point.']).kind).toBe('later')
   })
 })

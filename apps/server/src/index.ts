@@ -119,6 +119,10 @@ app.delete('/api/sessions/:id', async (c) => {
   console.log(`☸ dismiss ${c.req.param('id').slice(0, 8)}: ${result.ok ? 'gone' : 'needs confirmation'} (${c.req.header('user-agent')?.slice(0, 60) ?? '?'})`)
   return result.ok ? c.body(null, 204) : c.json(result, 409)
 })
+app.post('/api/sessions/:id/reincarnate', async (c) => c.json(await sessions.reincarnate(c.req.param('id'))))
+
+// The moon: priests sent to nirvana, newest dismissal first.
+app.get('/api/nirvana', (c) => c.json(sessions.nirvana()))
 
 /** Wait for the next item, sending a keepalive ping every 15 s. */
 async function drain<T>(stream: SSEStreamingApi, queue: T[], send: (item: T) => Promise<void>, onWake: (wake: () => void) => void) {

@@ -45,6 +45,18 @@ export function parseAnswer(answer: string): ShepherdAnswer {
   return { kind: 'later', delayMs: parseDelay(lines[i] ?? '') ?? parseDelay(text.slice(0, 400)), reason: text.slice(0, 600) }
 }
 
+const firstLine = (m: string) => plain(m.split('\n').find((l) => l.trim()) ?? '')
+
+/**
+ * His answer across the messages he wrote since the question. He often says something first ("before
+ * answering, I check the docs…"): the answer is his last message that opens on OUI, NON or PLUS TARD, with
+ * everything after it (the handoff may run over several messages).
+ */
+export function readDecision(messages: string[]): ShepherdAnswer {
+  const i = messages.findLastIndex((m) => /^(OUI|NON|PLUS TARD)\b/.test(firstLine(m)))
+  return parseAnswer((i >= 0 ? messages.slice(i) : messages).join('\n\n'))
+}
+
 /** A real handoff: a line of its own titled PASSATION (not the word inside a sentence, e.g. "passation de l'acte"). */
 export const isHandoff = (text: string) => /^[\s#*_>«"-]*PASSATION[\s*_»":.-]*$/im.test(text)
 

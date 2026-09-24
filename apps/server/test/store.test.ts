@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Store, type SessionRow } from '../src/db'
 
 const row = (id: string): SessionRow => ({
@@ -62,5 +62,32 @@ describe('Store', () => {
     s.createSession(row('b'))
     s.archive('a')
     expect(s.listSessions().map((r) => r.id)).toEqual(['b'])
+  })
+
+  describe('archivedSessions and unarchive', () => {
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('lists archived sessions newest first', () => {
+      const s = new Store(':memory:')
+      s.createSession(row('a'))
+      s.createSession(row('b'))
+      vi.setSystemTime(1000)
+      s.archive('a')
+      vi.setSystemTime(2000)
+      s.archive('b')
+      expect(s.archivedSessions().map((r) => r.id)).toEqual(['b', 'a'])
+    })
+
+    it('brings an archived session back with unarchive', () => {
+      const s = new Store(':memory:')
+      s.createSession(row('a'))
+      s.archive('a')
+      expect(s.listSessions()).toEqual([])
+      s.unarchive('a')
+      expect(s.listSessions().map((r) => r.id)).toEqual(['a'])
+      expect(s.getSession('a')!.archivedAt).toBeNull()
+      expect(s.archivedSessions()).toEqual([])
+    })
   })
 })

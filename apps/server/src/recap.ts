@@ -104,3 +104,20 @@ export async function progress(transcript: string): Promise<Progress | null> {
     ? { goal: out.goal.trim(), state: out.state.trim(), next: out.next.trim() }
     : null
 }
+
+const LIFE_SCHEMA = {
+  type: 'object',
+  properties: { summary: { type: 'string', description: 'La session entière, en une ou deux phrases courtes : ce qui a été demandé et ce qui en est sorti.' } },
+  required: ['summary'],
+  additionalProperties: false,
+}
+
+const LIFE_SYSTEM = `Un agent vient d'être envoyé au nirvana (sa session est terminée). Résume toute sa session pour
+son utilisateur, en une ou deux phrases courtes et complètes : ce qui a été demandé, et ce qui en est sorti.
+${STYLE}`
+
+/** Whole-life summary of a session, written once it is sent to nirvana (dismissed). */
+export async function lifeSummary(transcript: string): Promise<string | null> {
+  const out = await ask<{ summary: string }>(LIFE_SYSTEM, LIFE_SCHEMA, transcript, 12_000)
+  return typeof out?.summary === 'string' ? out.summary.trim() : null
+}

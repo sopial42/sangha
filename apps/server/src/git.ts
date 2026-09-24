@@ -66,3 +66,10 @@ export async function removeWorktree(repo: string, path: string, branch: string,
 export async function clone(url: string, into: string) {
   await git(join(into, '..'), 'clone', url, into)
 }
+
+/** Bring back a worktree an archive removed. The branch survives when it held work: reuse it. Otherwise
+ * (removeWorktree deletes branches with no commits) recreate it from the base commit the priest started on. */
+export async function restoreWorktree(repo: string, path: string, branch: string, baseSha: string) {
+  if ((await branches(repo)).includes(branch)) await git(repo, 'worktree', 'add', path, branch)
+  else await git(repo, 'worktree', 'add', '-b', branch, path, baseSha)
+}

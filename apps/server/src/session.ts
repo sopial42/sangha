@@ -6,6 +6,7 @@ import {
   type Envelope,
   type GlobalEvent,
   type MonasteryEvent,
+  type NirvanaEntry,
   type NoviceSummary,
   type Quota,
   type SessionStatus,
@@ -13,17 +14,17 @@ import {
 } from '@sangha/shared'
 import { config } from './config'
 import type { SessionRow, Shepherd, Store } from './db'
-import { addWorktree, isGitRepo, removeWorktree, worktreeState, type WorktreeState } from './git'
+import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState, type WorktreeState } from './git'
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
 import { readTailLines } from './files'
 import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
-import { doing, progress, recap, type Progress } from './recap'
+import { doing, lifeSummary, progress, recap, type Progress } from './recap'
 import { priestOptions } from './roles'
 import { contextTokens, parseLine, TranscriptReader } from './transcript'
 import { CostMeter } from './cost'
-import { isHandoff, nextDelay, parseAnswer, shepherdPrompt, type ShepherdAnswer } from './shepherd'
+import { isHandoff, nextDelay, parseAnswer, readDecision, shepherdPrompt, type ShepherdAnswer } from './shepherd'
 
 type Listener = (env: Envelope) => void
 type GlobalListener = (ev: GlobalEvent) => void
@@ -383,7 +384,102 @@ export class Sessions {
     if (row.worktree && row.branch && row.baseSha) await removeWorktree(this.projects.dir(row.project), row.worktree, row.branch, state.ahead)
     this.store.archive(id)
     for (const fn of this.globalListeners) fn({ kind: 'removed', id })
+    for (const fn of this.globalListeners) fn({ kind: 'nirvana' })
+    void this.generateNirvanaSummary(this.store.getSession(id)!)
     return { ok: true }
+  }
+
+  /**
+   * Bring a priest back from nirvana: his folder returns (at the same path, so Claude Code finds his
+   * transcript again), then he un-archives. He is not woken: the next message resumes him as usual.
+   */
+  async reincarnate(id: string): Promise<SessionSummary> {
+    const row = this.store.getSession(id)
+    if (!row || !row.archivedAt || id === BUDDHA_SESSION_ID) throw new UserError('session inconnue')
+    const renewal = this.store.renewal(id)
+    if (renewal?.state === 'done') throw new UserError('il est reparti à neuf : rien à réincarner')
+    if (!this.projects.exists(row.project)) throw new UserError(`projet disparu : ${row.project}`)
+    if (row.worktree && !existsSync(row.worktree)) {
+      if (row.baseSha) await restoreWorktree(this.projects.dir(row.project), row.worktree, row.branch!, row.baseSha)
+      else throw new UserError('son dossier a disparu')
+    }
+    this.store.unarchive(id)
+    this.broadcastSession(id)
+    for (const fn of this.globalListeners) fn({ kind: 'nirvana' })
+    return this.summaryOf(id)!
+  }
+
+  /** Sessions sent to nirvana (dismissed), newest first. Queues Haiku summaries missing for the oldest of them. */
+  nirvana(): NirvanaEntry[] {
+    const rows = this.store.archivedSessions().filter((r) => r.id !== BUDDHA_SESSION_ID)
+    const missing = rows.filter((r) => !this.hasNirvanaSummary(r)).slice(0, 20)
+    if (missing.length) void this.fillNirvanaSummaries(missing)
+    return rows.map((r) => this.nirvanaEntry(r))
+  }
+
+  private hasNirvanaSummary(row: SessionRow): boolean {
+    const note = this.store.note<{ summary: string }>(row.id, 'nirvana')
+    return note !== null && note.key === String(row.archivedAt)
+  }
+
+  private nirvanaEntry(row: SessionRow): NirvanaEntry {
+    const note = this.store.note<{ summary: string }>(row.id, 'nirvana')
+    const renewal = this.store.renewal(row.id)
+    return {
+      id: row.id,
+      project: row.project,
+      agent: row.agent,
+      title: row.title,
+      branch: row.branch,
+      createdAt: row.createdAt,
+      archivedAt: row.archivedAt!,
+      cost: this.costOf(row.id),
+      summary: note && note.key === String(row.archivedAt) ? note.value.summary : null,
+      renewed: renewal?.state === 'done',
+    }
+  }
+
+  private nirvanaBusy = false
+
+  /** One Haiku call at a time, so old history fills in progressively rather than all at once. */
+  private async fillNirvanaSummaries(rows: SessionRow[]) {
+    if (this.nirvanaBusy) return
+    this.nirvanaBusy = true
+    try {
+      for (const row of rows) await this.generateNirvanaSummary(row)
+    } finally {
+      this.nirvanaBusy = false
+    }
+  }
+
+  /** What the whole session was about, written by a small model once he is sent to nirvana. */
+  private async generateNirvanaSummary(row: SessionRow) {
+    try {
+      const summary = await lifeSummary(this.lifeTranscript(row.id))
+      if (!summary) return
+      this.store.setNote(row.id, 'nirvana', String(row.archivedAt), { summary })
+      for (const fn of this.globalListeners) fn({ kind: 'nirvana' })
+    } catch (err) {
+      console.error(`[nirvana ${row.id.slice(0, 8)}]`, err instanceof Error ? err.message : err)
+    }
+  }
+
+  /** A session's whole conversation, boiled down for the life-summary call: first ask, then the tail. */
+  private lifeTranscript(id: string): string {
+    const events = this.store.events(id).map((e) => e.ev)
+    const first = events.find((e) => e.t === 'user.message')
+    const lines = events.flatMap((ev) => {
+      if (ev.t === 'user.message') return [`UTILISATEUR : ${ev.text.slice(0, 2000)}`]
+      if (ev.t === 'buddha.text') return [`AGENT : ${ev.text.slice(0, 2000)}`]
+      if (ev.t === 'monk.done') return [`SOUS-AGENT (${ev.status}) : ${ev.summary.slice(0, 800)}`]
+      if (ev.t === 'recap') return [`RÉCAP : ${ev.done} — ${ev.next}`]
+      return []
+    })
+    return [
+      first && first.t === 'user.message' ? `DEMANDE INITIALE : ${first.text.slice(0, 3000)}` : '',
+      '--- FIL (le plus récent en dernier) ---',
+      lines.join('\n\n').slice(-9_000),
+    ].join('\n\n')
   }
 
   /**
@@ -555,11 +651,6 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     }
   }
 
-  /** His words since the question. */
-  private answerSince(id: string, askedAt: number): string {
-    return this.wordsSince(id, askedAt).join('\n\n')
-  }
-
   /** Each message he wrote after `since`. */
   private wordsSince(id: string, since: number): string[] {
     if (!id.startsWith(EXTERNAL_PREFIX)) {
@@ -610,8 +701,8 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     if (s.status !== 'waiting' || (s.external && !s.alive)) return
     const now = Date.now()
     if (sh.state === 'asked') {
-      const answer = this.answerSince(s.id, sh.askedAt).trim()
-      if (answer) return this.shepherdDecide(s, sh, parseAnswer(answer))
+      const words = this.wordsSince(s.id, sh.askedAt).filter((w) => w.trim())
+      if (words.length) return this.shepherdDecide(s, sh, readDecision(words))
       // No word after a long while (the question got lost): ask again later.
       if (now - sh.askedAt > 3 * 3600_000) this.setShepherd(s.id, { ...sh, state: 'pending', nextAt: now + nextDelay(sh.attempts, null), attempts: sh.attempts + 1 })
       return
@@ -660,17 +751,16 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   }
 
   private async readAnswer(s: SessionSummary, askedAt: number) {
-    const answer = this.answerSince(s.id, askedAt).trim()
-    if (!answer) return // not answered yet
-    const first = (answer.split('\n').find((l) => l.trim()) ?? '').toUpperCase().replace(/[^A-ZÀ-Ý ]/g, '').trim()
+    const words = this.wordsSince(s.id, askedAt).filter((w) => w.trim())
+    if (!words.length) return // not answered yet
+    const answer = readDecision(words)
     const rec = this.store.renewal(s.id)!
-    if (!first.startsWith('OUI')) {
+    if (answer.kind !== 'yes') {
       this.store.setRenewal(s.id, { ...rec, state: 'postponed' })
       this.broadcastSession(s.id)
       return
     }
-    const handoff = answer.slice(answer.indexOf('\n') + 1).trim() || answer
-    await this.renew(s, handoff)
+    await this.renew(s, answer.handoff)
   }
 
   /** Continue a session in a fresh one: same project, folder, branch and agent, starting from its handoff. */

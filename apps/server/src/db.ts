@@ -3,7 +3,7 @@ import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Envelope, MonasteryEvent, Quota, SessionInfo } from '@sangha/shared'
 
-export type NoteKind = 'recap' | 'progress' | 'doing'
+export type NoteKind = 'recap' | 'progress' | 'doing' | 'nirvana'
 export type Note<T> = { key: string; value: T; at: number }
 
 export type Renewal = { bucket: number; state: 'asked' | 'postponed' | 'done'; askedAt: number }
@@ -136,6 +136,16 @@ export class Store {
 
   archive(id: string) {
     this.db.prepare('UPDATE sessions SET archived_at = ? WHERE id = ?').run(Date.now(), id)
+  }
+
+  /** Sent to nirvana: archived sessions, newest dismissal first, at most `limit`. */
+  archivedSessions(limit = 200): SessionRow[] {
+    return (this.db.prepare('SELECT * FROM sessions WHERE archived_at IS NOT NULL ORDER BY archived_at DESC LIMIT ?').all(limit) as Row[]).map(toSession)
+  }
+
+  /** Reincarnate: bring an archived session back into the courtyard. */
+  unarchive(id: string) {
+    this.db.prepare('UPDATE sessions SET archived_at = NULL WHERE id = ?').run(id)
   }
 
   markSeen(id: string) {
