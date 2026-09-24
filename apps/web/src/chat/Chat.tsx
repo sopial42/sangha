@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { api, openSession } from '../api'
 import { Md } from '../Md'
 import { formatTime } from '../priests'
@@ -37,11 +37,30 @@ export function Chat({ author, external = null }: { author: string; external?: {
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Scroll the log itself (not the page) so the latest words stay visible.
-  useEffect(() => {
+  // The log follows new words only while you are at its bottom. Reading further up, you stay where you
+  // are: a blinking bell tells you new words came. Your own message always brings you down.
+  const atBottom = useRef(true)
+  const [fresh, setFresh] = useState(false)
+  const toBottom = () => {
     const el = logRef.current
     if (el) el.scrollTop = el.scrollHeight
+    atBottom.current = true
+    setFresh(false)
+  }
+  useEffect(() => {
+    atBottom.current = true
+    setFresh(false)
+  }, [sessionId])
+  useLayoutEffect(() => {
+    if (atBottom.current || view.chat.at(-1)?.kind === 'user') toBottom()
+    else setFresh(true)
   }, [view.chat.length, view.draft])
+  const onScroll = () => {
+    const el = logRef.current
+    if (!el) return
+    atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    if (atBottom.current) setFresh(false)
+  }
 
   // Recall past messages with ArrowUp/ArrowDown, like a shell history: -1 means "not browsing".
   const [histIndex, setHistIndex] = useState(-1)
@@ -140,7 +159,12 @@ export function Chat({ author, external = null }: { author: string; external?: {
   const empty = view.chat.length === 0 && !view.draft
   return (
     <section className="chat" aria-label={`Conversation avec ${author}`}>
-      <div className="chat-log" aria-live="polite" ref={logRef}>
+      {fresh && (
+        <button type="button" className="chat-fresh" onClick={toBottom} aria-label="Nouveaux messages : descendre">
+          🔔 Nouveaux messages
+        </button>
+      )}
+      <div className="chat-log" aria-live="polite" ref={logRef} onScroll={onScroll}>
         {empty && (
           <div className="chat-empty">
             <p className="chat-empty-title">Silence.</p>

@@ -998,6 +998,41 @@ select {
   background: var(--panel);
 }
 
+/* Floats at the foot of the log (same grid cell), above the input. */
+.chat > .chat-log {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.chat > .chat-input {
+  grid-row: 2;
+}
+
+.chat-fresh {
+  grid-row: 1;
+  grid-column: 1;
+  align-self: end;
+  justify-self: center;
+  z-index: 2;
+  margin-bottom: 12px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--gold);
+  background: #2a2117;
+  color: var(--gold);
+  font: 600 13px var(--sans);
+  cursor: pointer;
+  box-shadow: 0 4px 14px #0008;
+  animation: bell 1.2s ease-in-out infinite;
+}
+
+@keyframes bell {
+  50% {
+    border-color: transparent;
+    color: var(--ink);
+  }
+}
+
 .chat-log {
   overflow-y: auto;
   padding: 16px;
