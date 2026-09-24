@@ -29,6 +29,14 @@ export const contextLevel = (tokens: number | null) => (tokens == null ? null : 
 export const CONTEXT_COLOR = { fine: '#6fae8a', heavy: '#e0a33a', rotting: '#c0392b' } as const
 export const formatTokens = (t: number) => `${Math.round(t / 1000)}K`
 /** Dollars, to the cent below 100 $, to the dollar above. */
+/** When a message was said: "14:05" today, "23 sept. 14:05" before. Nothing when unknown. */
+export function formatTime(at: number) {
+  if (!at) return ''
+  const d = new Date(at)
+  const time = d.toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' })
+  return d.toDateString() === new Date().toDateString() ? time : `${d.toLocaleDateString('fr', { day: 'numeric', month: 'short' })} ${time}`
+}
+
 export const formatCost = (usd: number) => (usd < 100 ? `${usd.toFixed(2)} $` : `${Math.round(usd).toLocaleString('fr-FR')} $`)
 
 export const robeOf = (project: string, projects: ProjectInfo[]) => projects.find((p) => p.name === project)?.color ?? DEFAULT_ROBE

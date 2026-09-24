@@ -3,7 +3,7 @@ import { BUDDHA_SESSION_ID, type SessionSummary } from '@sangha/shared'
 import { api, closeSession } from './api'
 import { Chat } from './chat/Chat'
 import { Md, MdInline } from './Md'
-import { agentTitle, CONTEXT_COLOR, contextLevel, formatCost, formatTokens, robeOf, robeOfAgent, STATUS_LABEL } from './priests'
+import { agentTitle, CONTEXT_COLOR, contextLevel, formatCost, formatTime, formatTokens, robeOf, robeOfAgent, STATUS_LABEL } from './priests'
 import { profileFor, toolIcon } from './profiles'
 import { useApp, type LogItem, type MonkInstance } from './store'
 
@@ -79,8 +79,8 @@ function Novice({ m, sessionId, external, open, onToggle }: { m: MonkInstance; s
     let alive = true
     const fetchLog = () =>
       fetch(`/api/sessions/${sessionId}/novices/${m.monkId}/log`)
-        .then((r) => r.json() as Promise<{ log: Omit<LogItem, 'at'>[] }>)
-        .then((r) => alive && setLog(r.log.map((l) => ({ ...l, at: 0 }) as LogItem)))
+        .then((r) => r.json() as Promise<{ log: LogItem[] }>)
+        .then((r) => alive && setLog(r.log))
         .catch(() => undefined)
     void fetchLog()
     const t = m.status === 'working' ? setInterval(fetchLog, 5000) : undefined
@@ -119,10 +119,12 @@ function Novice({ m, sessionId, external, open, onToggle }: { m: MonkInstance; s
             {log.map((l, i) =>
               l.kind === 'tool' ? (
                 <li key={i} className="log-tool">
+                  {l.at > 0 && <time className="msg-time">{formatTime(l.at)}</time>}
                   {toolIcon(l.tool)} <b>{l.tool}</b> <span className="muted">{l.summary}</span>
                 </li>
               ) : (
                 <li key={i} className="log-text">
+                  {l.at > 0 && <time className="msg-time">{formatTime(l.at)}</time>}
                   <Md text={l.text} />
                 </li>
               ),

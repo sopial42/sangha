@@ -1,8 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, openSession } from '../api'
 import { Md } from '../Md'
+import { formatTime } from '../priests'
 import { profileFor, toolIcon } from '../profiles'
 import { useApp, type ChatItem } from '../store'
+
+const Time = ({ at }: { at: number }) =>
+  at ? (
+    <time className="msg-time" dateTime={new Date(at).toISOString()}>
+      {formatTime(at)}
+    </time>
+  ) : null
 
 // Plumbing that says nothing to the user.
 const HIDDEN_TOOLS = new Set(['ToolSearch', 'TodoWrite'])
@@ -78,13 +86,16 @@ export function Chat({ author, external = null }: { author: string; external?: {
       case 'user':
         return (
           <div key={i} className="msg msg-user">
+            <Time at={item.at} />
             {item.text}
           </div>
         )
       case 'buddha':
         return (
           <div key={i} className="msg msg-buddha">
-            <span className="msg-author">{author}</span>
+            <span className="msg-author">
+              {author} <Time at={item.at} />
+            </span>
             <Md text={item.text} />
           </div>
         )
@@ -100,14 +111,14 @@ export function Chat({ author, external = null }: { author: string; external?: {
       case 'summon':
         return (
           <button key={i} className="scroll-card" onClick={() => set({ selectedMonk: item.monkId })}>
-            🔔 {author} convoque <b>{monkName(item.monkId)}</b> : {view.monks[item.monkId]?.description}
+            🔔 {author} convoque <b>{monkName(item.monkId)}</b> : {view.monks[item.monkId]?.description} <Time at={item.at} />
           </button>
         )
       case 'done': {
         const m = view.monks[item.monkId]
         return (
           <button key={i} className={`scroll-card ${m?.status === 'completed' ? 'ok' : 'ko'}`} onClick={() => set({ selectedMonk: item.monkId })}>
-            {m?.status === 'completed' ? '🙏' : '🏮'} <b>{monkName(item.monkId)}</b> {m?.status === 'completed' ? 'a terminé' : `: ${m?.status}`}
+            {m?.status === 'completed' ? '🙏' : '🏮'} <b>{monkName(item.monkId)}</b> {m?.status === 'completed' ? 'a terminé' : `: ${m?.status}`} <Time at={item.at} />
           </button>
         )
       }

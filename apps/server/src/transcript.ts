@@ -201,7 +201,7 @@ export function aiTitle(lines: Line[]): string | null {
   return [...lines].reverse().find((x) => x.type === 'ai-title' && x.aiTitle)?.aiTitle ?? null
 }
 
-export type NoviceLogItem = { kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string }
+export type NoviceLogItem = { at: number } & ({ kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string })
 
 /** A novice's own transcript (subagents/agent-*.jsonl, all sidechain lines): his words and tools. */
 export function noviceLog(lines: Line[]): NoviceLogItem[] {
@@ -209,9 +209,10 @@ export function noviceLog(lines: Line[]): NoviceLogItem[] {
   for (const l of lines) {
     const c = l.message?.content
     if (l.type !== 'assistant' || !Array.isArray(c)) continue
+    const at = l.timestamp ? Date.parse(l.timestamp) || 0 : 0
     for (const b of c) {
-      if (b.type === 'text' && b.text?.trim()) out.push({ kind: 'text', text: b.text })
-      if (b.type === 'tool_use' && b.name) out.push({ kind: 'tool', tool: b.name, summary: summarizeInput(b.input) })
+      if (b.type === 'text' && b.text?.trim()) out.push({ at, kind: 'text', text: b.text })
+      if (b.type === 'tool_use' && b.name) out.push({ at, kind: 'tool', tool: b.name, summary: summarizeInput(b.input) })
     }
   }
   return out
