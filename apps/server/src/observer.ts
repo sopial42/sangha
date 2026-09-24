@@ -8,7 +8,7 @@ import { currentBranch } from './git'
 import { CLAUDE_PROJECTS, encodeDir, type Projects } from './projects'
 import type { Store } from './db'
 import { recap, type Recap } from './recap'
-import { aiTitle, contextTokens, firstPrompt, lastTool, latestPrompt, mainAgent, parseLine, TranscriptReader } from './transcript'
+import { aiTitle, contextTokens, firstPrompt, lastTool, lastUserMessageAt, latestPrompt, mainAgent, parseLine, TranscriptReader } from './transcript'
 
 // A session counts while its transcript moved within this window; it works while it moved very recently.
 const WINDOW_MS = Number(process.env.SANGHA_EXTERNAL_WINDOW_MIN ?? 90) * 60_000
@@ -105,8 +105,9 @@ export class Observer {
   private hidden: Map<string, number>
 
   /**
-   * Send an outside session away from the courtyard (its terminal is not touched). It comes back if it moves
-   * again, unless `forever` (it moved on to a fresh session).
+   * Send an outside session away from the courtyard (its terminal is not touched). It stays away while it
+   * works on its own, and comes back only when you write to it again; never if `forever` (it moved on to
+   * a fresh session).
    */
   hide(id: string, forever = false) {
     // Never shortens an earlier "forever".
@@ -215,7 +216,8 @@ export class Observer {
         const id = EXTERNAL_PREFIX + sessionId
         const novices = this.novices(f.path, now)
         const lastMove = Math.max(f.mtime, ...novices.map((n) => n.mtime))
-        if ((this.hidden.get(id) ?? 0) >= lastMove) continue
+        // Sent away: it comes back only once you wrote to it after that, not because it keeps working.
+        if ((this.hidden.get(id) ?? 0) >= (lastUserMessageAt(tail) ?? 0)) continue
         const working = now - lastMove < WORKING_MS
         // Sessions found at startup count as already seen: only new activity should call for you.
         if (this.first && !this.seenAt.has(id)) this.seenAt.set(id, lastMove)

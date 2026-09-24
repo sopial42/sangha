@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { firstPrompt, lastTool, latestPrompt, parseLine, RELAY_NOTE, TranscriptReader } from '../src/transcript'
+import { firstPrompt, lastTool, lastUserMessageAt, latestPrompt, parseLine, RELAY_NOTE, TranscriptReader } from '../src/transcript'
 
 const lines = [
   { type: 'user', message: { content: '<command-name>/clear</command-name>' } },
@@ -95,5 +95,16 @@ describe('messages sent while the agent was busy', () => {
       { t: 'user.message', text: 'relance les tests' },
       { t: 'user.message', text: 'les tarifs, on verra plus tard.' },
     ])
+  })
+})
+
+describe('lastUserMessageAt', () => {
+  it('is the time you last wrote, not the agent’s latest activity', () => {
+    const lines = [
+      { type: 'user', timestamp: '2026-09-23T10:00:00Z', message: { content: 'fais le point' } },
+      { type: 'assistant', timestamp: '2026-09-23T10:05:00Z', message: { content: [{ type: 'text', text: 'Voilà.' }] } },
+      { type: 'user', timestamp: '2026-09-23T10:06:00Z', message: { content: '<command-name>/clear</command-name>' } },
+    ].map((l) => parseLine(JSON.stringify(l))!)
+    expect(lastUserMessageAt(lines)).toBe(Date.parse('2026-09-23T10:00:00Z'))
   })
 })

@@ -162,6 +162,17 @@ export function contextTokens(lines: Line[]): number | null {
   return null
 }
 
+/** When you last wrote to the session (typed, queued while busy, or relayed from Sangha). */
+export function lastUserMessageAt(lines: Line[]): number | null {
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const l = lines[i]!
+    const at = l.timestamp ?? (l.attachment as { timestamp?: string } | undefined)?.timestamp
+    if (!at) continue
+    if (new TranscriptReader().push(l).some((e) => e.t === 'user.message')) return Date.parse(at)
+  }
+  return null
+}
+
 /** Last tool a transcript used, from its latest lines. */
 export function lastTool(lines: Line[]): { tool: string; summary: string } | null {
   for (let i = lines.length - 1; i >= 0; i--) {
