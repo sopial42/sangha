@@ -118,12 +118,31 @@ export type SessionSummary = SessionInfo & {
   cwd: string | null
 }
 
+/** A priest sent to nirvana (dismissed): kept in the moon's history, and he can be reincarnated. */
+export type NirvanaEntry = {
+  id: string
+  project: string
+  agent: string
+  title: string
+  branch: string | null
+  createdAt: number
+  /** When he was sent to nirvana. */
+  archivedAt: number
+  cost: number | null
+  /** The whole session in one or two sentences (a small model writes it; null until written). */
+  summary: string | null
+  /** He moved on to a fresh session: his work goes on there, nothing to reincarnate. */
+  renewed: boolean
+}
+
 /** Monastery-wide stream: every session's state, plus the plan quota. */
 export type GlobalEvent =
   | { kind: 'snapshot'; sessions: SessionSummary[]; quota: Quota | null }
   | { kind: 'session'; session: SessionSummary }
   | { kind: 'removed'; id: string }
   | { kind: 'quota'; quota: Quota }
+  /** The moon's history changed (a priest arrived, a summary was written, one was reincarnated): reload it. */
+  | { kind: 'nirvana' }
   /** Projects were added or removed: reload them. */
   | { kind: 'projects' }
 
