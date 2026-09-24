@@ -118,6 +118,26 @@ export type SessionSummary = SessionInfo & {
   cwd: string | null
 }
 
+/** What the sessions Sangha ran cost at API prices (they run on the plan: this is what it is worth). */
+export type CostReport = {
+  /** Every session since monitoring began, archived ones included. */
+  total: number
+  sessions: number
+  /** First session's creation date (monitoring start), null when there is none. */
+  since: number | null
+  /** Newest month first. A session counts in the month it was created. */
+  months: {
+    /** "2026-09" */
+    month: string
+    sessions: number
+    cost: number
+    /** Most expensive first. */
+    projects: { project: string; sessions: number; cost: number }[]
+    /** The month's most expensive session. */
+    record: { id: string; title: string; project: string; cost: number } | null
+  }[]
+}
+
 /** A priest sent to nirvana (dismissed): kept in the moon's history, and he can be reincarnated. */
 export type NirvanaEntry = {
   id: string
