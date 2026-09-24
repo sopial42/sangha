@@ -23,7 +23,7 @@ import { doing, progress, recap, type Progress } from './recap'
 import { priestOptions } from './roles'
 import { contextTokens, parseLine, TranscriptReader } from './transcript'
 import { CostMeter } from './cost'
-import { nextDelay, parseAnswer, shepherdPrompt, type ShepherdAnswer } from './shepherd'
+import { isHandoff, nextDelay, parseAnswer, shepherdPrompt, type ShepherdAnswer } from './shepherd'
 
 type Listener = (env: Envelope) => void
 type GlobalListener = (ev: GlobalEvent) => void
@@ -589,8 +589,13 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       this.store.setShepherd(id, null)
     } else {
       if (s.external && !s.alive) throw new UserError('son terminal est fermé : il ne peut pas répondre')
+      const cur = this.store.shepherd(id)
+      if (cur?.state === 'pending' || cur?.state === 'asked') return this.shepherdState(id)
       const now = Date.now()
-      this.store.setShepherd(id, { state: 'pending', nextAt: now, askedAt: 0, seenAt: now, attempts: 0, note: null })
+      // A fresh-session question already awaits his answer: take it over rather than ask a second one.
+      const rec = this.store.renewal(id)
+      if (rec?.state === 'asked') this.store.setShepherd(id, { state: 'asked', nextAt: now, askedAt: rec.askedAt, seenAt: rec.askedAt, attempts: 0, note: null })
+      else this.store.setShepherd(id, { state: 'pending', nextAt: now, askedAt: 0, seenAt: now, attempts: 0, note: null })
     }
     this.broadcastSession(id)
     return this.shepherdState(id)
@@ -601,10 +606,10 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
    * once stopped. Asks at `nextAt`, reads his answer, and takes his own "yes" whenever he writes it.
    */
   private async tickShepherd(s: SessionSummary, sh: Shepherd) {
-    if (s.status === 'working' || (s.external && !s.alive)) return
+    // Only once he has cleanly ended a turn: never while he works, nor to wake an interrupted or failed one.
+    if (s.status !== 'waiting' || (s.external && !s.alive)) return
     const now = Date.now()
     if (sh.state === 'asked') {
-      if (s.status !== 'waiting') return
       const answer = this.answerSince(s.id, sh.askedAt).trim()
       if (answer) return this.shepherdDecide(s, sh, parseAnswer(answer))
       // No word after a long while (the question got lost): ask again later.
@@ -612,13 +617,21 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       return
     }
     // Before the next question: he may have found his moment himself.
-    const own = this.wordsSince(s.id, sh.seenAt)
-      .map(parseAnswer)
-      .find((a): a is Extract<ShepherdAnswer, { kind: 'yes' }> => a.kind === 'yes' && /PASSATION/i.test(a.handoff))
+    // Strict: a message opening on OUI with a PASSATION heading of its own (a yes may span several messages).
+    const words = this.wordsSince(s.id, sh.seenAt)
+    const own = words
+      .map((_, i) => parseAnswer(words.slice(i).join('\n\n')))
+      .find((a): a is Extract<ShepherdAnswer, { kind: 'yes' }> => a.kind === 'yes' && isHandoff(a.handoff))
     if (own) return this.shepherdDecide(s, sh, own)
     if (now < sh.nextAt) return
     this.setShepherd(s.id, { ...sh, state: 'asked', askedAt: now })
-    await this.reply(s.id, shepherdPrompt(Math.round((s.context ?? 0) / 1000), sh.note))
+    try {
+      await this.reply(s.id, shepherdPrompt(Math.round((s.context ?? 0) / 1000), sh.note))
+    } catch (e) {
+      // Not delivered: he was not asked; try again a little later.
+      this.setShepherd(s.id, { ...sh, state: 'pending', nextAt: now + nextDelay(0, null) })
+      throw e
+    }
   }
 
   private async shepherdDecide(s: SessionSummary, sh: Shepherd, a: ShepherdAnswer) {

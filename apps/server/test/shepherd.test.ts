@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextDelay, parseAnswer, parseDelay } from '../src/shepherd'
+import { isHandoff, nextDelay, parseAnswer, parseDelay } from '../src/shepherd'
 
 const MIN = 60_000
 
@@ -48,5 +48,14 @@ describe('nextDelay', () => {
     expect(nextDelay(0, null)).toBe(10 * MIN)
     expect(nextDelay(2, null)).toBe(40 * MIN)
     expect(nextDelay(99, null)).toBe(120 * MIN)
+  })
+})
+
+describe('isHandoff', () => {
+  it('wants a PASSATION heading of its own', () => {
+    expect(isHandoff('PASSATION\nObjectif : X')).toBe(true)
+    expect(isHandoff('## Passation\n...')).toBe(true)
+    expect(isHandoff('**PASSATION** :\n...')).toBe(true)
+    expect(isHandoff("J'ai préparé la passation de l'acte chez le notaire.")).toBe(false)
   })
 })

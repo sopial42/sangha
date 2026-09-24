@@ -45,6 +45,9 @@ export function parseAnswer(answer: string): ShepherdAnswer {
   return { kind: 'later', delayMs: parseDelay(lines[i] ?? '') ?? parseDelay(text.slice(0, 400)), reason: text.slice(0, 600) }
 }
 
+/** A real handoff: a line of its own titled PASSATION (not the word inside a sentence, e.g. "passation de l'acte"). */
+export const isHandoff = (text: string) => /^[\s#*_>«"-]*PASSATION[\s*_»":.-]*$/im.test(text)
+
 /** When to come back: his own estimate (5 min to 12 h), else a growing backoff. */
 export function nextDelay(attempts: number, requested: number | null): number {
   if (requested != null) return Math.min(12 * 60 * MIN, Math.max(5 * MIN, requested))
@@ -59,7 +62,7 @@ Est-ce un bon moment pour passer la main ? Réponds sur la première ligne par :
 - PLUS TARD <délai> (par exemple « PLUS TARD 30 min » ou « PLUS TARD 3 h ») si tu as besoin de temps : un sous-agent à attendre, une étape délicate à finir, une longue tâche sensible. Donne une estimation honnête et la raison : je reviendrai à ce moment-là ;
 - NON CATÉGORIQUE, seulement si repartir à neuf serait une vraie erreur pour ce travail, avec la raison.
 
-Si tu arrives à un bon moment avant mon retour, n'attends pas ma question : écris « OUI » en première ligne, suivi de la PASSATION.
+Si tu arrives à un bon moment avant mon retour, n'attends pas ma question : écris « OUI » seul en première ligne, puis le titre « PASSATION » sur sa propre ligne, suivi de la passation.
 
 La fin de la journée n'est pas une raison d'attendre : c'est même le cas où une session neuve est la plus utile, pour reprendre demain l'esprit frais. Avant de répondre OUI, vérifie que ce qui compte pour le projet à long terme est écrit dans les fichiers que le repo prévoit pour ça (README, docs, CLAUDE.md…) ; ajoute seulement ce qui manque vraiment.`
 }

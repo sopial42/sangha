@@ -234,7 +234,7 @@ export function SessionView() {
                 {s.shepherd && s.shepherd.state !== 'refused' ? 'Reprendre à Bouddha' : 'Confier à Bouddha'}
               </button>
             )}
-            {!isBuddha && !s.shepherd && s.status !== 'working' && s.renewal !== 'asked' && (!s.external || s.alive) && (
+            {!isBuddha && (!s.shepherd || s.shepherd.state === 'refused') && s.status !== 'working' && s.renewal !== 'asked' && (!s.external || s.alive) && (
               <button className="btn btn-ghost" onClick={() => void api.renew(s.id)} title="Lui proposer de continuer dans une session neuve, avec une passation">
                 Repartir à neuf
               </button>
