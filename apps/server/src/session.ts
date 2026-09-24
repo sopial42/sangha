@@ -741,9 +741,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
         const prev = this.doingOf(s.id)
         const key = this.historyKey(s.id)
         if (prev && (Date.now() - prev.at < every || prev.key === key)) continue
-        const events = this.history(s.id)
-        const from = events.findLastIndex((e) => e.t === 'user.message')
-        const lines = events.slice(Math.max(0, from)).flatMap((ev) => {
+        const lines = recentWindow(this.history(s.id)).flatMap((ev) => {
           if (ev.t === 'user.message') return [`DEMANDE : ${ev.text.slice(0, 1500)}`]
           if (ev.t === 'buddha.text') return [`AGENT : ${ev.text.slice(0, 1500)}`]
           if (ev.t === 'buddha.tool') return [`OUTIL : ${ev.tool} ${ev.summary}`]
@@ -931,17 +929,17 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
 
   /** When a priest stops, a small model writes what he did and what is left. Dropped if he resumed meanwhile. */
   private async writeRecap(id: string, idleSeq: number) {
-    const events = this.store.events(id)
-    const lastUser = events.findLast((e) => e.ev.t === 'user.message')
-    const since = events.filter((e) => !lastUser || e.seq >= lastUser.seq)
-    const lines = since.flatMap(({ ev }) => {
-      if (ev.t === 'user.message') return [`UTILISATEUR : ${ev.text}`]
+    const events = this.store.events(id).map((e) => e.ev)
+    const lines = recentWindow(events).flatMap((ev) => {
+      if (ev.t === 'user.message') return [`UTILISATEUR : ${ev.text.slice(0, 1500)}`]
       if (ev.t === 'buddha.text') return [`AGENT : ${ev.text}`]
+      if (ev.t === 'buddha.tool') return [`OUTIL : ${ev.tool} ${ev.summary}`]
       if (ev.t === 'monk.done') return [`SOUS-AGENT (${ev.status}) : ${ev.summary.slice(0, 1500)}`]
       if (ev.t === 'error') return [`ERREUR : ${ev.message}`]
       return []
     })
-    if (!lines.some((l) => l.startsWith('AGENT') || l.startsWith('ERREUR'))) return
+    const lastUser = events.findLastIndex((e) => e.t === 'user.message')
+    if (!events.slice(lastUser + 1).some((e) => e.t === 'buddha.text' || e.t === 'error')) return
     try {
       const r = await recap(lines.join('\n\n'))
       const stillIdle = !this.live.get(id)?.busy && this.store.lastIdleSeq(id) === idleSeq
@@ -955,6 +953,16 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     const session = this.summaryOf(id)
     if (session) for (const fn of this.globalListeners) fn({ kind: 'session', session })
   }
+}
+
+/**
+ * The latest exchanges, from the user's third-to-last message on: a short "reprends" or "ok" alone says
+ * nothing of the task, the words before it do.
+ */
+export function recentWindow(events: MonasteryEvent[], asks = 3): MonasteryEvent[] {
+  let from = events.length
+  for (let n = 0; n < asks && from > 0; ) if (events[--from]!.t === 'user.message') n++
+  return events.slice(from)
 }
 
 /** An error caused by the request, reported to the client as a 400. */
