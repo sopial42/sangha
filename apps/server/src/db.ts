@@ -121,6 +121,11 @@ export class Store {
     return (this.db.prepare('SELECT * FROM sessions WHERE archived_at IS NULL ORDER BY created_at').all() as Row[]).map(toSession)
   }
 
+  /** Every session ever created, archived included, for the monastery-wide cost report. */
+  allSessions(): SessionRow[] {
+    return (this.db.prepare('SELECT * FROM sessions ORDER BY created_at').all() as Row[]).map(toSession)
+  }
+
   getSession(id: string): SessionRow | null {
     const row = this.db.prepare('SELECT * FROM sessions WHERE id = ?').get(id) as Row | undefined
     return row ? toSession(row) : null

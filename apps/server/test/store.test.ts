@@ -90,4 +90,12 @@ describe('Store', () => {
       expect(s.archivedSessions()).toEqual([])
     })
   })
+
+  it('allSessions lists live and archived sessions alike, for the cost report', () => {
+    const s = new Store(':memory:')
+    s.createSession(row('a'))
+    s.createSession(row('b'))
+    s.archive('a')
+    expect(s.allSessions().map((r) => r.id)).toEqual(['a', 'b'])
+  })
 })

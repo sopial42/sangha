@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import type { CostReport } from '@sangha/shared'
 import { readNewLines } from './files'
 
 // What a session would cost at API list prices ($ per million tokens), though it runs on the plan quota.
@@ -82,5 +83,48 @@ export class CostMeter {
       }
     }
     return t.usd
+  }
+}
+
+/** A session's own cost (its transcript alone, never a predecessor's carried-over cost), for the report. */
+export type CostSession = { id: string; project: string; title: string; createdAt: number; cost: number }
+
+const monthOf = (ts: number): string => {
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** What the monastery has cost at API prices since monitoring began, bucketed by month. */
+export function buildCostReport(sessions: CostSession[]): CostReport {
+  const byMonth = new Map<string, CostSession[]>()
+  for (const s of sessions) {
+    const list = byMonth.get(monthOf(s.createdAt))
+    if (list) list.push(s)
+    else byMonth.set(monthOf(s.createdAt), [s])
+  }
+  const months = [...byMonth.entries()]
+    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+    .map(([month, list]) => {
+      const byProject = new Map<string, { sessions: number; cost: number }>()
+      for (const s of list) {
+        const p = byProject.get(s.project) ?? { sessions: 0, cost: 0 }
+        p.sessions += 1
+        p.cost += s.cost
+        byProject.set(s.project, p)
+      }
+      const record = list.reduce<CostSession | null>((best, s) => (s.cost > 0 && (!best || s.cost > best.cost) ? s : best), null)
+      return {
+        month,
+        sessions: list.length,
+        cost: list.reduce((sum, s) => sum + s.cost, 0),
+        projects: [...byProject.entries()].map(([project, p]) => ({ project, ...p })).sort((a, b) => b.cost - a.cost),
+        record: record && { id: record.id, title: record.title, project: record.project, cost: record.cost },
+      }
+    })
+  return {
+    total: sessions.reduce((sum, s) => sum + s.cost, 0),
+    sessions: sessions.length,
+    since: sessions.length ? Math.min(...sessions.map((s) => s.createdAt)) : null,
+    months,
   }
 }

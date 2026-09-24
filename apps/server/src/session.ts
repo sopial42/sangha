@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { query, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import {
   BUDDHA_SESSION_ID,
+  type CostReport,
   type Envelope,
   type GlobalEvent,
   type MonasteryEvent,
@@ -23,7 +24,7 @@ import { relayToPeer } from './messenger'
 import { doing, lifeSummary, progress, recap, type Progress } from './recap'
 import { priestOptions } from './roles'
 import { contextTokens, parseLine, TranscriptReader } from './transcript'
-import { CostMeter } from './cost'
+import { buildCostReport, CostMeter } from './cost'
 import { isHandoff, nextDelay, parseAnswer, readDecision, shepherdPrompt, type ShepherdAnswer } from './shepherd'
 
 type Listener = (env: Envelope) => void
@@ -415,6 +416,38 @@ export class Sessions {
     const missing = rows.filter((r) => !this.hasNirvanaSummary(r)).slice(0, 20)
     if (missing.length) void this.fillNirvanaSummaries(missing)
     return rows.map((r) => this.nirvanaEntry(r))
+  }
+
+  /**
+   * What the monastery has cost at API prices since monitoring began: every session's own transcript
+   * cost (never a predecessor's carried-over cost, or it would be counted twice), archived sessions
+   * included. Buddha counts too, under project "Bouddha" — his transcript sits under his fixed cwd.
+   */
+  costReport(): CostReport {
+    const sessions = this.store
+      .allSessions()
+      .map((row) => {
+        const file = this.reportTranscriptOf(row)
+        if (row.id === BUDDHA_SESSION_ID && !file) return null // not computable: skip him
+        return {
+          id: row.id,
+          project: row.id === BUDDHA_SESSION_ID ? 'Bouddha' : row.project,
+          title: row.title,
+          createdAt: row.createdAt,
+          cost: file ? this.meter.session(file) : 0,
+        }
+      })
+      .filter((s) => s !== null)
+    return buildCostReport(sessions)
+  }
+
+  /** Transcript for the cost report: same rule as `transcriptOf`, but Buddha's cwd is fixed (his worktree is not project-bound). */
+  private reportTranscriptOf(row: SessionRow): string | null {
+    if (!row.claudeSessionId) return null
+    const cwd = row.id === BUDDHA_SESSION_ID ? config.workspacesDir : (row.worktree ?? (this.projects.exists(row.project) ? this.projects.dir(row.project) : null))
+    if (!cwd) return null
+    const file = transcriptPath(cwd, row.claudeSessionId)
+    return existsSync(file) ? file : null
   }
 
   private hasNirvanaSummary(row: SessionRow): boolean {

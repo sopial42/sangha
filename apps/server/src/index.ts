@@ -124,6 +124,9 @@ app.post('/api/sessions/:id/reincarnate', async (c) => c.json(await sessions.rei
 // The moon: priests sent to nirvana, newest dismissal first.
 app.get('/api/nirvana', (c) => c.json(sessions.nirvana()))
 
+// What the monastery has cost at API prices since monitoring began.
+app.get('/api/costs', (c) => c.json(sessions.costReport()))
+
 /** Wait for the next item, sending a keepalive ping every 15 s. */
 async function drain<T>(stream: SSEStreamingApi, queue: T[], send: (item: T) => Promise<void>, onWake: (wake: () => void) => void) {
   while (!stream.aborted) {
