@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { MonkProfile, NoviceSummary, SessionSummary } from '@sangha/shared'
 import { CONTEXT_COLOR, contextLevel, formatCost, formatTokens } from '../priests'
 import { profileFor, toolIcon } from '../profiles'
@@ -88,19 +88,42 @@ function DoingBubble({ text, side, compact }: { text: string; side: 1 | -1; comp
   )
 }
 
-/** What he did and what he waits for, beside his head, in full. `compact`: a narrower wrap for a mobile column. */
-function RecapBubble({ done, next, side, compact }: { done: string; next: string; side: 1 | -1; compact?: boolean }) {
+/** A closed bubble: there is something to read, shown on hover. The dots breathe while he works. */
+function DotsBubble({ side, working, compact }: { side: 1 | -1; working: boolean; compact?: boolean }) {
+  const w = 38
+  return (
+    <Callout w={w} h={20} side={side} near={compact ? 34 : 56}>
+      {[0, 1, 2].map((i) => (
+        <motion.circle
+          key={i}
+          cx={w / 2 + (i - 1) * 8}
+          cy={10}
+          r={2.2}
+          fill="#6b5325"
+          animate={working ? { opacity: [0.25, 1, 0.25] } : { opacity: 0.8 }}
+          transition={working ? { duration: 1.2, repeat: Infinity, delay: i * 0.2 } : undefined}
+        />
+      ))}
+    </Callout>
+  )
+}
+
+/**
+ * What he did and what he waits for, beside his head, in full; without `done`, only what he waits for.
+ * `compact`: a narrower wrap for a mobile column.
+ */
+function RecapBubble({ done, next, side, compact }: { done?: string; next: string; side: 1 | -1; compact?: boolean }) {
   // Always the whole text: more lines rather than a cut.
-  const doneLines = wrapAll(`✓ ${done}`, compact ? 15 : 20)
+  const doneLines = done ? wrapAll(`✓ ${done}`, compact ? 15 : 20) : []
   const nextLines = wrapAll(`→ ${next}`, compact ? 15 : 20)
   const lh = 13
   const pad = 7
   const w = compact ? 118 : 156
-  const h1 = doneLines.length * lh + pad * 2
+  const h1 = doneLines.length ? doneLines.length * lh + pad * 2 : 0
   const h2 = nextLines.length * lh + pad * 2
   return (
     <Callout w={w} h={h1 + h2} side={side} near={compact ? 34 : 56}>
-      <line x1="6" x2={w - 6} y1={h1} y2={h1} stroke="#e0c98f" />
+      {h1 > 0 && <line x1="6" x2={w - 6} y1={h1} y2={h1} stroke="#e0c98f" />}
       {doneLines.map((l, i) => (
         <text key={`d${i}`} x="8" y={pad + lh * (i + 1) - 4} className="recap-text">
           {l}
@@ -181,6 +204,9 @@ export function Priest({
   const working = status === 'working'
   // Waiting for you glows, unless you silenced him (his incense is out).
   const unread = status === 'waiting' && !session.silenced
+  // His bubble stays closed ("…") and opens on hover; only while he waits for you does it show, open,
+  // what he waits for. Snuffing his incense closes it again.
+  const [peek, setPeek] = useState(false)
   const novices = session.novices.slice(0, 4)
   const extra = session.novices.length - novices.length
   // What he is doing, as Haiku sums it up; until then, his current tool.
@@ -213,6 +239,10 @@ export function Priest({
           aria-pressed={selected}
           onClick={onSelect}
           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSelect()}
+          onMouseEnter={() => setPeek(true)}
+          onMouseLeave={() => setPeek(false)}
+          onFocus={() => setPeek(true)}
+          onBlur={() => setPeek(false)}
         >
           <title>{label}</title>
           {selected && <ellipse cx="0" cy="0" rx="58" ry="16" fill="none" stroke="#ffe9a8" strokeWidth="2.5" strokeDasharray="6 5" />}
@@ -270,14 +300,24 @@ export function Priest({
             </text>
           )}
           <AnimatePresence>
-            {activity && (
+            {activity && peek && (
               <motion.g key="activity" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
                 <DoingBubble text={activity} side={bubbleSide} compact={compact} />
               </motion.g>
             )}
-            {!working && session.recap && (
+            {!working && session.recap && peek && (
               <motion.g key="recap" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <RecapBubble done={session.recap.done} next={session.recap.next} side={bubbleSide} compact={compact} />
+              </motion.g>
+            )}
+            {!working && session.recap && unread && !peek && (
+              <motion.g key="awaits" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <RecapBubble next={session.recap.next} side={bubbleSide} compact={compact} />
+              </motion.g>
+            )}
+            {!peek && (activity || (session.recap && !unread)) && (
+              <motion.g key="dots" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <DotsBubble side={bubbleSide} working={working} compact={compact} />
               </motion.g>
             )}
           </AnimatePresence>
