@@ -9,7 +9,7 @@ const SCHEMA = {
   type: 'object',
   properties: {
     done: { type: 'string', description: 'Ce qui a été obtenu, en une phrase complète de 70 caractères maximum.' },
-    next: { type: 'string', description: 'Ce qui reste, ou la décision attendue de l’utilisateur, en une phrase complète de 70 caractères maximum.' },
+    next: { type: 'string', description: 'Ce qu’il attend maintenant (une décision de l’utilisateur, ou quelque chose qui tourne seul : CI, déploiement, revue…) ou ce qui reste, en une phrase complète de 70 caractères maximum.' },
   },
   required: ['done', 'next'],
   additionalProperties: false,
@@ -20,8 +20,13 @@ const STYLE = `Style : français très simple, pour quelqu'un qui n'est pas dév
 de branches, de commandes, d'outils, de code ni de jargon. Phrases courtes et concrètes.`
 
 const SYSTEM = `Tu résumes pour son utilisateur l'état d'une session de travail d'un agent, en deux phrases très courtes et complètes.
-"done" = ce qui a été obtenu ; "next" = ce qui reste, ou la décision que l'agent attend de l'utilisateur.
-S'il ne reste rien, "next" = "Rien : il attend ta prochaine consigne."
+"done" = ce qui a été obtenu ; "next" = ce que l'agent attend maintenant, ou ce qui reste.
+Lis surtout son dernier message : s'il attend quelque chose qui tourne sans l'utilisateur (la CI, un déploiement,
+une revue, un calcul, un autre agent), dis-le ("Attend le résultat de la CI pour fusionner") : ce n'est pas une
+consigne de l'utilisateur. S'il pose une question ou attend une décision, dis laquelle.
+Seulement si tout est fini et qu'il n'attend rien : "next" = "Rien : il attend ta prochaine consigne."
+Les messages très courts de l'utilisateur ("reprends", "continue", "ok") ne disent rien de la tâche : appuie-toi sur
+les échanges d'avant.
 ${STYLE}`
 
 /** One-shot, tool-less, structured call on a small model (still on the plan quota). */
