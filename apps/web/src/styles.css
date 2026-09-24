@@ -1364,8 +1364,13 @@ select {
     max-height: 35dvh;
   }
 
+  /* The courtyard grows tall instead of shrinking to fit: the page scrolls, pavilions stack, priests stay readable. */
   .scene-wrap {
-    aspect-ratio: 10 / 7;
+    overflow: visible;
+  }
+
+  .scene {
+    height: auto;
   }
 
   .chat {
@@ -1391,5 +1396,39 @@ select {
 
   .quota-gauge {
     width: 110px;
+  }
+
+  /* The gauge is too narrow to fit a label beside its own percentage: stack them instead of wrapping mid-word. */
+  .quota-line {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  /* Touch targets grow to a comfortable minimum; sizing only, no visual change beyond that. */
+  .btn {
+    min-height: 40px;
+    padding: 9px 16px;
+  }
+
+  .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .icon-btn.big {
+    width: 44px;
+    height: 44px;
+  }
+
+  .segmented button {
+    min-height: 40px;
+  }
+
+  select,
+  .form input,
+  .form textarea,
+  .form select {
+    min-height: 40px;
   }
 }

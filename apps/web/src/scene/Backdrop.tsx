@@ -3,7 +3,8 @@ import { motion } from 'motion/react'
 export const FLOOR_Y = 400
 /** Buddha's hall is drawn a bit smaller, from the floor line up, to leave room to the pavilions. */
 export const HALL_SCALE = 0.82
-export const hallTransform = (cx: number) => `translate(${cx} ${FLOOR_Y}) scale(${HALL_SCALE}) translate(-500 -${FLOOR_Y})`
+/** `scale` lets a narrow courtyard (mobile) shrink the hall further, so it never outgrows the width it has. */
+export const hallTransform = (cx: number, scale = HALL_SCALE) => `translate(${cx} ${FLOOR_Y}) scale(${scale}) translate(-500 -${FLOOR_Y})`
 
 /** A mountain ridge from far left to far right: peaks around `base`, `amp` high, down to the floor. */
 function ridge(width: number, base: number, amp: number, phase: number): string {
@@ -19,7 +20,7 @@ function ridge(width: number, base: number, amp: number, phase: number): string 
  * Courtyard at dusk, `width` wide: the sky and floor stretch, Buddha's hall stays centered.
  * Only the lanterns and incense react to activity.
  */
-export function Backdrop({ width, height, busy }: { width: number; height: number; busy: boolean }) {
+export function Backdrop({ width, height, busy, hallScale = HALL_SCALE }: { width: number; height: number; busy: boolean; hallScale?: number }) {
   const cx = width / 2
   return (
     <g>
@@ -67,7 +68,7 @@ export function Backdrop({ width, height, busy }: { width: number; height: numbe
       ))}
 
       {/* Buddha's hall */}
-      <g transform={hallTransform(cx)}>
+      <g transform={hallTransform(cx, hallScale)}>
         <rect x="250" y="170" width="500" height="230" fill="#2a1712" />
         <rect x="280" y="190" width="440" height="210" fill="#3b2019" />
         {[270, 360, 640, 730].map((x) => (
