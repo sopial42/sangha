@@ -1,4 +1,4 @@
-import type { Envelope, GlobalEvent, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
+import type { CostReport, Envelope, GlobalEvent, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
 import { emptyView, useApp } from './store'
 
 export class ApiError extends Error {
@@ -47,6 +47,8 @@ export const api = {
   nirvana: () => json<NirvanaEntry[]>('/api/nirvana'),
   /** Bring him back to the courtyard, in a fresh session. */
   reincarnate: (id: string) => json<SessionSummary>(`/api/sessions/${id}/reincarnate`, post()),
+  /** What every session would have cost at API prices, since monitoring began, broken down by month. */
+  costs: () => json<CostReport>('/api/costs'),
 }
 
 /** Follow the whole monastery: every session's status, novices and the plan quota. */
@@ -54,17 +56,20 @@ export function openMonastery(onError: () => void) {
   const es = new EventSource('/api/events')
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data) as GlobalEvent
-    const { set, sessions, nirvanaTick } = useApp.getState()
+    const { set, sessions, nirvanaTick, moonArrivals, sessionsVersion } = useApp.getState()
     switch (ev.kind) {
       case 'snapshot':
         set({ sessions: Object.fromEntries(ev.sessions.map((s) => [s.id, s])), ...(ev.quota ? { quota: ev.quota } : {}) })
         break
       case 'session':
-        set({ sessions: { ...sessions, [ev.session.id]: ev.session } })
+        // Also what the cost chip watches (throttled) to keep its total roughly current.
+        set({ sessions: { ...sessions, [ev.session.id]: ev.session }, sessionsVersion: sessionsVersion + 1 })
         break
       case 'removed': {
-        const { [ev.id]: _gone, ...rest } = sessions
-        set({ sessions: rest })
+        const { [ev.id]: gone, ...rest } = sessions
+        // The moon only glows when a priest actually flew into it: a non-external session leaving
+        // the courtyard (an external one just returns to its own terminal, nothing to see here).
+        set({ sessions: rest, ...(gone && !gone.external ? { moonArrivals: moonArrivals + 1 } : {}) })
         if (useApp.getState().selectedId === ev.id) closeSession()
         break
       }

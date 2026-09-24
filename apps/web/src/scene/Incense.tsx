@@ -68,7 +68,8 @@ export function Incense({
       {/* warm halo when awake: two layered gradients stand in for a soft blur */}
       <motion.circle cy="-13" r="30" fill="url(#incenseGlow)" initial={false} animate={{ opacity: awake ? 0.8 : 0, scale: awake ? 1 : 0.6 }} transition={{ duration: 0.3 }} />
       <motion.circle cy="-13" r="18" fill="url(#incenseGlow)" initial={false} animate={{ opacity: awake ? 1 : 0, scale: awake ? 1 : 0.6 }} transition={{ duration: 0.25 }} />
-      <motion.g initial={false} animate={{ scale: awake ? 1.15 : 1 }} transition={{ type: 'spring', stiffness: 400, damping: 18 }} style={{ originX: '50%', originY: '100%' }}>
+      {/* Grows like every other clickable thing in the scene: same subtle range as the moon, priests, etc. */}
+      <motion.g initial={false} animate={{ scale: awake ? 1.06 : 1 }} transition={{ type: 'spring', stiffness: 400, damping: 18 }} style={{ originX: '50%', originY: '100%' }}>
       {/* tripod legs, then the censer bowl they carry */}
       {[-8, 0, 8].map((x) => (
         <path key={`leg${x}`} d={`M${x - 1.6} 2 L${x - 2.6} 8 L${x + 2.6} 8 L${x + 1.6} 2 Z`} fill="#5a4322" />

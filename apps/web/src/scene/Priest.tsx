@@ -166,12 +166,16 @@ function Novice({ n, profile, x, y, onSelect }: { n: NoviceSummary; profile: Mon
     >
       <title>{`${profile.name} · ${n.description}${n.lastTool ? `\n${n.lastTool.tool} ${n.lastTool.summary}` : ''}`}</title>
       <g transform={`translate(${x} ${y})`}>
-        <ellipse rx="13" ry="4" fill="#00000040" />
-        <path d="M-9 0 L-10 -26 Q0 -36 10 -26 L9 0 Z" fill={profile.robe} />
-        <circle cy="-34" r="6" fill="#d9a577" />
-        <motion.text y="-46" textAnchor="middle" fontSize="11" animate={{ y: [-46, -50, -46] }} transition={{ duration: 1.2, repeat: Infinity }}>
-          {n.lastTool ? toolIcon(n.lastTool.tool) : '🙏'}
-        </motion.text>
+        {/* This outer motion.g already animates its own opacity/y (framer writes that inline): the
+            hover grow lives on this plain child group instead, so the two transforms never collide. */}
+        <g className="hover-grow">
+          <ellipse rx="13" ry="4" fill="#00000040" />
+          <path d="M-9 0 L-10 -26 Q0 -36 10 -26 L9 0 Z" fill={profile.robe} />
+          <circle cy="-34" r="6" fill="#d9a577" />
+          <motion.text y="-46" textAnchor="middle" fontSize="11" animate={{ y: [-46, -50, -46] }} transition={{ duration: 1.2, repeat: Infinity }}>
+            {n.lastTool ? toolIcon(n.lastTool.tool) : '🙏'}
+          </motion.text>
+        </g>
       </g>
     </motion.g>
   )

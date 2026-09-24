@@ -83,6 +83,9 @@ export function Buddha({
         </linearGradient>
       </defs>
 
+      {/* This outer <g> already carries its own translate(x, 360): the hover grow lives on this
+          plain child group instead, so our CSS transform never replaces that positioning. */}
+      <g className="hover-grow">
       <motion.circle
         cy="-120"
         r="110"
@@ -254,6 +257,7 @@ export function Buddha({
       <text y="48" textAnchor="middle" className="scene-name">
         Bouddha
       </text>
+      </g>
     </g>
   )
 }

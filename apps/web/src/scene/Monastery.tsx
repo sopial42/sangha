@@ -180,7 +180,7 @@ function resolveBubbleSides(seated: Seated[]): Record<string, 1 | -1> {
 }
 
 export function Monastery() {
-  const { sessions, projects, profiles, selectedId, view, set, nirvanaTick } = useApp()
+  const { sessions, projects, profiles, selectedId, view, set, moonArrivals } = useApp()
   const priests: SessionSummary[] = priestsOf(sessions)
   const buddha = sessions[BUDDHA_SESSION_ID]
 
@@ -292,7 +292,7 @@ export function Monastery() {
       </AnimatePresence>
 
       {/* Last: above every other layer, so nothing sky- or hall-shaped can steal its clicks. */}
-      <Moon x={moon.x} y={moon.y} r={moon.r} tick={nirvanaTick} onOpen={() => set({ dialog: { kind: 'nirvana' } })} />
+      <Moon x={moon.x} y={moon.y} r={moon.r} arrivalTick={moonArrivals} onOpen={() => set({ dialog: { kind: 'nirvana' } })} />
     </svg>
   )
 }

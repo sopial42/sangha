@@ -11,12 +11,13 @@ export function moonPosition(width: number, mobile: boolean, top: number): { x: 
 }
 
 /**
- * The moon: where priests sent to nirvana end up. Clickable and focusable, glowing softly on hover
- * and briefly pulsing whenever the moon's history changes (a priest arrives, or is reincarnated).
+ * The moon: where priests sent to nirvana end up. Clickable and focusable, glowing softly on hover,
+ * and briefly pulsing exactly when a priest actually flies into it — never on a summary being
+ * written or a reincarnation, which would flash it for no visible reason.
  * Rendered last among the scene's top-level elements so nothing sky- or hall-shaped can sit above it
  * and steal its clicks.
  */
-export function Moon({ x, y, r, tick, onOpen }: { x: number; y: number; r: number; tick: number; onOpen: () => void }) {
+export function Moon({ x, y, r, arrivalTick, onOpen }: { x: number; y: number; r: number; arrivalTick: number; onOpen: () => void }) {
   const [hot, setHot] = useState(false)
   const [pulsing, setPulsing] = useState(false)
   const firstTick = useRef(true)
@@ -33,7 +34,7 @@ export function Moon({ x, y, r, tick, onOpen }: { x: number; y: number; r: numbe
       return () => clearTimeout(off)
     }, 2600)
     return () => clearTimeout(delay)
-  }, [tick])
+  }, [arrivalTick])
 
   return (
     <g

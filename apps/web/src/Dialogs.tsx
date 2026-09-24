@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { NirvanaEntry, ProjectSuggestion } from '@sangha/shared'
+import type { CostReport, NirvanaEntry, ProjectSuggestion } from '@sangha/shared'
 import { ApiError, api, openSession } from './api'
 import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
@@ -498,6 +498,76 @@ function Nirvana({ onClose }: { onClose: () => void }) {
   )
 }
 
+/** What every session would have cost at API prices, since monitoring began, one block per month. */
+function Costs({ onClose }: { onClose: () => void }) {
+  const projects = useApp((s) => s.projects)
+  const [report, setReport] = useState<CostReport | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => void api.costs().then(setReport, (err) => setError(message(err))), [])
+
+  const since = report?.since ? new Date(report.since).toLocaleDateString('fr', { day: 'numeric', month: 'long', year: 'numeric' }) : null
+  const monthLabel = (month: string) => new Date(`${month}-01T00:00:00`).toLocaleDateString('fr', { month: 'long', year: 'numeric' })
+
+  return (
+    <Modal title="Dépenses" onClose={onClose}>
+      <div className="form">
+        {!report && !error && <p className="hint">Ouverture du bilan…</p>}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        {report && report.months.length === 0 && <p className="hint">Aucune session pour l’instant.</p>}
+        {report && report.months.length > 0 && (
+          <>
+            <p className="costs-total">
+              <b>{formatCost(report.total)}</b> au total, sur {report.sessions} session{report.sessions > 1 ? 's' : ''}
+              {since && <> depuis le {since}</>}.
+            </p>
+            <ul className="costs-months">
+              {report.months.map((m) => {
+                const maxProject = Math.max(0.01, ...m.projects.map((p) => p.cost))
+                return (
+                  <li key={m.month} className="costs-month">
+                    <div className="costs-month-head">
+                      <b>{monthLabel(m.month)}</b>
+                      <span className="muted small">
+                        {m.sessions} session{m.sessions > 1 ? 's' : ''} · {formatCost(m.cost)}
+                      </span>
+                    </div>
+                    <ul className="costs-bars">
+                      {m.projects.map((p) => (
+                        <li key={p.project} className="costs-bar-row">
+                          <span className="project-tag" style={{ borderColor: robeOf(p.project, projects) }}>
+                            {p.project}
+                          </span>
+                          <span className="costs-bar-track">
+                            <span className="costs-bar-fill" style={{ width: `${(p.cost / maxProject) * 100}%`, background: robeOf(p.project, projects) }} />
+                          </span>
+                          <span className="costs-bar-value muted small">
+                            {p.sessions} · {formatCost(p.cost)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    {m.record && (
+                      <p className="costs-record muted small">
+                        <b>{m.record.title}</b> ({m.record.project}) · {formatCost(m.record.cost)} · record du mois
+                      </p>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+          </>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 export function Dialogs() {
   const { dialog, set } = useApp()
   const close = () => set({ dialog: null })
@@ -507,5 +577,6 @@ export function Dialogs() {
   if (dialog.kind === 'remove-project') return <RemoveProject name={dialog.name} onClose={close} />
   if (dialog.kind === 'incense') return <IncenseChoice id={dialog.id} onClose={close} />
   if (dialog.kind === 'nirvana') return <Nirvana onClose={close} />
+  if (dialog.kind === 'costs') return <Costs onClose={close} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
 }

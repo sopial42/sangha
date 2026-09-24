@@ -78,6 +78,25 @@ textarea {
   letter-spacing: 0.04em;
 }
 
+/* What every session would have cost at API prices: a quiet gold pill right beside the brand. */
+.cost-chip {
+  font: 600 13px var(--sans);
+  color: var(--gold);
+  background: transparent;
+  border: 1px solid #6b5325;
+  border-radius: 999px;
+  padding: 3px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, transform 0.16s ease;
+}
+
+.cost-chip:hover,
+.cost-chip:focus-visible {
+  border-color: var(--gold);
+  background: #2a2117;
+}
+
 .badge {
   font-size: 12px;
   padding: 2px 8px;
@@ -115,12 +134,35 @@ select {
   border: 1px solid transparent;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, border-color 0.15s, transform 0.16s ease;
 }
 
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* Every clickable button/chip grows slightly on hover/focus, like the scene's clickables (a touch
+   more subtle, to match their smaller size). Disabled buttons never grow; reduced motion drops it. */
+@media (prefers-reduced-motion: no-preference) {
+  .btn:not(:disabled):hover,
+  .btn:not(:disabled):focus-visible,
+  .icon-btn:not(:disabled):hover,
+  .icon-btn:not(:disabled):focus-visible,
+  .scroll-card:not(:disabled):hover,
+  .scroll-card:not(:disabled):focus-visible,
+  .choice:not(:disabled):hover,
+  .choice:not(:disabled):focus-visible,
+  .suggestion:not(:disabled):hover,
+  .suggestion:not(:disabled):focus-visible,
+  .novice-head:not(:disabled):hover,
+  .novice-head:not(:disabled):focus-visible,
+  .segmented button:not(:disabled):hover,
+  .segmented button:not(:disabled):focus-visible,
+  .cost-chip:not(:disabled):hover,
+  .cost-chip:not(:disabled):focus-visible {
+    transform: scale(1.04);
+  }
 }
 
 .btn-primary {
@@ -238,6 +280,7 @@ select {
   cursor: pointer;
   color: var(--muted);
   flex: none;
+  transition: border-color 0.15s, color 0.15s, transform 0.16s ease;
 }
 
 .icon-btn:hover {
@@ -473,6 +516,7 @@ select {
   border-radius: 12px;
   background: var(--panel-2);
   cursor: pointer;
+  transition: border-color 0.15s, transform 0.16s ease;
 }
 
 .choice:hover,
@@ -539,6 +583,7 @@ select {
   background: transparent;
   text-align: left;
   cursor: pointer;
+  transition: transform 0.16s ease;
 }
 
 .novice-id {
@@ -806,6 +851,87 @@ select {
   justify-content: flex-end;
 }
 
+/* costs dialog ("Dépenses") */
+.costs-total {
+  margin: 0 0 4px;
+}
+
+.costs-months {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+
+.costs-month {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.costs-month-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.costs-month-head b {
+  font: 700 16px var(--serif);
+}
+
+.costs-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.costs-bar-row {
+  display: grid;
+  grid-template-columns: minmax(64px, auto) 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.costs-bar-row .project-tag {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.costs-bar-track {
+  height: 8px;
+  border-radius: 4px;
+  background: #00000055;
+  overflow: hidden;
+}
+
+.costs-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+}
+
+.costs-bar-value {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.costs-record {
+  margin: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
 .pavilion-name {
   font: 700 15px var(--serif);
   fill: #f3e9d8;
@@ -885,6 +1011,7 @@ select {
   background: transparent;
   cursor: pointer;
   color: var(--muted);
+  transition: background 0.15s, color 0.15s, transform 0.16s ease;
 }
 
 .segmented button.active {
@@ -914,6 +1041,7 @@ select {
   border-radius: 10px;
   background: var(--panel-2);
   cursor: pointer;
+  transition: border-color 0.15s, transform 0.16s ease;
 }
 
 .suggestion:hover:not(:disabled) {
@@ -967,6 +1095,36 @@ select {
 .buddha.clickable {
   cursor: pointer;
   outline: none;
+}
+
+/* Every clickable thing in the scene grows slightly on hover/focus, like the moon: subtle, smooth,
+   centered on itself. `.priest.clickable`, `.pavilion.clickable` and `.add-project.clickable` carry
+   no transform of their own, so the scale lives directly on them; elements that already have their
+   own translate/scale (Buddha) or their own framer-driven transform (Novice) grow a plain inner
+   `.hover-grow` child instead, so this never fights an existing motion transform. */
+@media (prefers-reduced-motion: no-preference) {
+  .priest.clickable,
+  .pavilion.clickable,
+  .add-project.clickable,
+  .buddha.clickable .hover-grow,
+  .novice.clickable .hover-grow {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition: transform 0.18s ease;
+  }
+
+  .priest.clickable:hover,
+  .priest.clickable:focus-visible,
+  .pavilion.clickable:hover,
+  .pavilion.clickable:focus-visible,
+  .add-project.clickable:hover,
+  .add-project.clickable:focus-visible,
+  .buddha.clickable:hover .hover-grow,
+  .buddha.clickable:focus-visible .hover-grow,
+  .novice.clickable:hover .hover-grow,
+  .novice.clickable:focus-visible .hover-grow {
+    transform: scale(1.06);
+  }
 }
 
 .priest:hover .scene-name,
@@ -1255,6 +1413,7 @@ select {
   border: 1px dashed #6b5325;
   background: #2a2117;
   cursor: pointer;
+  transition: border-style 0.15s, transform 0.16s ease;
 }
 
 .scroll-card:hover {
