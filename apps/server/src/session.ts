@@ -12,7 +12,7 @@ import {
   type SessionSummary,
 } from '@sangha/shared'
 import { config } from './config'
-import type { SessionRow, Store } from './db'
+import type { SessionRow, Shepherd, Store } from './db'
 import { addWorktree, isGitRepo, removeWorktree, worktreeState, type WorktreeState } from './git'
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
@@ -23,6 +23,7 @@ import { doing, progress, recap, type Progress } from './recap'
 import { priestOptions } from './roles'
 import { contextTokens, parseLine, TranscriptReader } from './transcript'
 import { CostMeter } from './cost'
+import { nextDelay, parseAnswer, shepherdPrompt, type ShepherdAnswer } from './shepherd'
 
 type Listener = (env: Envelope) => void
 type GlobalListener = (ev: GlobalEvent) => void
@@ -443,6 +444,7 @@ export class Sessions {
       doing: s.status === 'working' ? (this.doingOf(s.id)?.text ?? null) : null,
       silenced: this.store.silencedIds().has(s.id),
       renewal: this.renewalState(s.id),
+      shepherd: this.shepherdState(s.id),
       cost: this.costOf(s.id),
     }
   }
@@ -468,6 +470,11 @@ export class Sessions {
   private renewalState(id: string): 'asked' | 'postponed' | null {
     const r = this.store.renewal(id)
     return r && r.state !== 'done' ? r.state : null
+  }
+
+  private shepherdState(id: string): SessionSummary['shepherd'] {
+    const s = this.store.shepherd(id)
+    return s && s.state !== 'done' ? { state: s.state, nextAt: s.nextAt, note: s.note } : null
   }
 
   /** Context weight of a Sangha session, read from its Claude Code transcript (cached by file date). */
@@ -525,7 +532,13 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     this.renewing = true
     try {
       for (const s of this.summaries()) {
-        if (s.id === BUDDHA_SESSION_ID || s.status === 'working' || s.silenced) continue
+        if (s.id === BUDDHA_SESSION_ID) continue
+        const sh = this.store.shepherd(s.id)
+        if (sh && (sh.state === 'pending' || sh.state === 'asked')) {
+          await this.tickShepherd(s, sh).catch((e) => console.error('[shepherd]', e instanceof Error ? e.message : e))
+          continue
+        }
+        if (s.status === 'working' || s.silenced) continue
         const rec = this.store.renewal(s.id)
         if (rec?.state === 'asked') {
           if (s.status === 'waiting') await this.readAnswer(s, rec.askedAt)
@@ -544,23 +557,93 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
 
   /** His words since the question. */
   private answerSince(id: string, askedAt: number): string {
+    return this.wordsSince(id, askedAt).join('\n\n')
+  }
+
+  /** Each message he wrote after `since`. */
+  private wordsSince(id: string, since: number): string[] {
     if (!id.startsWith(EXTERNAL_PREFIX)) {
       return this.store
         .events(id)
-        .filter((e) => e.at > askedAt && e.ev.t === 'buddha.text')
+        .filter((e) => e.at > since && e.ev.t === 'buddha.text')
         .map((e) => (e.ev.t === 'buddha.text' ? e.ev.text : ''))
-        .join('\n\n')
     }
     const file = this.observer?.fileOf(id)
-    if (!file) return ''
+    if (!file) return []
     const reader = new TranscriptReader()
     return readTailLines(file, 2 * 1024 * 1024)
       .map(parseLine)
-      .filter((l) => l !== null && l.timestamp && Date.parse(l.timestamp) > askedAt)
+      .filter((l) => l !== null && l.timestamp && Date.parse(l.timestamp) > since)
       .flatMap((l) => reader.push(l!))
       .map((e) => (e.t === 'buddha.text' ? e.text : ''))
       .filter(Boolean)
-      .join('\n\n')
+  }
+
+  // ——— Buddha seeing a priest through to a fresh session ———
+
+  /** Hand (or take back) a priest's move to a fresh session to Buddha. */
+  shepherd(id: string, on: boolean) {
+    const s = this.summaryOf(id)
+    if (!s || id === BUDDHA_SESSION_ID) throw new UserError('session inconnue')
+    if (!on) {
+      this.store.setShepherd(id, null)
+    } else {
+      if (s.external && !s.alive) throw new UserError('son terminal est fermé : il ne peut pas répondre')
+      const now = Date.now()
+      this.store.setShepherd(id, { state: 'pending', nextAt: now, askedAt: 0, seenAt: now, attempts: 0, note: null })
+    }
+    this.broadcastSession(id)
+    return this.shepherdState(id)
+  }
+
+  /**
+   * One step for a shepherded priest. Never while he works (a turn, or novices running): he is only spoken to
+   * once stopped. Asks at `nextAt`, reads his answer, and takes his own "yes" whenever he writes it.
+   */
+  private async tickShepherd(s: SessionSummary, sh: Shepherd) {
+    if (s.status === 'working' || (s.external && !s.alive)) return
+    const now = Date.now()
+    if (sh.state === 'asked') {
+      if (s.status !== 'waiting') return
+      const answer = this.answerSince(s.id, sh.askedAt).trim()
+      if (answer) return this.shepherdDecide(s, sh, parseAnswer(answer))
+      // No word after a long while (the question got lost): ask again later.
+      if (now - sh.askedAt > 3 * 3600_000) this.setShepherd(s.id, { ...sh, state: 'pending', nextAt: now + nextDelay(sh.attempts, null), attempts: sh.attempts + 1 })
+      return
+    }
+    // Before the next question: he may have found his moment himself.
+    const own = this.wordsSince(s.id, sh.seenAt)
+      .map(parseAnswer)
+      .find((a): a is Extract<ShepherdAnswer, { kind: 'yes' }> => a.kind === 'yes' && /PASSATION/i.test(a.handoff))
+    if (own) return this.shepherdDecide(s, sh, own)
+    if (now < sh.nextAt) return
+    this.setShepherd(s.id, { ...sh, state: 'asked', askedAt: now })
+    await this.reply(s.id, shepherdPrompt(Math.round((s.context ?? 0) / 1000), sh.note))
+  }
+
+  private async shepherdDecide(s: SessionSummary, sh: Shepherd, a: ShepherdAnswer) {
+    const now = Date.now()
+    const who = `${s.agent === 'lead' ? 'Le prêtre' : s.agent} « ${s.title} » (${s.project})`
+    if (a.kind === 'yes') {
+      this.setShepherd(s.id, { ...sh, state: 'done', seenAt: now })
+      await this.renew(s, a.handoff)
+      this.announce(`☸ ${who} est reparti à neuf, avec sa passation.`)
+    } else if (a.kind === 'never') {
+      this.setShepherd(s.id, { ...sh, state: 'refused', seenAt: now, note: a.reason.slice(0, 600) })
+      this.announce(`☸ ${who} refuse catégoriquement de repartir à neuf : ${a.reason.slice(0, 400)}`)
+    } else {
+      this.setShepherd(s.id, { ...sh, state: 'pending', seenAt: now, nextAt: now + nextDelay(sh.attempts, a.delayMs), attempts: sh.attempts + 1, note: a.reason })
+    }
+  }
+
+  private setShepherd(id: string, sh: Shepherd) {
+    this.store.setShepherd(id, sh)
+    this.broadcastSession(id)
+  }
+
+  /** A word from Buddha in his own conversation, for you. */
+  private announce(text: string) {
+    this.emit(BUDDHA_SESSION_ID, { t: 'buddha.text', text })
   }
 
   private async readAnswer(s: SessionSummary, askedAt: number) {
@@ -598,7 +681,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     // The bill follows the work: the fresh session starts from what the old one had cost.
     this.store.setCarriedCost(row.id, this.costOf(s.id) ?? 0)
     if (this.store.silencedIds().has(s.id)) this.store.setSilenced(row.id, true)
-    this.store.setRenewal(s.id, { ...this.store.renewal(s.id)!, state: 'done' })
+    this.store.setRenewal(s.id, { ...(this.store.renewal(s.id) ?? { bucket: 0, askedAt: Date.now() }), state: 'done' })
     // The old one leaves the courtyard: a Sangha priest is closed (his worktree stays for the new one),
     // an outside session is sent away (its terminal is yours to close).
     if (old) {
@@ -789,6 +872,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       silenced: this.store.silencedIds().has(row.id),
       context: row.id === BUDDHA_SESSION_ID ? null : this.contextOf(row),
       renewal: this.renewalState(row.id),
+      shepherd: this.shepherdState(row.id),
       cost: this.costOf(row.id),
       cwd: row.id === BUDDHA_SESSION_ID ? null : (row.worktree ?? (this.projects.exists(row.project) ? this.projects.dir(row.project) : null)),
     }

@@ -112,6 +112,8 @@ export type SessionSummary = SessionInfo & {
   cost: number | null
   /** Moving on to a fresh session: asked and awaiting his answer, or postponed (asked again 100K later). */
   renewal: 'asked' | 'postponed' | null
+  /** Buddha sees him through to a fresh session: when he asks next, or that he awaits the answer, or was refused. */
+  shepherd: { state: 'pending' | 'asked' | 'refused'; nextAt: number; note: string | null } | null
   /** Folder the session works in (its worktree, or the project itself). */
   cwd: string | null
 }

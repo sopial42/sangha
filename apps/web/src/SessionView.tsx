@@ -209,7 +209,32 @@ export function SessionView() {
                 {formatCost(s.cost)}
               </span>
             )}
-            {!isBuddha && s.status !== 'working' && s.renewal !== 'asked' && (!s.external || s.alive) && (
+            {s.shepherd && (
+              <span className="context-chip shepherd-chip" title={s.shepherd.note ? `Sa dernière réponse : ${s.shepherd.note}` : undefined}>
+                ☸{' '}
+                {s.shepherd.state === 'asked'
+                  ? 'Bouddha attend sa réponse'
+                  : s.shepherd.state === 'refused'
+                    ? 'a refusé de repartir à neuf'
+                    : s.shepherd.nextAt > Date.now()
+                      ? `Bouddha revient à ${formatTime(s.shepherd.nextAt)}`
+                      : 'Bouddha lui demandera dès qu’il s’arrête'}
+              </span>
+            )}
+            {!isBuddha && (!s.external || s.alive) && (
+              <button
+                className="btn btn-ghost"
+                onClick={() => void api.shepherd(s.id, !s.shepherd || s.shepherd.state === 'refused')}
+                title={
+                  s.shepherd && s.shepherd.state !== 'refused'
+                    ? 'Bouddha arrête de le suivre'
+                    : 'Bouddha lui fera prendre une session neuve au moment qui lui convient, sans jamais l’interrompre, jusqu’à ce que ce soit fait'
+                }
+              >
+                {s.shepherd && s.shepherd.state !== 'refused' ? 'Reprendre à Bouddha' : 'Confier à Bouddha'}
+              </button>
+            )}
+            {!isBuddha && !s.shepherd && s.status !== 'working' && s.renewal !== 'asked' && (!s.external || s.alive) && (
               <button className="btn btn-ghost" onClick={() => void api.renew(s.id)} title="Lui proposer de continuer dans une session neuve, avec une passation">
                 Repartir à neuf
               </button>

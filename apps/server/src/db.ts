@@ -8,6 +8,13 @@ export type Note<T> = { key: string; value: T; at: number }
 
 export type Renewal = { bucket: number; state: 'asked' | 'postponed' | 'done'; askedAt: number }
 
+/**
+ * Buddha seeing a priest through to a fresh session. pending: he asks again at `nextAt`; asked: awaiting
+ * the answer to the question sent at `askedAt`; refused: an outright no; done: he moved on.
+ * `seenAt`: his words before this are already read. `note`: his last answer.
+ */
+export type Shepherd = { state: 'pending' | 'asked' | 'refused' | 'done'; nextAt: number; askedAt: number; seenAt: number; attempts: number; note: string | null }
+
 export type SessionRow = SessionInfo & {
   worktree: string | null
   baseSha: string | null
@@ -66,6 +73,10 @@ export class Store {
         bucket INTEGER NOT NULL,
         state TEXT NOT NULL,
         asked_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS shepherds (
+        session_id TEXT PRIMARY KEY,
+        value TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS hidden_sessions (
         session_id TEXT PRIMARY KEY,
@@ -218,6 +229,16 @@ export class Store {
       this.db
         .prepare('INSERT INTO renewals (session_id, bucket, state, asked_at) VALUES (?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET bucket = excluded.bucket, state = excluded.state, asked_at = excluded.asked_at')
         .run(id, r.bucket, r.state, r.askedAt)
+  }
+
+  shepherd(id: string): Shepherd | null {
+    const r = this.db.prepare('SELECT value FROM shepherds WHERE session_id = ?').get(id) as { value: string } | undefined
+    return r ? (JSON.parse(r.value) as Shepherd) : null
+  }
+
+  setShepherd(id: string, s: Shepherd | null) {
+    if (!s) this.db.prepare('DELETE FROM shepherds WHERE session_id = ?').run(id)
+    else this.db.prepare('INSERT INTO shepherds (session_id, value) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET value = excluded.value').run(id, JSON.stringify(s))
   }
 
   /** Outside sessions sent away from the courtyard, with the activity date they had then (they return if they move again). */

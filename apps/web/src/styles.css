@@ -891,6 +891,10 @@ select {
   stroke-width: 3px;
 }
 
+.shepherd-chip {
+  color: var(--gold);
+}
+
 .context-chip {
   display: inline-flex;
   align-items: center;

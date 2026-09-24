@@ -16,7 +16,11 @@ their reports. When the user asks for work on a project:
 - write the priest a complete, self-contained instruction: he does not see this conversation;
 - start several priests in parallel when the user asks for several things.
 Do not do the project work yourself: delegate to priests. You may read files to understand a request.
-Reply in the user's language, briefly: which priest you started, on which project and agent, and why.`
+Reply in the user's language, briefly: which priest you started, on which project and agent, and why.
+
+When the user asks you to see a priest through to a fresh session ("départ à neuf", "repartir à neuf"),
+call manage_renewal: from then on the monastery asks him itself, only while he is stopped, at the moment
+he chooses, and again until he has moved on, unless he refuses outright. Do not ask him yourself.`
 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] })
 
@@ -41,7 +45,7 @@ export function buddhaOptions(sessions: Sessions, projects: Projects): Partial<O
           sessions
             .summaries()
             .filter((s) => s.agent !== 'buddha')
-            .map((s) => ({ id: s.id, project: s.project, agent: s.agent, title: s.title, status: s.status, branch: s.branch, novices: s.novices.length })),
+            .map((s) => ({ id: s.id, project: s.project, agent: s.agent, title: s.title, status: s.status, branch: s.branch, novices: s.novices.length, context: s.context, renewal: s.shepherd })),
         ),
       ),
       tool(
@@ -66,10 +70,16 @@ export function buddhaOptions(sessions: Sessions, projects: Projects): Partial<O
           return text(await sessions.reply(session_id, message))
         },
       ),
+      tool(
+        'manage_renewal',
+        'Take charge of moving a priest to a fresh session (with a handoff) as soon as it suits him, without ever interrupting his work: he is asked only while stopped, his own delay is respected (novices running, a delicate step, a long sensitive task), and he is asked again until he has moved on; only an outright refusal ends it. Set on=false to stop.',
+        { session_id: z.string(), on: z.boolean().default(true) },
+        async ({ session_id, on }) => text(sessions.shepherd(session_id, on) ?? 'no longer managed'),
+      ),
       tool('read_session', 'Read a priest status and his last words.', { session_id: z.string() }, async ({ session_id }) => {
         const s = sessions.summaryOf(session_id)
         if (!s) return text('unknown session')
-        return text({ status: s.status, project: s.project, agent: s.agent, branch: s.branch, activity: s.activity, lastWords: sessions.lastWords(session_id) })
+        return text({ status: s.status, project: s.project, agent: s.agent, branch: s.branch, activity: s.activity, context: s.context, renewal: s.shepherd, lastWords: sessions.lastWords(session_id) })
       }),
     ],
   })

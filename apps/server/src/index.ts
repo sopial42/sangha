@@ -100,6 +100,11 @@ app.post('/api/sessions/:id/renew', async (c) => {
   await sessions.askRenewal(c.req.param('id'))
   return c.body(null, 202)
 })
+// Buddha sees him through to a fresh session (or stops).
+app.post('/api/sessions/:id/shepherd', async (c) => {
+  const { on } = await c.req.json<{ on: boolean }>()
+  return c.json(sessions.shepherd(c.req.param('id'), on))
+})
 app.post('/api/sessions/:id/silence', async (c) => {
   const { silent } = await c.req.json<{ silent: boolean }>()
   sessions.silence(c.req.param('id'), !!silent)

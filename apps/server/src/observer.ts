@@ -249,6 +249,7 @@ export class Observer {
             silenced: false, // decorated by Sessions
             context: contextTokens(tail),
             renewal: null, // decorated by Sessions
+            shepherd: null,
             cost: null, // decorated by Sessions
             cwd,
           },

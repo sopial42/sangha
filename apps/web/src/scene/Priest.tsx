@@ -188,7 +188,6 @@ export function Priest({
   const activity = working
     ? (session.doing ?? (session.novices.length ? `Au travail avec ${session.novices.length} aide${session.novices.length > 1 ? 's' : ''}…` : 'Au travail…'))
     : null
-  const titleLines = wrapAll(session.title, 28)
   // A heavy context tires him: from 200K he starts to slump, fully at 800K.
   const level = contextLevel(session.context)
   const tired = session.context == null ? 0 : Math.max(0, Math.min(1, (session.context - 200_000) / 600_000))
@@ -282,21 +281,15 @@ export function Priest({
               </motion.g>
             )}
           </AnimatePresence>
-          {/* His name and his session's title, in full: wrapped, never cut. */}
           <text y="30" textAnchor="middle" className="scene-name">
             {title}
           </text>
-          {titleLines.map((l, i) => (
-            <text key={i} y={46 + i * 14} textAnchor="middle" className="scene-role">
-              {l}
-            </text>
-          ))}
-          <text y={50 + titleLines.length * 14} textAnchor="middle" className="scene-repo">
+          <text y="48" textAnchor="middle" className="scene-repo">
             {session.external ? '⌨ ' : '⎇ '}
             {session.branch ?? 'sans branche'}
           </text>
           {session.context != null && level && (
-            <g transform={`translate(0 ${60 + titleLines.length * 14})`} aria-label={`Contexte : ${formatTokens(session.context)} tokens`}>
+            <g transform={`translate(0 58)`} aria-label={`Contexte : ${formatTokens(session.context)} tokens`}>
               <title>{`Contexte : ${formatTokens(session.context)} tokens${session.renewal === 'asked' ? ' · session neuve proposée, en attente de sa réponse' : session.renewal === 'postponed' ? ' · session neuve reportée (redemandé 100K plus loin)' : ''}`}</title>
               <rect x="-40" y="0" width="80" height="5" rx="2.5" fill="#00000055" />
               <rect x="-40" y="0" width={80 * Math.min(1, session.context / 800_000)} height="5" rx="2.5" fill={CONTEXT_COLOR[level]} />
@@ -307,7 +300,7 @@ export function Priest({
             </g>
           )}
           {session.cost != null && session.cost >= 0.01 && (
-            <text y={(session.context != null && level ? 80 : 66) + titleLines.length * 14} textAnchor="middle" className="scene-cost">
+            <text y={session.context != null && level ? 78 : 64} textAnchor="middle" className="scene-cost">
               <title>Ce qu'aurait coûté cette session au prix de l'API (sous-agents et sessions précédentes compris). Elle tourne sur ton abonnement.</title>
               {formatCost(session.cost)}
             </text>

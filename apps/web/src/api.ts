@@ -37,6 +37,8 @@ export const api = {
   resume: (id: string) => json<void>(`/api/sessions/${id}/resume`, post()),
   /** Ask the session now whether to continue in a fresh one. */
   renew: (id: string) => json<void>(`/api/sessions/${id}/renew`, post()),
+  /** Hand his move to a fresh session to Buddha (or take it back). */
+  shepherd: (id: string, on: boolean) => json<unknown>(`/api/sessions/${id}/shepherd`, post({ on })),
   silence: (id: string, silent: boolean) => json<void>(`/api/sessions/${id}/silence`, post({ silent })),
   seen: (id: string) => json<void>(`/api/sessions/${id}/seen`, post()),
   removeProject: (name: string, force = false) => json<void>(`/api/projects/${encodeURIComponent(name)}${force ? '?force=1' : ''}`, { method: 'DELETE' }),
