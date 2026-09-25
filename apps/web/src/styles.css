@@ -472,6 +472,23 @@ select {
   background: #2a2117;
 }
 
+.progress-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.progress-reopen {
+  align-self: flex-start;
+  margin: 8px 24px 0;
+  padding: 2px 10px;
+  border: 1px solid #6b5325;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--gold);
+  font: 500 12px var(--sans);
+  cursor: pointer;
+}
+
 .progress header {
   display: flex;
   justify-content: space-between;

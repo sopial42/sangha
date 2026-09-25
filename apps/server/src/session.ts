@@ -901,15 +901,16 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
    * Where a session stands on the task it was given, summarized by a small model. Stored: reused as long
    * as the session has not moved on (or for 10 minutes while it works), across reloads and restarts.
    */
-  progressOf(id: string): Promise<Progress | null> {
+  /** `fresh`: asked again on purpose (the ↻ button), even if the state it describes has not moved. */
+  progressOf(id: string, fresh = false): Promise<Progress | null> {
     const summary = this.summaryOf(id)
     const file = id.startsWith(EXTERNAL_PREFIX) ? this.observer?.fileOf(id) : null
     // The state described: when an outside transcript last moved, or the last time a Sangha priest stopped.
     const key = file ? String(statSync(file).mtimeMs) : `idle:${this.store.lastIdleSeq(id)}`
     const stored = this.store.note<Progress>(id, 'progress')
-    if (stored && (stored.key === key || (summary?.status === 'working' && Date.now() - stored.at < 10 * 60_000))) return Promise.resolve(stored.value)
+    if (!fresh && stored && (stored.key === key || (summary?.status === 'working' && Date.now() - stored.at < 10 * 60_000))) return Promise.resolve(stored.value)
     const inflight = this.progressCache.get(id)
-    if (inflight?.key === key) return inflight.value
+    if (inflight && (inflight.key === key || fresh)) return inflight.value
     const events = this.history(id)
     const first = events.find((e) => e.t === 'user.message')
     const lines = events.flatMap((ev) => {

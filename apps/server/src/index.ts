@@ -88,7 +88,7 @@ app.post('/api/sessions/:id/resume', (c) => {
 })
 app.get('/api/sessions/:id/progress', async (c) => {
   if (!sessions.summaryOf(c.req.param('id'))) return c.json({ error: 'not found' }, 404)
-  return c.json({ progress: await sessions.progressOf(c.req.param('id')) })
+  return c.json({ progress: await sessions.progressOf(c.req.param('id'), c.req.query('fresh') === '1') })
 })
 // A novice of an outside session: his own transcript (Sangha's novices stream with their priest).
 app.get('/api/sessions/:id/novices/:monkId/log', (c) => {

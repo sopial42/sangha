@@ -13,13 +13,30 @@ type Progress = { goal: string; state: string; next: string }
  * Where the session stands. Shown at once from the recap already known (the one above his head in the
  * courtyard); a fuller point from Haiku replaces it quietly when ready.
  */
+// Closed cards, per session, remembered across reloads.
+const CLOSED_KEY = 'sangha.progressClosed'
+const closedCards = (): string[] => {
+  try {
+    return JSON.parse(localStorage.getItem(CLOSED_KEY) ?? '[]') as string[]
+  } catch {
+    return []
+  }
+}
+
 function ProgressCard({ session }: { session: SessionSummary }) {
   const [data, setData] = useState<Progress | null>(null)
   const [loading, setLoading] = useState(false)
+  const [closed, setClosed] = useState(() => closedCards().includes(session.id))
+  useEffect(() => setClosed(closedCards().includes(session.id)), [session.id])
+  const toggle = (close: boolean) => {
+    const others = closedCards().filter((id) => id !== session.id)
+    localStorage.setItem(CLOSED_KEY, JSON.stringify(close ? [...others, session.id].slice(-200) : others))
+    setClosed(close)
+  }
 
-  const load = () => {
+  const load = (fresh = false) => {
     setLoading(true)
-    fetch(`/api/sessions/${session.id}/progress`)
+    fetch(`/api/sessions/${session.id}/progress${fresh ? '?fresh=1' : ''}`)
       .then((r) => r.json() as Promise<{ progress: Progress | null }>)
       .then((r) => r.progress && setData(r.progress))
       .catch(() => undefined)
@@ -27,7 +44,9 @@ function ProgressCard({ session }: { session: SessionSummary }) {
   }
 
   // On open, and again each time he stops working.
-  useEffect(load, [session.id, session.status === 'working'])
+  useEffect(() => {
+    if (!closed) load()
+  }, [session.id, session.status === 'working', closed])
 
   const shown: Progress | null =
     data ??
@@ -37,13 +56,25 @@ function ProgressCard({ session }: { session: SessionSummary }) {
         ? { goal: session.title, state: session.doing, next: 'Il y travaille.' }
         : null)
 
+  if (closed)
+    return (
+      <button className="progress-reopen" onClick={() => toggle(false)} title="Rouvrir le point sur cette session">
+        Où il en est ▾
+      </button>
+    )
+
   return (
     <section className="progress" aria-live="polite" aria-busy={loading}>
       <header>
         <h3>Où il en est</h3>
-        <button className={`icon-btn ${loading ? 'spinning' : ''}`} onClick={load} disabled={loading} aria-label="Refaire le point" title="Refaire le point">
-          ↻
-        </button>
+        <span className="progress-actions">
+          <button className={`icon-btn ${loading ? 'spinning' : ''}`} onClick={() => load(true)} disabled={loading} aria-label="Refaire le point" title="Refaire le point">
+            ↻
+          </button>
+          <button className="icon-btn" onClick={() => toggle(true)} aria-label="Fermer" title="Fermer">
+            ×
+          </button>
+        </span>
       </header>
       {!shown && <p className="muted">{loading ? 'Je fais le point…' : 'Pas encore de point pour cette session.'}</p>}
       {shown && (
