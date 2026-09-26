@@ -1412,6 +1412,17 @@ select {
   border-radius: 4px;
 }
 
+.md a {
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.md a:hover {
+  text-decoration-thickness: 2px;
+}
+
 .md-table {
   overflow-x: auto;
   margin: 0 0 8px;

@@ -1,14 +1,37 @@
 import { Fragment, type ReactNode } from 'react'
 
 // Minimal, safe markdown for agent messages: paragraphs, bullet/numbered lists, headings, tables,
-// **bold**, `code` and fenced code blocks. Never injects raw HTML.
+// **bold**, `code`, [links](https://…) and bare URLs, and fenced code blocks. Never injects raw HTML.
+
+// Only web and mail links: a `javascript:` or `data:` URL stays plain text.
+const LINK = /\[([^\]]+)\]\(((?:https?:\/\/|mailto:)(?:[^\s()]|\([^\s()]*\))*)\)/
+// A bare URL, balanced parentheses included, without the punctuation that usually ends the sentence around it.
+const BARE_URL = /https?:\/\/(?:[^\s<>()]|\([^\s<>()]*\))*(?:[^\s<>().,;:!?'"\]]|\([^\s<>()]*\))/
+
+const Link = ({ href, children }: { href: string; children: ReactNode }) => (
+  <a href={href} target="_blank" rel="noopener noreferrer">
+    {children}
+  </a>
+)
 
 function inline(text: string): ReactNode[] {
-  return text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).map((part, i) => {
-    if (part.startsWith('`') && part.endsWith('`') && part.length > 1) return <code key={i}>{part.slice(1, -1)}</code>
-    if (part.startsWith('**') && part.endsWith('**') && part.length > 3) return <strong key={i}>{part.slice(2, -2)}</strong>
-    return <Fragment key={i}>{part}</Fragment>
-  })
+  // Code first: a URL inside `code` stays code.
+  const parts = new RegExp(`(\`[^\`]+\`|${LINK.source}|${BARE_URL.source}|\\*\\*[^*]+\\*\\*)`, 'g')
+  const out: ReactNode[] = []
+  let last = 0
+  for (const m of text.matchAll(parts)) {
+    const part = m[0]
+    const i = m.index
+    if (i > last) out.push(<Fragment key={last}>{text.slice(last, i)}</Fragment>)
+    const link = LINK.exec(part)
+    if (part.startsWith('`') && part.length > 1) out.push(<code key={i}>{part.slice(1, -1)}</code>)
+    else if (link && link[0] === part) out.push(<Link key={i} href={link[2]!}>{inline(link[1]!)}</Link>)
+    else if (part.startsWith('**')) out.push(<strong key={i}>{inline(part.slice(2, -2))}</strong>)
+    else out.push(<Link key={i} href={part}>{part}</Link>)
+    last = i + part.length
+  }
+  if (last < text.length) out.push(<Fragment key={last}>{text.slice(last)}</Fragment>)
+  return out
 }
 
 const isRow = (line: string) => /^\s*\|.*\|\s*$/.test(line)
@@ -59,7 +82,7 @@ function Table({ head, align, rows }: { head: string[]; align: Align[]; rows: st
   )
 }
 
-/** Inline markdown only (**bold**, `code`), for short texts inside a sentence. */
+/** Inline markdown only (**bold**, `code`, links), for short texts inside a sentence. */
 export function MdInline({ text }: { text: string }) {
   return <>{inline(text)}</>
 }
