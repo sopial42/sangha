@@ -15,6 +15,7 @@ import { EXTERNAL_PREFIX, Observer } from './observer'
 import { Projects } from './projects'
 import { Sessions, UserError } from './session'
 import { noviceLog, parseLine, TranscriptReader } from './transcript'
+import { allProjectWorktrees } from './worktrees'
 
 assertQuotaOnly()
 
@@ -79,6 +80,9 @@ app.get('/api/projects/:name/branches', async (c) => {
   if (!projects.exists(c.req.param('name'))) return c.json({ error: 'not found' }, 404)
   return c.json(await branches(projects.dir(c.req.param('name'))))
 })
+
+// Every project's worktrees, its main checkout excepted, as prayer flags in the courtyard.
+app.get('/api/worktrees', async (c) => c.json(await allProjectWorktrees(projects, sessions)))
 
 app.get('/api/sessions', (c) => c.json(sessions.summaries()))
 app.post('/api/sessions', async (c) => {
