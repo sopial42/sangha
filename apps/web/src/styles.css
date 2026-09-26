@@ -387,6 +387,34 @@ select {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.sv-body.novices-closed {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+/* The folded novices panel: a slim tab along the right edge, to unfold it again. */
+.sv-novices-reopen {
+  writing-mode: vertical-rl;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: #1a1421;
+  color: var(--gold);
+  font: 500 13px var(--sans);
+  padding: 14px 6px;
+  cursor: pointer;
+}
+
+.sv-novices-reopen:hover {
+  background: #221a2b;
+}
+
+.sv-novices-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
 .sv-main {
   display: flex;
   flex-direction: column;
@@ -573,7 +601,7 @@ select {
 }
 
 .sv-novices h3 {
-  margin: 0 0 8px;
+  margin: 0;
   font: 700 18px var(--serif);
 }
 
@@ -1719,6 +1747,17 @@ select {
     border-left: 0;
     border-top: 1px solid var(--line);
     max-height: 35dvh;
+  }
+
+  .sv-body.novices-closed {
+    grid-template-columns: 1fr;
+  }
+
+  .sv-novices-reopen {
+    writing-mode: horizontal-tb;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    padding: 8px 14px;
   }
 
   /* The courtyard grows tall instead of shrinking to fit: the page scrolls, pavilions stack, priests stay readable. */

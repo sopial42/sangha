@@ -175,10 +175,18 @@ function Novice({ m, sessionId, external, open, onToggle }: { m: MonkInstance; s
   )
 }
 
+// The novices panel, folded away or not: one choice for every session, remembered across reloads.
+const NOVICES_CLOSED_KEY = 'sangha.novicesClosed'
+
 /** A session, almost full screen: its conversation, where it stands, and its novices on the right. */
 export function SessionView() {
   const { sessions, projects, selectedId, selectedMonk, view, dialog, set } = useApp()
   const s = selectedId ? sessions[selectedId] : undefined
+  const [novicesClosed, setNovicesClosed] = useState(() => localStorage.getItem(NOVICES_CLOSED_KEY) === '1')
+  const foldNovices = (close: boolean) => {
+    localStorage.setItem(NOVICES_CLOSED_KEY, close ? '1' : '0')
+    setNovicesClosed(close)
+  }
 
   // Looking at a priest who stopped counts as having read him.
   useEffect(() => {
@@ -303,16 +311,26 @@ export function SessionView() {
           </div>
         </header>
 
-        <div className={`sv-body ${novices.length ? '' : 'no-novices'}`}>
+        <div className={`sv-body ${novices.length ? (novicesClosed ? 'novices-closed' : '') : 'no-novices'}`}>
           <div className="sv-main">
             {!isBuddha && <ProgressCard session={s} />}
             <Chat author={isBuddha ? 'Bouddha' : title} external={s.external ? { alive: s.alive } : null} />
           </div>
-          {novices.length > 0 && (
+          {novices.length > 0 && novicesClosed && (
+            <button className="sv-novices-reopen" onClick={() => foldNovices(false)} title="Afficher les sous-agents" aria-label={`Afficher les sous-agents (${novices.length})`}>
+              ‹ Sous-agents ({novices.length})
+            </button>
+          )}
+          {novices.length > 0 && !novicesClosed && (
             <aside className="sv-novices" aria-label="Sous-agents">
-              <h3>
-                Sous-agents <span className="muted">({novices.length})</span>
-              </h3>
+              <header className="sv-novices-head">
+                <h3>
+                  Sous-agents <span className="muted">({novices.length})</span>
+                </h3>
+                <button className="icon-btn" onClick={() => foldNovices(true)} aria-label="Masquer les sous-agents" title="Masquer les sous-agents">
+                  ×
+                </button>
+              </header>
               <ul>
                 {[...novices].reverse().map((m) => (
                   <Novice
