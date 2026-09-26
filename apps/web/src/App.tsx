@@ -12,6 +12,8 @@ import { useApp } from './store'
 export function App() {
   const set = useApp((s) => s.set)
   const projects = useApp((s) => s.projects)
+  const prayerFlags = useApp((s) => s.prayerFlags)
+  const togglePrayerFlags = useApp((s) => s.togglePrayerFlags)
   const [offline, setOffline] = useState(false)
 
   useEffect(() => {
@@ -52,6 +54,14 @@ export function App() {
           </button>
           <button className="btn btn-ghost" onClick={() => set({ dialog: { kind: 'add-project' } })}>
             + Projet
+          </button>
+          <button
+            className={`btn btn-ghost ${prayerFlags ? 'active' : ''}`}
+            aria-pressed={prayerFlags}
+            onClick={togglePrayerFlags}
+            title="Un étendard par worktree, au-dessus de chaque monastère"
+          >
+            Étendards
           </button>
         </nav>
         <Quota />

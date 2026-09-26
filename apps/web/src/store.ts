@@ -153,6 +153,10 @@ type AppState = {
   moonArrivals: number
   /** Bumped on every `{kind:'session'}` global event: what the cost chip watches, throttled, to refresh its total. */
   sessionsVersion: number
+  /** Bumped on every `{kind:'session'}` or `{kind:'removed'}` global event: what the prayer flags watch to refresh (debounced). */
+  worktreesTick: number
+  /** Étendards toggle in the scene: shown until switched off, remembered across reloads. */
+  prayerFlags: boolean
   /** Session shown in the panel: a priest id, 'buddha', or null. */
   selectedId: string | null
   view: SessionView
@@ -166,7 +170,18 @@ type AppState = {
   /** Apply a batch of events with a single re-render (a session's history arrives in bulk). */
   applyMany: (envs: Envelope[]) => void
   set: (p: Partial<AppState>) => void
+  /** Switches the courtyard's prayer flags on/off, remembered across reloads. */
+  togglePrayerFlags: () => void
 }
+
+const PRAYER_FLAGS_KEY = 'sangha.prayerFlags'
+const initialPrayerFlags = (() => {
+  try {
+    return localStorage.getItem(PRAYER_FLAGS_KEY) === '1'
+  } catch {
+    return false
+  }
+})()
 
 export const useApp = create<AppState>((set) => ({
   profiles: [],
@@ -176,6 +191,8 @@ export const useApp = create<AppState>((set) => ({
   nirvanaTick: 0,
   moonArrivals: 0,
   sessionsVersion: 0,
+  worktreesTick: 0,
+  prayerFlags: initialPrayerFlags,
   selectedId: null,
   view: emptyView(),
   selectedMonk: null,
@@ -205,4 +222,14 @@ export const useApp = create<AppState>((set) => ({
       return { view, quota }
     }),
   set: (p) => set(p),
+  togglePrayerFlags: () =>
+    set((st) => {
+      const next = !st.prayerFlags
+      try {
+        localStorage.setItem(PRAYER_FLAGS_KEY, next ? '1' : '0')
+      } catch {
+        // localStorage unavailable (private mode…): the toggle just won't persist across reloads.
+      }
+      return { prayerFlags: next }
+    }),
 }))

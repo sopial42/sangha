@@ -1,4 +1,4 @@
-import type { CostReport, Envelope, GlobalEvent, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
+import type { CostReport, Envelope, GlobalEvent, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, ProjectWorktrees, SessionSummary } from '@sangha/shared'
 import { emptyView, useApp } from './store'
 
 export class ApiError extends Error {
@@ -51,6 +51,8 @@ export const api = {
   reincarnate: (id: string) => json<SessionSummary>(`/api/sessions/${id}/reincarnate`, post()),
   /** What every session would have cost at API prices, since monitoring began, broken down by month. */
   costs: () => json<CostReport>('/api/costs'),
+  /** Every project's worktrees (its main checkout excepted), flown as prayer flags above its monastery. */
+  worktrees: () => json<ProjectWorktrees[]>('/api/worktrees'),
 }
 
 /** Follow the whole monastery: every session's status, novices and the plan quota. */
@@ -58,20 +60,21 @@ export function openMonastery(onError: () => void) {
   const es = new EventSource('/api/events')
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data) as GlobalEvent
-    const { set, sessions, nirvanaTick, moonArrivals, sessionsVersion } = useApp.getState()
+    const { set, sessions, nirvanaTick, moonArrivals, sessionsVersion, worktreesTick } = useApp.getState()
     switch (ev.kind) {
       case 'snapshot':
         set({ sessions: Object.fromEntries(ev.sessions.map((s) => [s.id, s])), ...(ev.quota ? { quota: ev.quota } : {}) })
         break
       case 'session':
-        // Also what the cost chip watches (throttled) to keep its total roughly current.
-        set({ sessions: { ...sessions, [ev.session.id]: ev.session }, sessionsVersion: sessionsVersion + 1 })
+        // Also what the cost chip watches (throttled) to keep its total roughly current, and what
+        // the prayer flags watch (debounced) to refresh which worktree carries which priest.
+        set({ sessions: { ...sessions, [ev.session.id]: ev.session }, sessionsVersion: sessionsVersion + 1, worktreesTick: worktreesTick + 1 })
         break
       case 'removed': {
         const { [ev.id]: gone, ...rest } = sessions
         // The moon only glows when a priest actually flew into it: a non-external session leaving
         // the courtyard (an external one just returns to its own terminal, nothing to see here).
-        set({ sessions: rest, ...(gone && !gone.external ? { moonArrivals: moonArrivals + 1 } : {}) })
+        set({ sessions: rest, worktreesTick: worktreesTick + 1, ...(gone && !gone.external ? { moonArrivals: moonArrivals + 1 } : {}) })
         if (useApp.getState().selectedId === ev.id) closeSession()
         break
       }

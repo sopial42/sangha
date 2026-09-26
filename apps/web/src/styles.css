@@ -184,6 +184,12 @@ select {
   border-color: var(--muted);
 }
 
+.btn-ghost.active {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: #3a2a1c;
+}
+
 /* quota */
 .quota {
   margin-left: auto;
@@ -1116,6 +1122,27 @@ select {
   text-decoration: underline;
 }
 
+/* prayer flags */
+.prayer-flag {
+  cursor: pointer;
+  outline: none;
+}
+
+.prayer-glyph {
+  font: 600 11px 'Noto Sans Tibetan', var(--serif);
+  paint-order: stroke;
+}
+
+.prayer-translit {
+  font: 500 6.5px var(--sans);
+  opacity: 0.8;
+}
+
+.prayer-tooltip-text {
+  font: 500 11px var(--sans);
+  fill: #f3e9d8;
+}
+
 .sv-note {
   margin-top: 4px;
 }
@@ -1172,6 +1199,7 @@ select {
   .priest.clickable,
   .pavilion.clickable,
   .add-project.clickable,
+  .prayer-flag,
   .buddha.clickable .hover-grow,
   .novice.clickable .hover-grow {
     transform-box: fill-box;
@@ -1185,6 +1213,8 @@ select {
   .pavilion.clickable:focus-visible,
   .add-project.clickable:hover,
   .add-project.clickable:focus-visible,
+  .prayer-flag:hover,
+  .prayer-flag:focus-visible,
   .buddha.clickable:hover .hover-grow,
   .buddha.clickable:focus-visible .hover-grow,
   .novice.clickable:hover .hover-grow,

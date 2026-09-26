@@ -4,11 +4,13 @@ import { BUDDHA_SESSION_ID, type ProjectInfo, type SessionSummary } from '@sangh
 import { openSession } from '../api'
 import { agentTitle, priestsOf, robeOfAgent } from '../priests'
 import { useApp } from '../store'
+import { useWorktrees } from '../worktrees'
 import { Backdrop, FLOOR_Y, HALL_SCALE, hallTransform } from './Backdrop'
 import { Buddha } from './Buddha'
 import { IncenseDefs } from './Incense'
 import { moonPosition, Moon } from './Moon'
 import { AddProjectMarker, Pavilion } from './Pavilion'
+import { PrayerFlags } from './PrayerFlags'
 import { BUBBLE_METRICS, PRIEST_BODY_HALF, Priest } from './Priest'
 
 const MIN_SLOT = 230 // courtyard width of a pavilion with few priests
@@ -180,9 +182,10 @@ function resolveBubbleSides(seated: Seated[]): Record<string, 1 | -1> {
 }
 
 export function Monastery() {
-  const { sessions, projects, profiles, selectedId, view, set, moonArrivals } = useApp()
+  const { sessions, projects, profiles, selectedId, view, set, moonArrivals, prayerFlags } = useApp()
   const priests: SessionSummary[] = priestsOf(sessions)
   const buddha = sessions[BUDDHA_SESSION_ID]
+  const worktrees = useWorktrees(prayerFlags)
 
   const pavilions = [...projects]
   for (const p of priests) if (!pavilions.some((x) => x.name === p.project)) pavilions.push(orphanProject(p.project))
@@ -260,6 +263,15 @@ export function Monastery() {
             onClick={() => p.path && set({ dialog: { kind: 'new-session', project: p.name } })}
             onRemove={!p.path ? undefined : () => removeProject(p.name)}
           />
+          {prayerFlags && (
+            <PrayerFlags
+              worktrees={worktrees.find((w) => w.project === p.name)?.worktrees ?? []}
+              pavilionWidth={PAVILION_W}
+              compact={mobile}
+              selectedId={selectedId}
+              onSelect={select}
+            />
+          )}
         </g>
       ))}
       <g transform={`translate(${marker.x} ${marker.y})`}>
