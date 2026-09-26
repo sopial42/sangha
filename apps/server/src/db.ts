@@ -89,6 +89,10 @@ export class Store {
       CREATE TABLE IF NOT EXISTS silenced (
         session_id TEXT PRIMARY KEY
       );
+      CREATE TABLE IF NOT EXISTS notes (
+        session_id TEXT PRIMARY KEY,
+        note TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS ignored_projects (
         path TEXT PRIMARY KEY
       );
@@ -288,6 +292,16 @@ export class Store {
   setSilenced(id: string, silent: boolean) {
     if (silent) this.db.prepare('INSERT OR IGNORE INTO silenced (session_id) VALUES (?)').run(id)
     else this.db.prepare('DELETE FROM silenced WHERE session_id = ?').run(id)
+  }
+
+  /** Free-text notes left on priests, by session id, in a single query for the whole courtyard. */
+  notes(): Map<string, string> {
+    return new Map((this.db.prepare('SELECT session_id AS id, note FROM notes').all() as { id: string; note: string }[]).map((r) => [r.id, r.note]))
+  }
+
+  setSessionNote(id: string, note: string | null) {
+    if (note) this.db.prepare('INSERT INTO notes (session_id, note) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET note = excluded.note').run(id, note)
+    else this.db.prepare('DELETE FROM notes WHERE session_id = ?').run(id)
   }
 
   /** Folders you took out of the monastery: auto-detection must not bring them back. */

@@ -106,6 +106,8 @@ export type SessionSummary = SessionInfo & {
   alive: boolean
   /** Incense snuffed out: he stays quiet (no glow, sound or notification) even when he waits for you. */
   silenced: boolean
+  /** Your own note about him, shown under him in the courtyard (null when there is none). */
+  note: string | null
   /** Tokens his context weighs, as of his latest reply (null until known). */
   context: number | null
   /** What the session would have cost at API prices, in dollars, novices and earlier sessions it took over from included. */
@@ -174,3 +176,22 @@ export type MonkProfile = {
   robe: string // CSS color
   model: string
 }
+
+/** A git worktree of a project, flown as a prayer flag above its monastery. */
+export type WorktreeFlag = {
+  path: string
+  branch: string | null
+  /** Short commit hash checked out. */
+  head: string
+  /** Uncommitted files (modified, staged or untracked). */
+  dirty: number
+  /** Commits ahead of the project's own HEAD (null when unknown). */
+  ahead: number | null
+  /** Last commit date, in ms. */
+  lastCommit: number | null
+  /** The priest working in it, if any (archived ones do not count). */
+  session: { id: string; title: string; status: SessionStatus } | null
+}
+
+/** Every worktree of a project, its main checkout excepted. */
+export type ProjectWorktrees = { project: string; worktrees: WorktreeFlag[] }

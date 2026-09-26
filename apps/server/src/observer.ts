@@ -249,6 +249,7 @@ export class Observer {
             external: true,
             alive: !!proc,
             silenced: false, // decorated by Sessions
+            note: null, // decorated by Sessions
             context: contextTokens(tail),
             renewal: null, // decorated by Sessions
             shepherd: null,

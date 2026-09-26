@@ -227,6 +227,22 @@ export function SessionView() {
                 </>
               )}
             </p>
+            {!isBuddha && (
+              <p className="muted small sv-note">
+                {s.note ? (
+                  <>
+                    {s.note}{' '}
+                    <button type="button" className="text-link" onClick={() => set({ dialog: { kind: 'note', id: s.id } })}>
+                      modifier
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className="text-link" onClick={() => set({ dialog: { kind: 'note', id: s.id } })}>
+                    + ajouter une note
+                  </button>
+                )}
+              </p>
+            )}
           </div>
           <div className="sv-actions">
             {s.context != null && (

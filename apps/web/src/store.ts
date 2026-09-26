@@ -137,6 +137,7 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
 export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-project' } | { kind: 'dismiss'; id: string; working?: boolean }
   | { kind: 'remove-project'; name: string }
   | { kind: 'incense'; id: string }
+  | { kind: 'note'; id: string }
   | { kind: 'nirvana' }
   | { kind: 'costs' } | null
 

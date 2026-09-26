@@ -47,6 +47,15 @@ describe('Store', () => {
     expect(s.note('a', 'recap')).toBeNull()
   })
 
+  it('keeps a free-text note per session, cleared by an empty one', () => {
+    const s = new Store(':memory:')
+    expect(s.notes().get('a')).toBeUndefined()
+    s.setSessionNote('a', 'garde un œil sur les migrations')
+    expect(s.notes().get('a')).toBe('garde un œil sur les migrations')
+    s.setSessionNote('a', null)
+    expect(s.notes().get('a')).toBeUndefined()
+  })
+
   it('finds novices that never reported back', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))

@@ -345,6 +345,72 @@ function IncenseChoice({ id, onClose }: { id: string; onClose: () => void }) {
   )
 }
 
+/** Your own note about a priest, shown under him in the courtyard. */
+function NoteEditor({ id, onClose }: { id: string; onClose: () => void }) {
+  const session = useApp((s) => s.sessions[id])
+  const [note, setNote] = useState(session?.note ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  if (!session) return null
+
+  const save = async (value: string | null) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.note(id, value)
+      onClose()
+    } catch (err) {
+      setError(message(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title="Petit mot" onClose={onClose}>
+      <div className="form">
+        <p>
+          <b>{session.title}</b>
+        </p>
+        <label>
+          Note
+          <textarea
+            autoFocus
+            value={note}
+            maxLength={500}
+            rows={4}
+            placeholder="Un rappel pour toi, affiché sous lui dans la cour…"
+            onChange={(e) => setNote(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                void save(note.trim() || null)
+              }
+            }}
+          />
+        </label>
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="form-actions">
+          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+            Annuler
+          </button>
+          {session.note != null && (
+            <button type="button" className="btn btn-danger" onClick={() => void save(null)} disabled={busy}>
+              Effacer
+            </button>
+          )}
+          <button type="button" className="btn btn-primary" onClick={() => void save(note.trim() || null)} disabled={busy}>
+            Enregistrer
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 /** Confirm taking a project out of the monastery (after its big burner was snuffed out). */
 function RemoveProject({ name, onClose }: { name: string; onClose: () => void }) {
   const project = useApp((s) => s.projects.find((p) => p.name === name))
@@ -576,6 +642,7 @@ export function Dialogs() {
   if (dialog.kind === 'add-project') return <AddProject onClose={close} />
   if (dialog.kind === 'remove-project') return <RemoveProject name={dialog.name} onClose={close} />
   if (dialog.kind === 'incense') return <IncenseChoice id={dialog.id} onClose={close} />
+  if (dialog.kind === 'note') return <NoteEditor id={dialog.id} onClose={close} />
   if (dialog.kind === 'nirvana') return <Nirvana onClose={close} />
   if (dialog.kind === 'costs') return <Costs onClose={close} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />

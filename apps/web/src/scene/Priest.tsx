@@ -36,6 +36,11 @@ function Eyes({ y, open, tired }: { y: number; open: boolean; tired: number }) {
   )
 }
 
+/** Cut a text down to `n` characters, an ellipsis standing in for the rest. */
+function truncate(text: string, n: number): string {
+  return text.length > n ? `${text.slice(0, n - 1).trimEnd()}…` : text
+}
+
 /** Word-wrap a whole text into lines of about `width` characters (a single long word stays whole). */
 function wrapAll(text: string, width: number): string[] {
   const lines: string[] = []
@@ -193,6 +198,7 @@ export function Priest({
   onSelect,
   onSelectNovice,
   onIncense,
+  onNote,
   bubbleSide = 1,
   compact = false,
   moon,
@@ -209,6 +215,8 @@ export function Priest({
   onSelectNovice: (monkId: string) => void
   /** Click on his incense: choose silence (or relight) or dismissal. */
   onIncense?: () => void
+  /** Click on his note (or, when he has none, the "+ note" hint that shows on hover): open the editor. */
+  onNote?: () => void
   /** Which side his activity/recap bubble opens on: away from his pavilion behind him. */
   bubbleSide?: 1 | -1
   /** A narrow mobile column: his bubbles wrap tighter so they never run off screen. */
@@ -234,6 +242,11 @@ export function Priest({
   const level = contextLevel(session.context)
   const tired = session.context == null ? 0 : Math.max(0, Math.min(1, (session.context - 200_000) / 600_000))
   const label = `${title} sur ${session.project}${session.branch ? ` (${session.branch})` : ''} : ${session.title} (${status})${session.external ? ', lancé hors de Sangha' : ''}`
+  // Where his note (or, absent one, the "+ note" hint) sits: right under whichever lines already show
+  // above (name, branch, context, cost), and clear of the "+N novices" label at y=80 when there is one.
+  const contextShown = session.context != null && !!level
+  const costShown = session.cost != null && session.cost >= 0.01
+  const noteY = Math.max(costShown ? (contextShown ? 78 : 64) + 16 : contextShown ? 76 : 64, extra > 0 ? 96 : 0)
   // He leaves toward the nearest edge of the courtyard, if the moon's own position is not known yet.
   const away = x < 500 ? -700 : 700
   const reducedMotion = useReducedMotion()
@@ -389,6 +402,32 @@ export function Priest({
                 <title>Ce qu'aurait coûté cette session au prix de l'API (sous-agents et sessions précédentes compris). Elle tourne sur ton abonnement.</title>
                 {formatCost(session.cost)}
               </text>
+            )}
+            {/* His note (always shown once written), or — on hover only — a discreet way to add one. */}
+            {onNote && (session.note || peek) && (
+              <g
+                className="scene-note-hit clickable"
+                role="button"
+                tabIndex={0}
+                aria-label={session.note ? `Note : ${session.note}. Modifier la note` : 'Ajouter une note'}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onNote()
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onNote()
+                  }
+                }}
+              >
+                {session.note && <title>{session.note}</title>}
+                <rect x="-60" y={noteY - 12} width="120" height="18" fill="transparent" />
+                <text y={noteY} textAnchor="middle" className={session.note ? 'scene-note' : 'scene-note-add'}>
+                  {session.note ? truncate(session.note, compact ? 28 : 36) : '+ note'}
+                </text>
+              </g>
             )}
           </motion.g>
         </motion.g>

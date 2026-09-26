@@ -572,6 +572,7 @@ export class Sessions {
       ...s,
       doing: s.status === 'working' ? (this.doingOf(s.id)?.text ?? null) : null,
       silenced: this.store.silencedIds().has(s.id),
+      note: this.store.notes().get(s.id) ?? null,
       renewal: this.renewalState(s.id),
       shepherd: this.shepherdState(s.id),
       cost: this.costOf(s.id),
@@ -817,6 +818,8 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     // The bill follows the work: the fresh session starts from what the old one had cost.
     this.store.setCarriedCost(row.id, this.costOf(s.id) ?? 0)
     if (this.store.silencedIds().has(s.id)) this.store.setSilenced(row.id, true)
+    const carriedNote = this.store.notes().get(s.id)
+    if (carriedNote) this.store.setSessionNote(row.id, carriedNote)
     this.store.setRenewal(s.id, { ...(this.store.renewal(s.id) ?? { bucket: 0, askedAt: Date.now() }), state: 'done' })
     // The old one leaves the courtyard: a Sangha priest is closed (his worktree stays for the new one),
     // an outside session is sent away (its terminal is yours to close).
@@ -843,6 +846,13 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   silence(id: string, silent: boolean) {
     if (!this.summaryOf(id)) throw new UserError('session inconnue')
     this.store.setSilenced(id, silent)
+    this.broadcastSession(id)
+  }
+
+  /** A free-text note pinned on a priest, for whatever you want to remember about him. */
+  note(id: string, note: string | null) {
+    if (!this.summaryOf(id)) throw new UserError('session inconnue')
+    this.store.setSessionNote(id, note?.trim().slice(0, 500) || null)
     this.broadcastSession(id)
   }
 
@@ -1005,6 +1015,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       external: false,
       alive: false,
       silenced: this.store.silencedIds().has(row.id),
+      note: this.store.notes().get(row.id) ?? null,
       context: row.id === BUDDHA_SESSION_ID ? null : this.contextOf(row),
       renewal: this.renewalState(row.id),
       shepherd: this.shepherdState(row.id),

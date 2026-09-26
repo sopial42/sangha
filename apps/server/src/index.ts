@@ -122,6 +122,11 @@ app.post('/api/sessions/:id/silence', async (c) => {
   sessions.silence(c.req.param('id'), !!silent)
   return c.body(null, 204)
 })
+app.post('/api/sessions/:id/note', async (c) => {
+  const { note } = await c.req.json<{ note: string | null }>()
+  sessions.note(c.req.param('id'), note)
+  return c.body(null, 204)
+})
 app.post('/api/sessions/:id/seen', (c) => {
   sessions.seen(c.req.param('id'))
   return c.body(null, 202)

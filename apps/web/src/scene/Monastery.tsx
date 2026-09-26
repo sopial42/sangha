@@ -285,6 +285,7 @@ export function Monastery() {
                 set({ selectedMonk: monkId })
               }}
               onIncense={() => set({ dialog: { kind: 'incense', id: s.id } })}
+              onNote={() => set({ dialog: { kind: 'note', id: s.id } })}
               moon={moon}
             />
           )),

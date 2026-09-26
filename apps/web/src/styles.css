@@ -1088,6 +1088,55 @@ select {
   stroke-width: 3px;
 }
 
+.scene-note-hit {
+  cursor: pointer;
+  outline: none;
+}
+
+/* A handwritten-feeling little note under a priest, in his own courtyard voice. */
+.scene-note {
+  font: italic 500 12px var(--serif);
+  fill: #d8c79bcc;
+  paint-order: stroke;
+  stroke: #0009;
+  stroke-width: 3px;
+}
+
+/* Shown only on hover, in his stead when there is no note yet. */
+.scene-note-add {
+  font: 500 10.5px var(--sans);
+  fill: #b3a38e99;
+}
+
+.scene-note-hit:hover .scene-note,
+.scene-note-hit:focus-visible .scene-note,
+.scene-note-hit:hover .scene-note-add,
+.scene-note-hit:focus-visible .scene-note-add {
+  fill: var(--gold);
+  text-decoration: underline;
+}
+
+.sv-note {
+  margin-top: 4px;
+}
+
+.text-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.text-link:hover,
+.text-link:focus-visible {
+  color: var(--gold);
+}
+
 .shepherd-chip {
   color: var(--gold);
 }
