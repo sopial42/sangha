@@ -23,6 +23,20 @@ const SANGHA_TOOLS: Record<string, string> = {
   read_session: 'Écoute un prêtre',
 }
 
+// What you were typing to each priest, kept until sent: closing his chat or reloading loses nothing.
+const DRAFTS_KEY = 'sangha.drafts'
+const drafts = (): Record<string, string> => {
+  try {
+    return JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? '{}') as Record<string, string>
+  } catch {
+    return {}
+  }
+}
+const saveDraft = (id: string, text: string) => {
+  const { [id]: _, ...others } = drafts()
+  localStorage.setItem(DRAFTS_KEY, JSON.stringify(text.trim() ? { ...others, [id]: text } : others))
+}
+
 /** Conversation with one priest (or Buddha). `author` is how his words are signed. */
 /**
  * Conversation with one priest (or Buddha). `external`: a session running in a terminal; replies are
@@ -30,7 +44,8 @@ const SANGHA_TOOLS: Record<string, string> = {
  */
 export function Chat({ author, external = null }: { author: string; external?: { alive: boolean } | null }) {
   const { view, selectedId: sessionId, profiles, set } = useApp()
-  const [text, setText] = useState('')
+  const [text, setText] = useState(() => (sessionId ? (drafts()[sessionId] ?? '') : ''))
+  useEffect(() => setText(sessionId ? (drafts()[sessionId] ?? '') : ''), [sessionId])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
@@ -84,8 +99,10 @@ export function Chat({ author, external = null }: { author: string; external?: {
     setSending(true)
     setError(null)
     setNote(external?.alive ? 'Transmission à la session du terminal…' : null)
+    const to = sessionId
     try {
-      const r = await api.send(sessionId, text)
+      const r = await api.send(to, text)
+      saveDraft(to, '')
       setText('')
       if (r?.via === 'peer') setNote(`Transmis à ${r.to} ; sa réponse apparaîtra ici.`)
       else if (r?.via === 'adopted') {
@@ -185,6 +202,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
           value={text}
           onChange={(e) => {
             setText(e.target.value)
+            if (sessionId) saveDraft(sessionId, e.target.value)
             setHistIndex(-1) // typing by hand always leaves history browsing
           }}
           onKeyDown={(e) => {
