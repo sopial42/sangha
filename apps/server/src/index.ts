@@ -62,6 +62,18 @@ app.delete('/api/projects/:name', async (c) => {
   console.log(`☸ remove project ${c.req.param('name')}: ${result.ok ? 'gone' : 'needs confirmation'}`)
   return result.ok ? c.body(null, 204) : c.json(result, 409)
 })
+// A local project whose folder moved or was renamed: point it at its new folder.
+app.patch('/api/projects/:name', async (c) => {
+  const { path } = await c.req.json<{ path?: string }>()
+  if (!path?.trim()) throw new UserError('chemin manquant')
+  try {
+    await projects.relocate(c.req.param('name'), path.trim())
+    sessions.projectsChanged()
+    return c.json({ name: c.req.param('name'), path: projects.dir(c.req.param('name')) })
+  } catch (e) {
+    throw new UserError((e as Error).message)
+  }
+})
 app.get('/api/projects/suggestions', async (c) => c.json(await projects.suggestions()))
 app.get('/api/projects/:name/branches', async (c) => {
   if (!projects.exists(c.req.param('name'))) return c.json({ error: 'not found' }, 404)

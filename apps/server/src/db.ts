@@ -213,6 +213,10 @@ export class Store {
     this.db.prepare('INSERT INTO local_projects (name, path, added_at) VALUES (?, ?, ?)').run(name, path, Date.now())
   }
 
+  moveLocalProject(name: string, path: string) {
+    this.db.prepare('UPDATE local_projects SET path = ? WHERE name = ?').run(path, name)
+  }
+
   removeLocalProject(name: string) {
     this.db.prepare('DELETE FROM local_projects WHERE name = ?').run(name)
   }

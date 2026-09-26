@@ -4,7 +4,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import type { AgentOption, ProjectInfo } from '@sangha/shared'
 import { config } from './config'
 import type { Store } from './db'
-import { clone, commonDir, currentBranch, isGitRepo } from './git'
+import { clone, commonDir, currentBranch, git, isGitRepo } from './git'
 import { readHead } from './files'
 import { SANGHA_ROLES } from './roles'
 
@@ -126,6 +126,31 @@ export class Projects {
     this.store.setIgnored(abs, false)
     this.store.addLocalProject(target, abs.replace(/\/+$/, ''))
     return target
+  }
+
+  /** Local projects whose folder is gone (moved or renamed): hidden from the list until relocated. */
+  missing(): { name: string; path: string }[] {
+    return this.store.localProjects().filter((p) => !existsSync(p.path))
+  }
+
+  /**
+   * Point a local project at the folder it moved to. It keeps its name, robe and priests; their
+   * worktrees are repaired so they find the repository again.
+   */
+  async relocate(name: string, path: string): Promise<void> {
+    const project = this.store.localProjects().find((p) => p.name === name)
+    if (!project) throw new Error(`projet local inconnu : ${name}`)
+    const abs = resolve(path.replace(/^~(?=$|\/)/, homedir())).replace(/\/+$/, '')
+    if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`dossier introuvable : ${abs}`)
+    const other = this.entries().find((e) => e.path === abs && e.name !== name)
+    if (other) throw new Error(`ce dossier est déjà le projet ${other.name}`)
+    this.store.moveLocalProject(name, abs)
+    this.store.setIgnored(abs, false)
+    this.commons.delete(project.path)
+    this.commons.delete(abs)
+    const worktrees = join(config.workspacesDir, '.worktrees', name)
+    const paths = existsSync(worktrees) ? readdirSync(worktrees).map((d) => join(worktrees, d)) : []
+    if (paths.length && (await commonDir(abs))) await git(abs, 'worktree', 'repair', ...paths).catch(() => {})
   }
 
   /** Where a project lives, and whether Sangha owns the folder (a clone in workspaces/). */

@@ -18,6 +18,11 @@ their reports. When the user asks for work on a project:
 Do not do the project work yourself: delegate to priests. You may read files to understand a request.
 Reply in the user's language, briefly: which priest you started, on which project and agent, and why.
 
+A project is a git repository, known by its folder. When the user names one you do not see, look at its path
+in list_projects: a missing project was moved or renamed (e.g. Robia renamed Marianne), find its new folder and
+relocate_project it; a repository not in the list yet, add_project it. Never start a priest on another project
+in its place.
+
 When the user asks you to see a priest through to a fresh session ("départ à neuf", "repartir à neuf"),
 call manage_renewal: from then on the monastery asks him itself, only while he is stopped, at the moment
 he chooses, and again until he has moved on, unless he refuses outright. Do not ask him yourself.`
@@ -30,15 +35,41 @@ export function buddhaOptions(sessions: Sessions, projects: Projects): Partial<O
     name: 'sangha',
     version: '1.0.0',
     tools: [
-      tool('list_projects', 'List the projects of the monastery and the agents each one can run as a priest.', {}, async () =>
-        text(
-          (await projects.list()).map((p) => ({
-            name: p.name,
-            branch: p.branch,
-            isGit: p.isGit,
-            agents: p.agents.map((a) => ({ id: a.id, source: a.source, description: a.description })),
-          })),
-        ),
+      tool(
+        'list_projects',
+        'List the projects of the monastery (with their folder) and the agents each one can run as a priest. A project marked missing lost its folder (moved or renamed): relocate it before starting a priest there.',
+        {},
+        async () =>
+          text([
+            ...(await projects.list()).map((p) => ({
+              name: p.name,
+              path: p.path,
+              branch: p.branch,
+              isGit: p.isGit,
+              agents: p.agents.map((a) => ({ id: a.id, source: a.source, description: a.description })),
+            })),
+            ...projects.missing().map((p) => ({ name: p.name, path: p.path, missing: true })),
+          ]),
+      ),
+      tool(
+        'add_project',
+        'Register a folder of this machine as a project, where it is (nothing is copied). Returns the project name.',
+        { path: z.string().describe('Absolute path of the folder, ~ allowed'), name: z.string().optional().describe('Project name (default: the folder name)') },
+        async ({ path, name }) => {
+          const created = projects.addLocal(path, name)
+          sessions.projectsChanged()
+          return text({ name: created })
+        },
+      ),
+      tool(
+        'relocate_project',
+        'Point a missing project at the folder it was moved or renamed to. It keeps its name, priests and worktrees.',
+        { project: z.string().describe('Missing project name, from list_projects'), path: z.string().describe('Absolute path of its new folder, ~ allowed') },
+        async ({ project, path }) => {
+          await projects.relocate(project, path)
+          sessions.projectsChanged()
+          return text({ name: project, path: projects.dir(project) })
+        },
       ),
       tool('list_sessions', 'List the priests (sessions) with their status: working, waiting (finished, unread), idle, error, interrupted.', {}, async () =>
         text(
