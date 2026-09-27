@@ -21,6 +21,7 @@ import { transcriptPath, type Projects } from './projects'
 import { readTailLines } from './files'
 import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
+import { PullRequests } from './pulls'
 import { doing, lifeSummary, progress, recap, type Progress } from './recap'
 import { priestOptions } from './roles'
 import { contextTokens, parseLine, TranscriptReader } from './transcript'
@@ -229,6 +230,8 @@ export class Sessions {
   private meter = new CostMeter()
   private renewing = false
   quota: Quota | null = null
+  // Pull requests of each session's folder, cached and refreshed in the background (see startPullsLoop).
+  private pulls = new PullRequests((cwd) => this.pullsChanged(cwd))
 
   constructor(
     private store: Store,
@@ -303,6 +306,11 @@ export class Sessions {
   externalChanged(changed: SessionSummary[], removed: string[]) {
     for (const session of changed) for (const fn of this.globalListeners) fn({ kind: 'session', session: this.withDoing(session) })
     for (const id of removed) for (const fn of this.globalListeners) fn({ kind: 'removed', id })
+  }
+
+  /** Called by the observer when an outside session's folder stops working (it may just have run `gh pr create`). */
+  externalStoppedWorking(cwd: string) {
+    setTimeout(() => this.pulls.soon(cwd), 5_000)
   }
 
   /**
@@ -576,6 +584,7 @@ export class Sessions {
       renewal: this.renewalState(s.id),
       shepherd: this.shepherdState(s.id),
       cost: this.costOf(s.id),
+      pr: s.cwd ? this.pulls.of(s.cwd) : null,
     }
   }
 
@@ -865,6 +874,25 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     setInterval(() => void this.refreshDoings(every), 10_000)
   }
 
+  /**
+   * Every few seconds: every non-archived, non-Buddha session with a folder gets its pull request
+   * refreshed, at most every two minutes per folder (see PullRequests).
+   */
+  startPullsLoop() {
+    setInterval(() => this.pulls.tick(this.pullCwds()), 10_000)
+  }
+
+  private pullCwds(): string[] {
+    const cwds: string[] = []
+    for (const s of this.summaries()) if (s.id !== BUDDHA_SESSION_ID && s.cwd) cwds.push(s.cwd)
+    return cwds
+  }
+
+  /** A folder's cached pull request changed: re-broadcast every session working in it. */
+  private pullsChanged(cwd: string) {
+    for (const s of this.summaries()) if (s.cwd === cwd) this.broadcastSession(s.id)
+  }
+
   private async refreshDoings(every: number) {
     if (this.doingBusy) return
     this.doingBusy = true
@@ -987,8 +1015,15 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     for (const s of this.live.values()) s.close()
   }
 
+  /** The folder a session works in: its worktree, or the project itself. Null for Buddha (not project-bound). */
+  private cwdOf(row: SessionRow): string | null {
+    if (row.id === BUDDHA_SESSION_ID) return null
+    return row.worktree ?? (this.projects.exists(row.project) ? this.projects.dir(row.project) : null)
+  }
+
   private summary(row: SessionRow): SessionSummary {
     const live = this.live.get(row.id)
+    const cwd = this.cwdOf(row)
     let status: SessionStatus
     if (live?.busy) status = 'working'
     else if (!live && this.store.lastEvent(row.id, 'busy')?.ev.busy) status = 'interrupted'
@@ -1020,7 +1055,8 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       renewal: this.renewalState(row.id),
       shepherd: this.shepherdState(row.id),
       cost: this.costOf(row.id),
-      cwd: row.id === BUDDHA_SESSION_ID ? null : (row.worktree ?? (this.projects.exists(row.project) ? this.projects.dir(row.project) : null)),
+      cwd,
+      pr: cwd ? this.pulls.of(cwd) : null,
     }
   }
 
@@ -1059,7 +1095,18 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       for (const fn of this.globalListeners) fn({ kind: 'quota', quota: ev.quota })
     }
     if (SUMMARY_EVENTS.has(ev.t)) this.broadcastSession(id)
-    if (ev.t === 'busy' && !ev.busy && id !== BUDDHA_SESSION_ID) void this.writeRecap(id, env.seq)
+    if (ev.t === 'busy' && !ev.busy && id !== BUDDHA_SESSION_ID) {
+      void this.writeRecap(id, env.seq)
+      this.pullSoonAfter(id) // he may just have run `gh pr create`
+    }
+    if ((ev.t === 'monk.tool' || ev.t === 'buddha.tool') && ev.summary.includes('gh pr')) this.pullSoonAfter(id)
+  }
+
+  /** A session likely just touched a pull request: check its folder again in a few seconds. */
+  private pullSoonAfter(id: string) {
+    const row = this.store.getSession(id)
+    const cwd = row ? this.cwdOf(row) : null
+    if (cwd) setTimeout(() => this.pulls.soon(cwd), 5_000)
   }
 
   /** When a priest stops, a small model writes what he did and what is left. Dropped if he resumed meanwhile. */

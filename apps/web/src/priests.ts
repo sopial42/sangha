@@ -1,4 +1,4 @@
-import { BUDDHA_SESSION_ID, type ProjectInfo, type SessionStatus, type SessionSummary } from '@sangha/shared'
+import { BUDDHA_SESSION_ID, type ProjectInfo, type PullRequest, type SessionStatus, type SessionSummary } from '@sangha/shared'
 
 const DEFAULT_ROBE = '#c2703d'
 
@@ -28,6 +28,15 @@ const pretty = (id: string) => id.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.
 export const contextLevel = (tokens: number | null) => (tokens == null ? null : tokens >= 400_000 ? 'rotting' : tokens >= 200_000 ? 'heavy' : 'fine')
 export const CONTEXT_COLOR = { fine: '#6fae8a', heavy: '#e0a33a', rotting: '#c0392b' } as const
 export const formatTokens = (t: number) => `${Math.round(t / 1000)}K`
+
+/** A PR's state, in one word for the courtyard's small chip (open stays "PR": the colour already says it's live). */
+export const PR_CHIP_WORD: Record<PullRequest['state'], string> = { open: 'PR', draft: 'brouillon', merged: 'fusionnée', closed: 'fermée' }
+/** The fuller word for the same state, used in SessionView's chip and in full titles/tooltips. */
+export const PR_STATE_WORD: Record<PullRequest['state'], string> = { open: 'ouverte', draft: 'brouillon', merged: 'fusionnée', closed: 'fermée' }
+/** Tuned against the courtyard's dark parchment background and its existing palette (jade/muted/vermilion + one purple for "merged"). */
+export const PR_COLOR: Record<PullRequest['state'], string> = { open: '#6fae8a', draft: '#b3a38e', merged: '#9c6b98', closed: '#a85a4f' }
+/** Full sentence for a PR's <title>/aria-label, everywhere it appears. */
+export const prFullLabel = (pr: PullRequest) => `PR #${pr.number} (${PR_STATE_WORD[pr.state]}) : ${pr.title} — ${pr.branch}`
 /** Dollars, to the cent below 100 $, to the dollar above. */
 /** When a message was said: "14:05" today, "23 sept. 14:05" before. Nothing when unknown. */
 export function formatTime(at: number) {

@@ -118,6 +118,17 @@ export type SessionSummary = SessionInfo & {
   shepherd: { state: 'pending' | 'asked' | 'refused'; nextAt: number; note: string | null } | null
   /** Folder the session works in (its worktree, or the project itself). */
   cwd: string | null
+  /** The pull request of the branch checked out in his folder, once he opened one (draft included). */
+  pr: PullRequest | null
+}
+
+export type PullRequest = {
+  number: number
+  url: string
+  title: string
+  state: 'open' | 'draft' | 'merged' | 'closed'
+  /** The branch checked out in his folder, which may differ from the one Sangha created for him. */
+  branch: string
 }
 
 /** What the sessions Sangha ran cost at API prices (they run on the plan: this is what it is worth). */

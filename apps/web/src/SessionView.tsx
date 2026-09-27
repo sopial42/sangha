@@ -3,7 +3,20 @@ import { BUDDHA_SESSION_ID, type SessionSummary } from '@sangha/shared'
 import { api, closeSession } from './api'
 import { Chat } from './chat/Chat'
 import { Md, MdInline } from './Md'
-import { agentTitle, CONTEXT_COLOR, contextLevel, formatCost, formatTime, formatTokens, robeOf, robeOfAgent, STATUS_LABEL } from './priests'
+import {
+  agentTitle,
+  CONTEXT_COLOR,
+  contextLevel,
+  formatCost,
+  formatTime,
+  formatTokens,
+  PR_COLOR,
+  PR_STATE_WORD,
+  prFullLabel,
+  robeOf,
+  robeOfAgent,
+  STATUS_LABEL,
+} from './priests'
 import { profileFor, toolIcon } from './profiles'
 import { useApp, type LogItem, type MonkInstance } from './store'
 
@@ -225,10 +238,25 @@ export function SessionView() {
                   <span className="project-tag" style={{ borderColor: robeOf(s.project, projects) }}>
                     {s.project}
                   </span>
-                  {s.branch && (
+                  {(s.pr?.branch ?? s.branch) && (
                     <>
                       {' · '}
-                      <code>⎇ {s.branch}</code>
+                      <code>⎇ {s.pr?.branch ?? s.branch}</code>
+                    </>
+                  )}
+                  {s.pr && (
+                    <>
+                      {' '}
+                      <a
+                        className="pr-chip-link"
+                        href={s.pr.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={prFullLabel(s.pr)}
+                        style={{ color: PR_COLOR[s.pr.state], borderColor: PR_COLOR[s.pr.state] }}
+                      >
+                        PR #{s.pr.number} · {PR_STATE_WORD[s.pr.state]}
+                      </a>
                     </>
                   )}
                   {s.external && ' · ⌨ lancée hors de Sangha'}

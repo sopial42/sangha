@@ -28,11 +28,13 @@ const observer = new Observer(
   () => store.claudeSessionIds(),
   (changed, removed) => sessions.externalChanged(changed, removed),
   () => sessions.projectsChanged(),
+  (cwd) => sessions.externalStoppedWorking(cwd),
 )
 sessions.observe(observer)
 observer.start()
 sessions.startDoingLoop()
 sessions.startRenewalLoop()
+sessions.startPullsLoop()
 
 const app = new Hono()
 

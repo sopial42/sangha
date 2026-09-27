@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useState, type ReactNode } from 'react'
-import type { MonkProfile, NoviceSummary, SessionSummary } from '@sangha/shared'
-import { CONTEXT_COLOR, contextLevel, formatCost, formatTokens } from '../priests'
+import type { MonkProfile, NoviceSummary, PullRequest, SessionSummary } from '@sangha/shared'
+import { CONTEXT_COLOR, contextLevel, formatCost, formatTokens, PR_CHIP_WORD, PR_COLOR, prFullLabel } from '../priests'
 import { profileFor, toolIcon } from '../profiles'
 import { Incense } from './Incense'
 
@@ -186,6 +186,48 @@ function Novice({ n, profile, x, y, onSelect }: { n: NoviceSummary; profile: Mon
   )
 }
 
+/**
+ * A small pill next to (or under) a priest's branch line, once he has a pull request: the number
+ * and his state, coloured by it. `align`: "middle" centers it on its own line; "start" sits it right
+ * after the branch text on the same line (that text ends just left of `x`, see the pseudo-centering
+ * trick where callers split the shared line into two half-anchored pieces).
+ */
+function PRChip({ x, y, align, pr }: { x: number; y: number; align: 'start' | 'middle'; pr: PullRequest }) {
+  const text = `#${pr.number} ${PR_CHIP_WORD[pr.state]}`
+  const color = PR_COLOR[pr.state]
+  const w = 14 + text.length * 5.4
+  const rectX = align === 'middle' ? -w / 2 : 0
+  const textX = align === 'middle' ? 0 : w / 2
+  const open = () => window.open(pr.url, '_blank', 'noopener')
+  return (
+    <g
+      transform={`translate(${x} ${y})`}
+      className="pr-chip clickable"
+      role="link"
+      tabIndex={0}
+      aria-label={prFullLabel(pr)}
+      onClick={(e) => {
+        e.stopPropagation()
+        open()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.stopPropagation()
+          open()
+        }
+      }}
+    >
+      <title>{prFullLabel(pr)}</title>
+      <g className="hover-grow">
+        <rect x={rectX} y="-8" width={w} height="14" rx="7" fill={color} fillOpacity="0.2" stroke={color} strokeWidth="1" />
+        <text x={textX} y="2" textAnchor={align} className="scene-pr-chip" fill={color}>
+          {text}
+        </text>
+      </g>
+    </g>
+  )
+}
+
 export function Priest({
   x,
   y,
@@ -242,11 +284,24 @@ export function Priest({
   const level = contextLevel(session.context)
   const tired = session.context == null ? 0 : Math.max(0, Math.min(1, (session.context - 200_000) / 600_000))
   const label = `${title} sur ${session.project}${session.branch ? ` (${session.branch})` : ''} : ${session.title} (${status})${session.external ? ', lancé hors de Sangha' : ''}`
+  // Once he has a pull request, its branch is the real one checked out (may differ from session.branch,
+  // the one Sangha created for him). The chip rides the same line when it fits, else drops just below —
+  // char-budget heuristic, no DOM measurement available for centered SVG text.
+  const pr = session.pr
+  const branchLabel = (pr?.branch ?? session.branch) ?? 'sans branche'
+  const chipText = pr ? `#${pr.number} ${PR_CHIP_WORD[pr.state]}` : ''
+  const lineBudget = compact ? 24 : 32
+  const aloneBudget = compact ? 18 : 26
+  const chipInline = !!pr && branchLabel.length + 1 + chipText.length <= lineBudget
+  const shownBranch = truncate(branchLabel, chipInline ? Math.max(6, lineBudget - chipText.length - 1) : aloneBudget)
+  const chipBelow = !!pr && !chipInline
+  // Every line below the branch shifts down when the chip needs a line of its own.
+  const shift = chipBelow ? 14 : 0
   // Where his note (or, absent one, the "+ note" hint) sits: right under whichever lines already show
   // above (name, branch, context, cost), and clear of the "+N novices" label at y=80 when there is one.
   const contextShown = session.context != null && !!level
   const costShown = session.cost != null && session.cost >= 0.01
-  const noteY = Math.max(costShown ? (contextShown ? 78 : 64) + 16 : contextShown ? 76 : 64, extra > 0 ? 96 : 0)
+  const noteY = Math.max(costShown ? (contextShown ? 78 : 64) + 16 + shift : (contextShown ? 76 : 64) + shift, extra > 0 ? 96 + shift : 0)
   // He leaves toward the nearest edge of the courtyard, if the moon's own position is not known yet.
   const away = x < 500 ? -700 : 700
   const reducedMotion = useReducedMotion()
@@ -382,12 +437,23 @@ export function Priest({
             <text y="30" textAnchor="middle" className="scene-name">
               {title}
             </text>
-            <text y="48" textAnchor="middle" className="scene-repo">
-              {session.external ? '⌨ ' : '⎇ '}
-              {session.branch ?? 'sans branche'}
-            </text>
+            {pr && chipInline ? (
+              <>
+                <text y="48" x="-3" textAnchor="end" className="scene-repo">
+                  {session.external ? '⌨ ' : '⎇ '}
+                  {shownBranch}
+                </text>
+                <PRChip x={3} y={48} align="start" pr={pr} />
+              </>
+            ) : (
+              <text y="48" textAnchor="middle" className="scene-repo">
+                {session.external ? '⌨ ' : '⎇ '}
+                {shownBranch}
+              </text>
+            )}
+            {pr && chipBelow && <PRChip x={0} y={62} align="middle" pr={pr} />}
             {session.context != null && level && (
-              <g transform={`translate(0 58)`} aria-label={`Contexte : ${formatTokens(session.context)} tokens`}>
+              <g transform={`translate(0 ${58 + shift})`} aria-label={`Contexte : ${formatTokens(session.context)} tokens`}>
                 <title>{`Contexte : ${formatTokens(session.context)} tokens${session.renewal === 'asked' ? ' · session neuve proposée, en attente de sa réponse' : session.renewal === 'postponed' ? ' · session neuve reportée (redemandé 100K plus loin)' : ''}`}</title>
                 <rect x="-40" y="0" width="80" height="5" rx="2.5" fill="#00000055" />
                 <rect x="-40" y="0" width={80 * Math.min(1, session.context / 800_000)} height="5" rx="2.5" fill={CONTEXT_COLOR[level]} />
@@ -398,7 +464,7 @@ export function Priest({
               </g>
             )}
             {session.cost != null && session.cost >= 0.01 && (
-              <text y={session.context != null && level ? 78 : 64} textAnchor="middle" className="scene-cost">
+              <text y={(session.context != null && level ? 78 : 64) + shift} textAnchor="middle" className="scene-cost">
                 <title>Ce qu'aurait coûté cette session au prix de l'API (sous-agents et sessions précédentes compris). Elle tourne sur ton abonnement.</title>
                 {formatCost(session.cost)}
               </text>
@@ -461,7 +527,7 @@ export function Priest({
           })}
         </AnimatePresence>
         {extra > 0 && (
-          <text x="0" y="80" textAnchor="middle" className="scene-role">
+          <text x="0" y={80 + shift} textAnchor="middle" className="scene-role">
             +{extra} novices
           </text>
         )}

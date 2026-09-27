@@ -361,6 +361,23 @@ select {
   color: var(--ink);
 }
 
+/* PR chip in the session header: coloured by state (see PR_COLOR), same pill shape as .context-chip. */
+.pr-chip-link {
+  display: inline-flex;
+  align-items: center;
+  border: 1.5px solid;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.pr-chip-link:hover,
+.pr-chip-link:focus-visible {
+  text-decoration: underline;
+}
+
 .sv-actions {
   display: flex;
   gap: 8px;
@@ -1213,7 +1230,8 @@ select {
 
 .priest.clickable,
 .novice.clickable,
-.buddha.clickable {
+.buddha.clickable,
+.pr-chip.clickable {
   cursor: pointer;
   outline: none;
 }
@@ -1229,7 +1247,8 @@ select {
   .add-project.clickable,
   .prayer-flag,
   .buddha.clickable .hover-grow,
-  .novice.clickable .hover-grow {
+  .novice.clickable .hover-grow,
+  .pr-chip.clickable .hover-grow {
     transform-box: fill-box;
     transform-origin: center;
     transition: transform 0.18s ease;
@@ -1246,9 +1265,25 @@ select {
   .buddha.clickable:hover .hover-grow,
   .buddha.clickable:focus-visible .hover-grow,
   .novice.clickable:hover .hover-grow,
-  .novice.clickable:focus-visible .hover-grow {
+  .novice.clickable:focus-visible .hover-grow,
+  .pr-chip.clickable:hover .hover-grow,
+  .pr-chip.clickable:focus-visible .hover-grow {
     transform: scale(1.06);
   }
+}
+
+/* Courtyard PR chip: number + state, coloured by it (see PR_COLOR). Brightens on hover/focus so the
+   grow above isn't the only feedback (color alone would fail a colour-blind reader). */
+.scene-pr-chip {
+  font: 700 10px var(--sans);
+  paint-order: stroke;
+  stroke: #0009;
+  stroke-width: 2.5px;
+}
+
+.pr-chip.clickable:hover rect,
+.pr-chip.clickable:focus-visible rect {
+  fill-opacity: 0.36;
 }
 
 .priest:hover .scene-name,

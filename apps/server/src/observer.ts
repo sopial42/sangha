@@ -96,6 +96,8 @@ export class Observer {
     private ownSessionIds: () => Set<string>,
     private onChange: (changed: SessionSummary[], removed: string[]) => void,
     private onProjectsAdded: () => void,
+    /** An outside session's folder, once it stops working (it may just have run `gh pr create`). */
+    private onStoppedWorking: (cwd: string) => void = () => {},
   ) {
     this.hidden = store.hiddenSessions()
   }
@@ -223,6 +225,7 @@ export class Observer {
         if (this.first && !this.seenAt.has(id)) this.seenAt.set(id, lastMove)
         // Not working: it ended its turn and waits for your input.
         const status = working ? 'working' : 'waiting'
+        if (!this.first && this.found.get(id)?.summary.status === 'working' && status !== 'working') this.onStoppedWorking(cwd)
         const cached = this.recapOf(id)
         const title = aiTitle(tail) ?? latestPrompt(tail) ?? this.titles.get(id) ?? this.title(f.path)
         this.titles.set(id, title)
@@ -255,6 +258,7 @@ export class Observer {
             shepherd: null,
             cost: null, // decorated by Sessions
             cwd,
+            pr: null, // decorated by Sessions
           },
         })
       }
