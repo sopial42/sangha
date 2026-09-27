@@ -8,6 +8,8 @@ export const config = {
   pluginsDir: resolve(process.env.SANGHA_PLUGINS ?? `${root}/vendor/plugins`),
   dbPath: resolve(process.env.SANGHA_DB ?? `${root}/data/sangha.db`),
   idleCloseMs: Number(process.env.SANGHA_IDLE_CLOSE_MS ?? 20 * 60_000),
+  /** How long a priest must stay still before he is said to wait for you (and the bowl rings). */
+  settleMs: Number(process.env.SANGHA_SETTLE_MS ?? 5_000),
 }
 
 /**

@@ -22,6 +22,7 @@ import { readTailLines } from './files'
 import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
 import { PullRequests } from './pulls'
+import { BusySettle } from './settle'
 import { doing, lifeSummary, progress, recap, type Progress } from './recap'
 import { priestOptions } from './roles'
 import { contextTokens, parseLine, TranscriptReader } from './transcript'
@@ -80,7 +81,11 @@ class LiveSession {
   private normalizer = new Normalizer()
   private turnRunning = false
   private idleTimer: NodeJS.Timeout | undefined
-  busy = false
+  // Said to have stopped only after a few still seconds: a background task reporting back wakes him right after his turn.
+  private settle = new BusySettle(config.settleMs, (busy) => this.emit({ t: 'busy', busy }))
+  get busy() {
+    return this.settle.busy
+  }
   activity: string | null = null
   novices = new Map<string, NoviceSummary>()
   /** Background work the turn left running (a script, a novice): he waits on it, so he is still at work. */
@@ -177,7 +182,7 @@ class LiveSession {
       this.novices.clear()
       this.background = []
       this.activity = null
-      this.refreshBusy()
+      this.refreshBusy(true) // closed: nothing will wake him, no need to wait
       this.onClosed()
     }
   }
@@ -188,12 +193,9 @@ class LiveSession {
     return t ? `En attente · ${t.description}` : null
   }
 
-  private refreshBusy() {
+  private refreshBusy(now = false) {
     const busy = this.turnRunning || this.novices.size > 0 || this.background.length > 0
-    if (busy !== this.busy) {
-      this.busy = busy
-      this.emit({ t: 'busy', busy })
-    }
+    this.settle.set(busy, { now })
     clearTimeout(this.idleTimer)
     if (!busy) this.idleTimer = setTimeout(() => this.close(), config.idleCloseMs)
   }
