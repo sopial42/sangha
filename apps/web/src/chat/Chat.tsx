@@ -4,6 +4,7 @@ import { Md } from '../Md'
 import { formatTime } from '../priests'
 import { profileFor, toolIcon } from '../profiles'
 import { useApp, type ChatItem } from '../store'
+import { draftOf, saveDraft } from '../drafts'
 
 const Time = ({ at }: { at: number }) =>
   at ? (
@@ -23,20 +24,6 @@ const SANGHA_TOOLS: Record<string, string> = {
   read_session: 'Écoute un prêtre',
 }
 
-// What you were typing to each priest, kept until sent: closing his chat or reloading loses nothing.
-const DRAFTS_KEY = 'sangha.drafts'
-const drafts = (): Record<string, string> => {
-  try {
-    return JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? '{}') as Record<string, string>
-  } catch {
-    return {}
-  }
-}
-const saveDraft = (id: string, text: string) => {
-  const { [id]: _, ...others } = drafts()
-  localStorage.setItem(DRAFTS_KEY, JSON.stringify(text.trim() ? { ...others, [id]: text } : others))
-}
-
 /** Conversation with one priest (or Buddha). `author` is how his words are signed. */
 /**
  * Conversation with one priest (or Buddha). `external`: a session running in a terminal; replies are
@@ -44,8 +31,8 @@ const saveDraft = (id: string, text: string) => {
  */
 export function Chat({ author, external = null }: { author: string; external?: { alive: boolean } | null }) {
   const { view, selectedId: sessionId, profiles, set } = useApp()
-  const [text, setText] = useState(() => (sessionId ? (drafts()[sessionId] ?? '') : ''))
-  useEffect(() => setText(sessionId ? (drafts()[sessionId] ?? '') : ''), [sessionId])
+  const [text, setText] = useState(() => (sessionId ? draftOf(sessionId) : ''))
+  useEffect(() => setText(sessionId ? draftOf(sessionId) : ''), [sessionId])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)

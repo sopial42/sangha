@@ -3,6 +3,7 @@ import type { CostReport, NirvanaEntry, ProjectSuggestion } from '@sangha/shared
 import { ApiError, api, openSession } from './api'
 import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
+import { draftOf, NEW_PRIEST_DRAFT, saveDraft } from './drafts'
 
 /** Native modal <dialog>: focus trap, Escape and backdrop come for free. */
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
@@ -34,7 +35,7 @@ function NewSession({ project: initial, onClose }: { project?: string; onClose: 
   const [agent, setAgent] = useState('')
   const [branches, setBranches] = useState<string[]>([])
   const [baseRef, setBaseRef] = useState('')
-  const [prompt, setPrompt] = useState('')
+  const [prompt, setPrompt] = useState(() => draftOf(NEW_PRIEST_DRAFT))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -52,6 +53,7 @@ function NewSession({ project: initial, onClose }: { project?: string; onClose: 
     setError(null)
     try {
       const s = await api.createSession({ project, agent, prompt, baseRef: baseRef || undefined })
+      saveDraft(NEW_PRIEST_DRAFT, '')
       onClose()
       openSession(s.id)
     } catch (err) {
@@ -99,7 +101,13 @@ function NewSession({ project: initial, onClose }: { project?: string; onClose: 
         )}
         <label>
           Consigne
-          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={5} required placeholder="Que doit faire ce prêtre ?" />
+          <textarea
+            value={prompt}
+            onChange={(e) => {
+              setPrompt(e.target.value)
+              saveDraft(NEW_PRIEST_DRAFT, e.target.value)
+            }}
+            rows={5} required placeholder="Que doit faire ce prêtre ?" />
         </label>
         {error && (
           <p className="form-error" role="alert">
