@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { motion, useReducedMotion } from 'motion/react'
 import { BUDDHA_SESSION_ID, type SessionSummary } from '@sangha/shared'
-import { api, closeSession } from './api'
+import { api, closeSession, finishClose } from './api'
 import { Chat } from './chat/Chat'
 import { Md, MdInline } from './Md'
 import {
@@ -193,13 +194,34 @@ const NOVICES_CLOSED_KEY = 'sangha.novicesClosed'
 
 /** A session, almost full screen: its conversation, where it stands, and its novices on the right. */
 export function SessionView() {
-  const { sessions, projects, selectedId, selectedMonk, view, dialog, set } = useApp()
-  const s = selectedId ? sessions[selectedId] : undefined
+  const { sessions, projects, selectedId, selectedMonk, view, dialog, closing, set } = useApp()
+  const live = selectedId ? sessions[selectedId] : undefined
+  // A close in flight keeps `selectedId` around so the panel can keep rendering while it shrinks
+  // toward him — even if, meanwhile, he's actually gone (dismissed): the last thing we knew of him.
+  const lastRef = useRef<SessionSummary | undefined>(undefined)
+  if (live) lastRef.current = live
+  const s = live ?? (closing?.id === selectedId ? lastRef.current : undefined)
   const [novicesClosed, setNovicesClosed] = useState(() => localStorage.getItem(NOVICES_CLOSED_KEY) === '1')
   const foldNovices = (close: boolean) => {
     localStorage.setItem(NOVICES_CLOSED_KEY, close ? '1' : '0')
     setNovicesClosed(close)
   }
+
+  // Where the panel shrinks to: computed once, right as the close starts, from his on-screen spot
+  // already captured in `closing.target`. Falls back to a plain shrink-and-fade in place.
+  const panelRef = useRef<HTMLDivElement>(null)
+  const reducedMotion = useReducedMotion()
+  const [exit, setExit] = useState<{ x: number; y: number; scale: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!closing) return
+    const panel = panelRef.current
+    if (!panel || !closing.target || reducedMotion) {
+      setExit({ x: 0, y: 0, scale: reducedMotion ? 1 : 0.85 })
+      return
+    }
+    const rect = panel.getBoundingClientRect()
+    setExit({ x: closing.target.x - (rect.left + rect.width / 2), y: closing.target.y - (rect.top + rect.height / 2), scale: 0.08 })
+  }, [closing, reducedMotion])
 
   // Looking at a priest who stopped counts as having read him.
   useEffect(() => {
@@ -221,9 +243,28 @@ export function SessionView() {
   const title = agentTitle(s, projects)
   const novices = view.monkOrder.map((id) => view.monks[id]!).filter(Boolean)
 
+  const closeDuration = reducedMotion ? 0.18 : 0.4
   return (
-    <div className="overlay" onClick={(e) => e.target === e.currentTarget && closeSession()}>
-      <div className="session-view" role="dialog" aria-modal="true" aria-labelledby="sv-title">
+    <motion.div
+      className="overlay"
+      onClick={(e) => e.target === e.currentTarget && closeSession()}
+      initial={false}
+      animate={{ opacity: closing ? 0 : 1 }}
+      transition={{ duration: closing ? closeDuration : 0.15, ease: closing ? 'easeIn' : 'easeOut' }}
+      style={{ pointerEvents: closing ? 'none' : 'auto' }}
+    >
+      <motion.div
+        ref={panelRef}
+        className="session-view"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sv-title"
+        initial={false}
+        animate={closing && exit ? { x: exit.x, y: exit.y, scale: exit.scale, opacity: 0 } : { x: 0, y: 0, scale: 1, opacity: 1 }}
+        transition={{ duration: closing ? closeDuration : 0.15, ease: closing ? 'easeIn' : 'easeOut' }}
+        onAnimationComplete={() => closing && finishClose(closing.id)}
+        style={{ pointerEvents: closing ? 'none' : 'auto' }}
+      >
         <header className="sv-head">
           <span className="robe-dot" style={{ background: isBuddha ? 'var(--gold)' : robeOfAgent(s.agent) }} aria-hidden />
           <div className="sv-id">
@@ -374,7 +415,7 @@ export function SessionView() {
             </aside>
           )}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   )
 }

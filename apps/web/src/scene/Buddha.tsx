@@ -1,4 +1,5 @@
-import { motion } from 'motion/react'
+import { motion, useReducedMotion } from 'motion/react'
+import { BUDDHA_SESSION_ID } from '@sangha/shared'
 
 /** A seated Buddha in lotus pose, his right shoulder bare, the robe draped from his left in many
  *  curved folds, hands joined in meditation. A tight golden nimbus glows behind his head, a wider
@@ -11,6 +12,7 @@ export function Buddha({
   eyesOpen,
   selected,
   onSelect,
+  ackToken,
 }: {
   x: number
   busy: boolean
@@ -18,13 +20,17 @@ export function Buddha({
   eyesOpen: boolean
   selected: boolean
   onSelect: () => void
+  /** Set right after you've closed his conversation: a brief acknowledgement glow. */
+  ackToken?: number
 }) {
+  const reducedMotion = useReducedMotion()
   return (
     <g
       transform={`translate(${x} 360)`}
       className="buddha clickable"
       role="button"
       tabIndex={0}
+      data-session-id={BUDDHA_SESSION_ID}
       aria-label="Bouddha : lui parler"
       aria-pressed={selected}
       onClick={onSelect}
@@ -100,6 +106,25 @@ export function Buddha({
         animate={{ opacity: busy ? [0.7, 1, 0.7] : [0.45, 0.75, 0.45] }}
         transition={{ duration: busy ? 1.8 : 5, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
       />
+      {/* You just closed his conversation: a thin gold ring, expanding once and fading — never
+          repeats, and never confused with the halos above (which breathe continuously). */}
+      {ackToken != null &&
+        (reducedMotion ? (
+          <ellipse key={ackToken} cy="-90" rx="120" ry="150" fill="none" stroke="#ffe9a8" strokeWidth="3" opacity="0.8" />
+        ) : (
+          <motion.ellipse
+            key={ackToken}
+            cy="-90"
+            rx="120"
+            ry="150"
+            fill="none"
+            stroke="#ffe9a8"
+            strokeWidth="3"
+            initial={{ scale: 0.75, opacity: 0.9 }}
+            animate={{ scale: 1.25, opacity: 0 }}
+            transition={{ duration: 1, ease: 'easeOut' }}
+          />
+        ))}
       {speaking && (
         <motion.g animate={{ rotate: 360 }} transition={{ duration: 24, repeat: Infinity, ease: 'linear' }}>
           {Array.from({ length: 12 }, (_, i) => (

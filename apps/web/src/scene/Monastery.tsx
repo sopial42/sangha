@@ -182,7 +182,7 @@ function resolveBubbleSides(seated: Seated[]): Record<string, 1 | -1> {
 }
 
 export function Monastery() {
-  const { sessions, projects, profiles, selectedId, view, set, moonArrivals, prayerFlags } = useApp()
+  const { sessions, projects, profiles, selectedId, view, set, moonArrivals, prayerFlags, closing, closingAck } = useApp()
   const priests: SessionSummary[] = priestsOf(sessions)
   const buddha = sessions[BUDDHA_SESSION_ID]
   const worktrees = useWorktrees(prayerFlags)
@@ -222,7 +222,8 @@ export function Monastery() {
   }
 
   const select = (id: string) => {
-    if (id === selectedId) return
+    // Reselecting while his panel is mid-close still has to cancel that close, not be a no-op.
+    if (id === selectedId && !closing) return
     openSession(id)
   }
 
@@ -251,6 +252,7 @@ export function Monastery() {
         eyesOpen={buddha?.status === 'waiting'}
         selected={selectedId === BUDDHA_SESSION_ID}
         onSelect={() => select(BUDDHA_SESSION_ID)}
+        ackToken={closingAck?.id === BUDDHA_SESSION_ID ? closingAck.token : undefined}
       />
       </g>
 
@@ -299,6 +301,7 @@ export function Monastery() {
               onIncense={() => set({ dialog: { kind: 'incense', id: s.id } })}
               onNote={() => set({ dialog: { kind: 'note', id: s.id } })}
               moon={moon}
+              ackToken={closingAck?.id === s.id ? closingAck.token : undefined}
             />
           )),
         )}

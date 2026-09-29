@@ -108,7 +108,8 @@ const setUrl = (query: string) => history.replaceState(null, '', query ? `?${que
 export function openSession(id: string) {
   stop()
   const { set, applyMany } = useApp.getState()
-  set({ selectedId: id, view: emptyView(), selectedMonk: null })
+  // Opening (even the priest whose panel is mid-close) cancels any closing animation in flight.
+  set({ selectedId: id, view: emptyView(), selectedMonk: null, closing: null })
   setUrl(`session=${encodeURIComponent(id)}`)
   const es = new EventSource(`/api/sessions/${id}/events`)
   source = es
@@ -127,8 +128,34 @@ export function openSession(id: string) {
   }
 }
 
+/**
+ * Starts the panel's closing animation (the ✕ button, Escape, and a click on the backdrop all call
+ * this). `selectedId` is left as-is so the panel keeps rendering while it shrinks toward him;
+ * SessionView calls `finishClose` once that animation lands.
+ */
 export function closeSession() {
+  const { selectedId, closing, set } = useApp.getState()
+  if (!selectedId || closing) return // nothing open, or already closing
   stop()
-  useApp.getState().set({ selectedId: null, view: emptyView(), selectedMonk: null })
   setUrl('')
+  const el = document.querySelector<Element>(`[data-session-id="${CSS.escape(selectedId)}"]`)
+  const rect = el?.getBoundingClientRect()
+  const onScreen = rect && rect.width > 4 && rect.bottom > 0 && rect.top < window.innerHeight && rect.right > 0 && rect.left < window.innerWidth
+  const target = onScreen ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null
+  set({ closing: { id: selectedId, target } })
+  // Should the animation never report its end (a hidden tab pauses it), close anyway.
+  setTimeout(() => finishClose(selectedId), 1_000)
+}
+
+let ackToken = 0
+
+/** The closing animation has landed on him: the real cleanup, then his brief acknowledgement glow. */
+export function finishClose(id: string) {
+  const { closing, set } = useApp.getState()
+  if (closing?.id !== id) return // superseded (a new close, or the close was cancelled by reopening)
+  const token = ++ackToken
+  set({ selectedId: null, view: emptyView(), selectedMonk: null, closing: null, closingAck: { id, token } })
+  setTimeout(() => {
+    if (useApp.getState().closingAck?.token === token) useApp.getState().set({ closingAck: null })
+  }, 1000)
 }

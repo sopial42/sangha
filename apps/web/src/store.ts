@@ -161,6 +161,14 @@ type AppState = {
   selectedId: string | null
   view: SessionView
   selectedMonk: string | null
+  /**
+   * Set while the panel plays its closing animation (selectedId stays put so it keeps rendering).
+   * `target`: his on-screen position to shrink toward, or null if he can't be found (off screen, gone).
+   */
+  closing: { id: string; target: { x: number; y: number } | null } | null
+  /** His brief acknowledgement glow, right after the panel has landed on him. `token` retriggers the
+   *  animation even when the same priest is closed twice in a row. */
+  closingAck: { id: string; token: number } | null
   dialog: Dialog
   /** Sessions the user just interrupted: their next status change must not ring the bell or notify. */
   interruptedIds: Set<string>
@@ -196,6 +204,8 @@ export const useApp = create<AppState>((set) => ({
   selectedId: null,
   view: emptyView(),
   selectedMonk: null,
+  closing: null,
+  closingAck: null,
   dialog: null,
   interruptedIds: new Set(),
   markInterrupted: (id) => set((st) => ({ interruptedIds: new Set(st.interruptedIds).add(id) })),

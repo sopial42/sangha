@@ -244,6 +244,7 @@ export function Priest({
   bubbleSide = 1,
   compact = false,
   moon,
+  ackToken,
 }: {
   x: number
   y: number
@@ -265,6 +266,9 @@ export function Priest({
   compact?: boolean
   /** The moon's scene coordinates: where he flies to when sent to nirvana. */
   moon?: { x: number; y: number }
+  /** Set right after you've closed his conversation: a brief acknowledgement glow. A fresh value
+   *  (even the same priest closed twice in a row) always retriggers it. */
+  ackToken?: number
 }) {
   const { status } = session
   const working = status === 'working'
@@ -346,6 +350,7 @@ export function Priest({
           className="priest clickable"
           role="button"
           tabIndex={0}
+          data-session-id={session.id}
           aria-label={label}
           aria-pressed={selected}
           onClick={onSelect}
@@ -368,6 +373,25 @@ export function Priest({
               transition={{ duration: 1.4, repeat: Infinity }}
             />
           )}
+          {/* You just closed his conversation: a thin ring in his own robe colour, expanding once and
+              fading — never repeats, and never confused with the "waiting for you" halo above. */}
+          {ackToken != null &&
+            (reducedMotion ? (
+              <ellipse key={ackToken} cy="-46" rx="54" ry="70" fill="none" stroke={robe} strokeWidth="3" opacity="0.8" />
+            ) : (
+              <motion.ellipse
+                key={ackToken}
+                cy="-46"
+                rx="54"
+                ry="70"
+                fill="none"
+                stroke={robe}
+                strokeWidth="3"
+                initial={{ scale: 0.7, opacity: 0.9 }}
+                animate={{ scale: 1.3, opacity: 0 }}
+                transition={{ duration: 1, ease: 'easeOut' }}
+              />
+            ))}
           <ellipse rx={44 + 8 * tired} ry={12 - 4 * tired} fill="#6e2a1c" />
           {/* The slump holds as long as the context stays heavy; only the breathing below repeats. */}
           <motion.g

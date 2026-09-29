@@ -30,7 +30,7 @@ const SANGHA_TOOLS: Record<string, string> = {
  * relayed to it (alive) or resume it in Sangha (ended).
  */
 export function Chat({ author, external = null }: { author: string; external?: { alive: boolean } | null }) {
-  const { view, selectedId: sessionId, profiles, set } = useApp()
+  const { view, selectedId: sessionId, profiles, dialog, set } = useApp()
   const [text, setText] = useState(() => (sessionId ? draftOf(sessionId) : ''))
   useEffect(() => setText(sessionId ? draftOf(sessionId) : ''), [sessionId])
   const [sending, setSending] = useState(false)
@@ -38,6 +38,23 @@ export function Chat({ author, external = null }: { author: string; external?: {
   const [note, setNote] = useState<string | null>(null)
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  // Opening him (or switching to him while the panel stays open) puts the caret straight in the
+  // textarea, at the end of any restored draft — never while a dialog sits on top, and never on a
+  // touch device (that would pop the virtual keyboard unasked). Waits a frame for the draft, just
+  // restored above, to actually reach the textarea's value.
+  useEffect(() => {
+    if (!sessionId || dialog) return
+    if (window.matchMedia('(pointer: coarse)').matches) return
+    const raf = requestAnimationFrame(() => {
+      const el = inputRef.current
+      if (!el) return
+      el.focus()
+      const len = el.value.length
+      el.setSelectionRange(len, len)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [sessionId, dialog])
 
   // The log follows new words only while you are at its bottom. Reading further up, you stay where you
   // are: a blinking bell tells you new words came. Your own message always brings you down.
@@ -82,7 +99,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!sessionId || !text.trim()) return
+    if (!sessionId || !text.trim() || sending) return
     setSending(true)
     setError(null)
     setNote(external?.alive ? 'Transmission à la session du terminal…' : null)
@@ -218,7 +235,8 @@ export function Chat({ author, external = null }: { author: string; external?: {
                 : `Réponds à ${author} (son terminal est fermé : Sangha reprend la session)…`
               : `Parle à ${author}…`
           }
-          disabled={!sessionId || sending}
+          disabled={!sessionId}
+          readOnly={sending}
           rows={2}
           aria-label={`Message à ${author}`}
         />
