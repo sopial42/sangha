@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { BUDDHA_SESSION_ID, type SessionSummary } from '@sangha/shared'
+import { BUDDHA_SESSION_ID, type BackgroundScript, type SessionSummary } from '@sangha/shared'
 import { api, closeSession, finishClose } from './api'
 import { Chat } from './chat/Chat'
 import { Md, MdInline } from './Md'
@@ -9,6 +9,7 @@ import {
   CONTEXT_COLOR,
   contextLevel,
   formatCost,
+  formatSince,
   formatTime,
   formatTokens,
   PR_COLOR,
@@ -189,6 +190,26 @@ function Novice({ m, sessionId, external, open, onToggle }: { m: MonkInstance; s
   )
 }
 
+/** One background script, folded to its gist: Haiku's sentence first, the running time underneath,
+ *  the raw command tucked away behind a disclosure so reading bash is never required. */
+function ScriptItem({ script, now }: { script: BackgroundScript; now: number }) {
+  return (
+    <li className="script-item">
+      <span className="script-dot" aria-hidden />
+      <div className="script-body">
+        <p className="script-summary">{script.summary ?? <span className="muted">Je regarde ce que fait ce script…</span>}</p>
+        <p className="script-meta muted small">
+          {formatSince(script.since, now)}
+          <details className="script-command">
+            <summary>voir la commande</summary>
+            <code>{script.command}</code>
+          </details>
+        </p>
+      </div>
+    </li>
+  )
+}
+
 // The novices panel, folded away or not: one choice for every session, remembered across reloads.
 const NOVICES_CLOSED_KEY = 'sangha.novicesClosed'
 
@@ -238,10 +259,27 @@ export function SessionView() {
     return () => window.removeEventListener('keydown', onKey)
   }, [dialog])
 
+  // Keeps "depuis Xmin" under running scripts fresh, without a tick running when there is nothing to age.
+  const [now, setNow] = useState(() => Date.now())
+  const scriptCount = s?.scripts.length ?? 0
+  useEffect(() => {
+    if (!scriptCount) return
+    const t = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(t)
+  }, [scriptCount])
+
   if (!s) return null
   const isBuddha = s.id === BUDDHA_SESSION_ID
   const title = agentTitle(s, projects)
   const novices = view.monkOrder.map((id) => view.monks[id]!).filter(Boolean)
+  const scripts = s.scripts
+  const hasColumn = scripts.length > 0 || novices.length > 0
+  const columnLabel =
+    scripts.length > 0 && novices.length > 0
+      ? `Scripts & sous-agents (${scripts.length + novices.length})`
+      : scripts.length > 0
+        ? `Scripts en cours (${scripts.length})`
+        : `Sous-agents (${novices.length})`
 
   const closeDuration = reducedMotion ? 0.18 : 0.4
   return (
@@ -380,38 +418,61 @@ export function SessionView() {
           </div>
         </header>
 
-        <div className={`sv-body ${novices.length ? (novicesClosed ? 'novices-closed' : '') : 'no-novices'}`}>
+        <div className={`sv-body ${hasColumn ? (novicesClosed ? 'novices-closed' : '') : 'no-novices'}`}>
           <div className="sv-main">
             {!isBuddha && <ProgressCard session={s} />}
             <Chat author={isBuddha ? 'Bouddha' : title} external={s.external ? { alive: s.alive } : null} />
           </div>
-          {novices.length > 0 && novicesClosed && (
-            <button className="sv-novices-reopen" onClick={() => foldNovices(false)} title="Afficher les sous-agents" aria-label={`Afficher les sous-agents (${novices.length})`}>
-              ‹ Sous-agents ({novices.length})
+          {hasColumn && novicesClosed && (
+            <button className="sv-novices-reopen" onClick={() => foldNovices(false)} title={`Afficher ${columnLabel}`} aria-label={`Afficher ${columnLabel}`}>
+              ‹ {columnLabel}
             </button>
           )}
-          {novices.length > 0 && !novicesClosed && (
-            <aside className="sv-novices" aria-label="Sous-agents">
-              <header className="sv-novices-head">
-                <h3>
-                  Sous-agents <span className="muted">({novices.length})</span>
-                </h3>
-                <button className="icon-btn" onClick={() => foldNovices(true)} aria-label="Masquer les sous-agents" title="Masquer les sous-agents">
-                  ×
-                </button>
-              </header>
-              <ul>
-                {[...novices].reverse().map((m) => (
-                  <Novice
-                    key={m.monkId}
-                    m={m}
-                    sessionId={s.id}
-                    external={s.external}
-                    open={selectedMonk === m.monkId}
-                    onToggle={() => set({ selectedMonk: selectedMonk === m.monkId ? null : m.monkId })}
-                  />
-                ))}
-              </ul>
+          {hasColumn && !novicesClosed && (
+            <aside className="sv-novices" aria-label="Scripts et sous-agents">
+              {scripts.length > 0 && (
+                <>
+                  <header className="sv-novices-head">
+                    <h3>
+                      Scripts en cours <span className="muted">({scripts.length})</span>
+                    </h3>
+                    <button className="icon-btn" onClick={() => foldNovices(true)} aria-label={`Masquer ${columnLabel}`} title={`Masquer ${columnLabel}`}>
+                      ×
+                    </button>
+                  </header>
+                  <ul className="scripts-list">
+                    {scripts.map((script) => (
+                      <ScriptItem key={script.id} script={script} now={now} />
+                    ))}
+                  </ul>
+                </>
+              )}
+              {novices.length > 0 && (
+                <>
+                  <header className="sv-novices-head">
+                    <h3>
+                      Sous-agents <span className="muted">({novices.length})</span>
+                    </h3>
+                    {scripts.length === 0 && (
+                      <button className="icon-btn" onClick={() => foldNovices(true)} aria-label={`Masquer ${columnLabel}`} title={`Masquer ${columnLabel}`}>
+                        ×
+                      </button>
+                    )}
+                  </header>
+                  <ul>
+                    {[...novices].reverse().map((m) => (
+                      <Novice
+                        key={m.monkId}
+                        m={m}
+                        sessionId={s.id}
+                        external={s.external}
+                        open={selectedMonk === m.monkId}
+                        onToggle={() => set({ selectedMonk: selectedMonk === m.monkId ? null : m.monkId })}
+                      />
+                    ))}
+                  </ul>
+                </>
+              )}
             </aside>
           )}
         </div>

@@ -1,4 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import { cleanScriptSummary, scriptPrompt } from './scripts'
 
 const RECAP_MODEL = process.env.SANGHA_RECAP_MODEL ?? 'haiku'
 const MAX_INPUT = 8000
@@ -120,4 +121,28 @@ ${STYLE}`
 export async function lifeSummary(transcript: string): Promise<string | null> {
   const out = await ask<{ summary: string }>(LIFE_SYSTEM, LIFE_SCHEMA, transcript, 12_000)
   return typeof out?.summary === 'string' ? out.summary.trim() : null
+}
+
+const SCRIPT_SCHEMA = {
+  type: 'object',
+  properties: {
+    summary: {
+      type: 'string',
+      description: 'Ce que fait ce script, en une phrase très courte (12 mots maximum), sans jargon ni syntaxe de commande.',
+    },
+  },
+  required: ['summary'],
+  additionalProperties: false,
+}
+
+const SCRIPT_SYSTEM = `Un agent a lancé un script en arrière-plan, qu'il attend souvent. Dis en une phrase très courte
+(12 mots maximum) ce qu'il fait, et pourquoi c'est important si cela se voit. Jamais la commande elle-même, jamais
+de nom de fichier, de flag ni de jargon technique. Exemples : « Lance les tests e2e du dossier client »,
+« Attend que la stack Docker locale démarre », « Surveille la CI de la PR #579 ».
+${STYLE}`
+
+/** One short French sentence on what a background script does, written by a small model. */
+export async function scriptSummary(command: string, title: string): Promise<string | null> {
+  const out = await ask<{ summary: string }>(SCRIPT_SYSTEM, SCRIPT_SCHEMA, scriptPrompt(command, title), 2_000)
+  return typeof out?.summary === 'string' ? cleanScriptSummary(out.summary) : null
 }

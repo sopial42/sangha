@@ -432,6 +432,77 @@ select {
   margin: 0 0 8px;
 }
 
+/* A second rubric (e.g. "Sous-agents" under "Scripts en cours") gets air above it. */
+.sv-novices ul + .sv-novices-head {
+  margin-top: 16px;
+}
+
+.scripts-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.script-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.script-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  flex: none;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.script-body {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.script-summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.script-meta {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.script-command summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.script-command code {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--panel);
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .sv-main {
   display: flex;
   flex-direction: column;

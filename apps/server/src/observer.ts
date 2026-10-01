@@ -259,6 +259,7 @@ export class Observer {
             cost: null, // decorated by Sessions
             cwd,
             pr: null, // decorated by Sessions
+            scripts: [], // outside sessions: not followed live, so no script tracking
           },
         })
       }

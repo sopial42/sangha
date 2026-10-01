@@ -61,6 +61,18 @@ export function formatAge(at: number): string {
   return `il y a ${Math.round(h / 24)} j`
 }
 
+/** How long a script has been running, in French, phrased for "depuis": "depuis l'instant", "depuis 3 min",
+ *  "depuis 2 h", "depuis 1 j". Takes `now` so a live display can pass a ticking value and re-render. */
+export function formatSince(at: number, now = Date.now()): string {
+  const s = Math.max(0, now - at) / 1000
+  if (s < 60) return "depuis l'instant"
+  const min = Math.round(s / 60)
+  if (min < 60) return `depuis ${min} min`
+  const h = Math.round(min / 60)
+  if (h < 24) return `depuis ${h} h`
+  return `depuis ${Math.round(h / 24)} j`
+}
+
 /** A path under the user's home directory, shortened to `~/…` (best guess from common home layouts). */
 export function shortenPath(path: string): string {
   const m = path.match(/^(\/Users\/[^/]+|\/home\/[^/]+)(\/.*)?$/)

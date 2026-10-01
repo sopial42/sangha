@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { query, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import {
   BUDDHA_SESSION_ID,
+  type BackgroundScript,
   type CostReport,
   type Envelope,
   type GlobalEvent,
@@ -23,8 +24,9 @@ import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
 import { PullRequests } from './pulls'
 import { BusySettle } from './settle'
-import { doing, lifeSummary, progress, recap, type Progress } from './recap'
+import { doing, lifeSummary, progress, recap, scriptSummary, type Progress } from './recap'
 import { priestOptions } from './roles'
+import { ScriptSummaries, trackScripts } from './scripts'
 import { contextTokens, parseLine, TranscriptReader } from './transcript'
 import { buildCostReport, CostMeter } from './cost'
 import { isHandoff, nextDelay, parseAnswer, readDecision, shepherdPrompt, type ShepherdAnswer } from './shepherd'
@@ -90,6 +92,9 @@ class LiveSession {
   novices = new Map<string, NoviceSummary>()
   /** Background work the turn left running (a script, a novice): he waits on it, so he is still at work. */
   private background: { id: string; type: string; description: string }[] = []
+  /** Scripts among that background work (novices excepted), each with its Haiku summary once written. */
+  scripts: BackgroundScript[] = []
+  private requestedSummaries = new Set<string>()
 
   constructor(
     row: SessionRow,
@@ -98,6 +103,7 @@ class LiveSession {
     private emit: (ev: MonasteryEvent) => void,
     private onClosed: () => void,
     onClaudeSessionId: (id: string) => void,
+    private requestScriptSummary: (taskId: string, command: string) => void,
   ) {
     const env = { ...process.env } as Record<string, string>
     delete env.ANTHROPIC_API_KEY // belt and braces: never bill the API
@@ -160,9 +166,22 @@ class LiveSession {
         break
       case 'background':
         this.background = ev.tasks
+        this.scripts = trackScripts(this.scripts, ev.tasks, Date.now())
+        for (const s of this.scripts) {
+          if (s.summary === null && !this.requestedSummaries.has(s.id)) {
+            this.requestedSummaries.add(s.id)
+            this.requestScriptSummary(s.id, s.command)
+          }
+        }
         if (!this.turnRunning) this.activity = this.waitingOn()
         break
     }
+  }
+
+  /** Once a small model has written a script's summary. */
+  setScriptSummary(taskId: string, summary: string) {
+    this.scripts = this.scripts.map((s) => (s.id === taskId ? { ...s, summary } : s))
+    if (!this.turnRunning) this.activity = this.waitingOn()
   }
 
   private async pump(onClaudeSessionId: (id: string) => void) {
@@ -181,16 +200,18 @@ class LiveSession {
       this.turnRunning = false
       this.novices.clear()
       this.background = []
+      this.scripts = []
+      this.requestedSummaries.clear()
       this.activity = null
       this.refreshBusy(true) // closed: nothing will wake him, no need to wait
       this.onClosed()
     }
   }
 
-  /** What he waits on once his turn is over: the background script still running, if any. */
+  /** What he waits on once his turn is over: the oldest script still running, if any (its Haiku summary once written). */
   private waitingOn() {
-    const t = this.background.find((k) => k.type !== 'local_agent')
-    return t ? `En attente · ${t.description}` : null
+    const t = this.scripts[0]
+    return t ? `En attente · ${t.summary ?? t.command}` : null
   }
 
   private refreshBusy(now = false) {
@@ -234,6 +255,11 @@ export class Sessions {
   quota: Quota | null = null
   // Pull requests of each session's folder, cached and refreshed in the background (see startPullsLoop).
   private pulls = new PullRequests((cwd) => this.pullsChanged(cwd))
+  // Haiku summaries of background scripts, one call at a time across every live session (see LiveSession.scripts).
+  private scriptSummaries = new ScriptSummaries((sessionId, taskId, summary) => {
+    this.live.get(sessionId)?.setScriptSummary(taskId, summary)
+    this.broadcastSession(sessionId)
+  }, scriptSummary)
 
   constructor(
     private store: Store,
@@ -1059,6 +1085,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       cost: this.costOf(row.id),
       cwd,
       pr: cwd ? this.pulls.of(cwd) : null,
+      scripts: live?.scripts ?? [],
     }
   }
 
@@ -1083,6 +1110,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
           this.broadcastSession(row.id)
         },
         (claudeId) => this.store.setClaudeSessionId(row.id, claudeId),
+        (taskId, command) => this.scriptSummaries.request(row.id, taskId, command, row.title),
       )
       this.live.set(row.id, s)
     }

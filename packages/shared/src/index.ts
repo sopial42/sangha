@@ -120,6 +120,21 @@ export type SessionSummary = SessionInfo & {
   cwd: string | null
   /** The pull request of the branch checked out in his folder, once he opened one (draft included). */
   pr: PullRequest | null
+  /** Scripts he left running in the background (novices excepted: see `novices`), oldest first. */
+  scripts: BackgroundScript[]
+}
+
+/** A script a priest runs in the background, and often waits on. */
+export type BackgroundScript = {
+  id: string
+  /** As the SDK names it (e.g. "local_bash"). */
+  kind: string
+  /** What the SDK says about it: usually the raw command or its description. */
+  command: string
+  /** One short plain French sentence on what it does, written by a small model (null until written). */
+  summary: string | null
+  /** When Sangha first saw it running, in ms. */
+  since: number
 }
 
 export type PullRequest = {
