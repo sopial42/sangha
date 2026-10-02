@@ -24,6 +24,7 @@ import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
 import { PullRequests } from './pulls'
 import { BusySettle } from './settle'
+import { carriedOnIn } from './chain'
 import { doing, lifeSummary, progress, recap, scriptSummary, type Progress } from './recap'
 import { priestOptions } from './roles'
 import { ScriptSummaries, trackScripts } from './scripts'
@@ -505,6 +506,7 @@ export class Sessions {
       cost: this.costOf(row.id),
       summary: note && note.key === String(row.archivedAt) ? note.value.summary : null,
       renewed: renewal?.state === 'done',
+      continuedIn: renewal?.state === 'done' ? carriedOnIn(this.store, row.id) : null,
     }
   }
 
@@ -857,6 +859,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     if (this.store.silencedIds().has(s.id)) this.store.setSilenced(row.id, true)
     const carriedNote = this.store.notes().get(s.id)
     if (carriedNote) this.store.setSessionNote(row.id, carriedNote)
+    this.store.setSuccessor(s.id, row.id)
     this.store.setRenewal(s.id, { ...(this.store.renewal(s.id) ?? { bucket: 0, askedAt: Date.now() }), state: 'done' })
     // The old one leaves the courtyard: a Sangha priest is closed (his worktree stays for the new one),
     // an outside session is sent away (its terminal is yours to close).

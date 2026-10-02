@@ -555,8 +555,19 @@ function Nirvana({ onClose }: { onClose: () => void }) {
                 </p>
                 <p className="nirvana-summary">{e.summary ?? <span className="muted small">résumé en cours…</span>}</p>
                 <div className="nirvana-entry-actions">
-                  {e.renewed ? (
-                    <span className="badge">continué dans une session neuve</span>
+                  {e.renewed && e.continuedIn ? (
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => {
+                        onClose()
+                        openSession(e.continuedIn!)
+                      }}
+                      title="Son travail continue dans une session neuve : l'ouvrir"
+                    >
+                      Continué dans une session neuve →
+                    </button>
+                  ) : e.renewed ? (
+                    <span className="badge">continué dans une session neuve, partie au nirvana elle aussi</span>
                   ) : (
                     <button className="btn btn-ghost" disabled={busyId === e.id} onClick={() => void reincarnate(e.id)}>
                       {busyId === e.id ? 'Réincarnation…' : 'Réincarner'}

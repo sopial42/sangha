@@ -181,6 +181,8 @@ export type NirvanaEntry = {
   summary: string | null
   /** He moved on to a fresh session: his work goes on there, nothing to reincarnate. */
   renewed: boolean
+  /** The session still carrying his work on, through his fresh sessions (null when they left too). */
+  continuedIn: string | null
 }
 
 /** Monastery-wide stream: every session's state, plus the plan quota. */

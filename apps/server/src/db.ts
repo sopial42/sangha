@@ -68,6 +68,10 @@ export class Store {
         at INTEGER NOT NULL,
         PRIMARY KEY (session_id, kind)
       );
+      CREATE TABLE IF NOT EXISTS successors (
+        session_id TEXT PRIMARY KEY,
+        next_id TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS renewals (
         session_id TEXT PRIMARY KEY,
         bucket INTEGER NOT NULL,
@@ -244,6 +248,23 @@ export class Store {
   renewal(id: string): Renewal | null {
     const r = this.db.prepare('SELECT bucket, state, asked_at FROM renewals WHERE session_id = ?').get(id) as { bucket: number; state: string; asked_at: number } | undefined
     return r ? { bucket: r.bucket, state: r.state as Renewal['state'], askedAt: r.asked_at } : null
+  }
+
+  /** The fresh session a priest moved on to. */
+  successor(id: string): string | null {
+    const r = this.db.prepare('SELECT next_id FROM successors WHERE session_id = ?').get(id) as { next_id: string } | undefined
+    if (r) return r.next_id
+    // Renewals made before links were kept: the session of the same project and title created as he left.
+    const old = this.getSession(id)
+    if (!old?.archivedAt) return null
+    const guess = this.db
+      .prepare('SELECT id FROM sessions WHERE project = ? AND title = ? AND id != ? AND created_at BETWEEN ? AND ? ORDER BY ABS(created_at - ?) LIMIT 1')
+      .get(old.project, old.title, id, old.archivedAt - 5_000, old.archivedAt + 5_000, old.archivedAt) as { id: string } | undefined
+    return guess?.id ?? null
+  }
+
+  setSuccessor(id: string, next: string) {
+    this.db.prepare('INSERT INTO successors (session_id, next_id) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET next_id = excluded.next_id').run(id, next)
   }
 
   setRenewal(id: string, r: Renewal | null) {
