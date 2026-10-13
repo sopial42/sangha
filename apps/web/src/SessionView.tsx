@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { BUDDHA_SESSION_ID, type BackgroundScript, type SessionSummary } from '@sangha/shared'
-import { api, closeSession, finishClose } from './api'
+import { BUDDHA_SESSION_ID, type BackgroundScript, type McpServer, type SessionSummary } from '@sangha/shared'
+import { api, ApiError, closeSession, finishClose } from './api'
 import { Chat } from './chat/Chat'
 import { Md, MdInline } from './Md'
 import {
@@ -210,6 +210,136 @@ function ScriptItem({ script, now }: { script: BackgroundScript; now: number }) 
   )
 }
 
+const MCP_STATUS_LABEL: Record<McpServer['status'], string> = {
+  connected: 'connecté',
+  failed: 'en échec',
+  'needs-auth': 'à authentifier',
+  pending: 'connexion…',
+  disabled: 'désactivé',
+  off: 'non chargé',
+}
+
+// A server not currently loaded for this priest: the toggle reads "off" either way (switched off, or
+// simply never loaded from the user's Claude config).
+const mcpOff = (s: McpServer) => s.status === 'disabled' || s.status === 'off'
+
+/** One MCP server row: name (claude.ai ones get their own small tag), status, and its on/off switch. */
+function McpRow({ server, busy, onToggle }: { server: McpServer; busy: boolean; onToggle: () => void }) {
+  const claudeAi = server.name.startsWith('claude.ai ')
+  const name = claudeAi ? server.name.slice('claude.ai '.length) : server.name
+  const on = !mcpOff(server)
+  return (
+    <li className="mcp-row">
+      <span className="mcp-name" title={`Portée : ${server.scope}`}>
+        {name}
+        {claudeAi && <span className="mcp-tag">claude.ai</span>}
+      </span>
+      <span className={`mcp-status mcp-status-${server.status}`} title={server.error}>
+        <span className="mcp-dot" aria-hidden />
+        {MCP_STATUS_LABEL[server.status]}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={`${on ? 'Désactiver' : 'Activer'} ${server.name}`}
+        className={`mcp-switch ${on ? 'on' : ''}`}
+        disabled={busy}
+        onClick={onToggle}
+      >
+        <span className="mcp-switch-knob" aria-hidden />
+      </button>
+    </li>
+  )
+}
+
+/**
+ * 🔌 button in the session header: a compact popover over the priest's MCP servers, lazily fetched
+ * (waking his process) on first open, with a per-row toggle that swaps the whole list in from the
+ * backend once it answers. Closed and reopened freely; only a session change or ↻ refetches.
+ */
+function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: string; open: boolean; onToggleOpen: () => void; onClose: () => void }) {
+  const [servers, setServers] = useState<McpServer[] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null) // name of the server mid-toggle, if any
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // A different priest: forget what we knew, fetch fresh next time the popover opens.
+  useEffect(() => {
+    setServers(null)
+    setError(null)
+    setBusy(null)
+  }, [sessionId])
+
+  const load = () => {
+    setLoading(true)
+    setError(null)
+    api
+      .mcpServers(sessionId)
+      .then(setServers)
+      .catch((e) => setError(e instanceof ApiError ? e.message : 'Impossible de joindre le prêtre.'))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    if (open && servers === null && !loading) load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sessionId])
+
+  // A click outside the button or the popover closes it, same as any other dropdown.
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [open, onClose])
+
+  const toggle = (server: McpServer) => {
+    setBusy(server.name)
+    setError(null)
+    api
+      .setMcpServer(sessionId, server.name, mcpOff(server))
+      .then(setServers)
+      .catch((e) => setError(e instanceof ApiError ? e.message : `Impossible de changer ${server.name}.`))
+      .finally(() => setBusy(null))
+  }
+
+  // Enabled ones first; stable sort keeps the backend's own order inside each group.
+  const sorted = servers ? [...servers].sort((a, b) => Number(mcpOff(a)) - Number(mcpOff(b))) : null
+
+  return (
+    <div className="mcp-control" ref={wrapRef}>
+      <button className="icon-btn" aria-haspopup="true" aria-expanded={open} aria-label="Serveurs MCP" title="MCP" onClick={onToggleOpen}>
+        🔌
+      </button>
+      {open && (
+        <div className="mcp-popover" role="menu" aria-label="Serveurs MCP">
+          <header className="mcp-popover-head">
+            <h4>Serveurs MCP</h4>
+            <button className={`icon-btn ${loading ? 'spinning' : ''}`} onClick={load} disabled={loading} aria-label="Rafraîchir" title="Rafraîchir">
+              ↻
+            </button>
+          </header>
+          {loading && !sorted && <p className="muted small">Je réveille le prêtre…</p>}
+          {error && <p className="mcp-error">{error}</p>}
+          {sorted && sorted.length === 0 && <p className="muted small">Aucun serveur MCP.</p>}
+          {sorted && sorted.length > 0 && (
+            <ul className="mcp-list">
+              {sorted.map((server) => (
+                <McpRow key={server.name} server={server} busy={busy === server.name} onToggle={() => toggle(server)} />
+              ))}
+            </ul>
+          )}
+          <p className="muted small mcp-footnote">Réglage gardé pour les prochains prêtres de ce projet.</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // The novices panel, folded away or not: one choice for every session, remembered across reloads.
 const NOVICES_CLOSED_KEY = 'sangha.novicesClosed'
 
@@ -253,11 +383,19 @@ export function SessionView() {
     return () => document.removeEventListener('visibilitychange', markSeen)
   }, [s?.id, s?.status])
 
+  // The MCP popover: Escape closes it first, same as any dropdown would, before it closes the panel.
+  const [mcpOpen, setMcpOpen] = useState(false)
+  useEffect(() => setMcpOpen(false), [s?.id])
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !dialog && closeSession()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (mcpOpen) return setMcpOpen(false)
+      if (!dialog) closeSession()
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [dialog])
+  }, [dialog, mcpOpen])
 
   // Keeps "depuis Xmin" under running scripts fresh, without a tick running when there is nothing to age.
   const [now, setNow] = useState(() => Date.now())
@@ -411,6 +549,9 @@ export function SessionView() {
               <button className="btn btn-ghost" onClick={() => set({ dialog: { kind: 'dismiss', id: s.id } })}>
                 Envoyer au nirvana
               </button>
+            )}
+            {!isBuddha && !s.external && (
+              <McpPanel sessionId={s.id} open={mcpOpen} onToggleOpen={() => setMcpOpen((o) => !o)} onClose={() => setMcpOpen(false)} />
             )}
             <button className="icon-btn big" onClick={closeSession} aria-label="Fermer (Échap)" title="Fermer (Échap)">
               ✕

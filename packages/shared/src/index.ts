@@ -124,6 +124,14 @@ export type SessionSummary = SessionInfo & {
   scripts: BackgroundScript[]
 }
 
+/** An MCP server of a priest: 'disabled' = loaded but switched off, 'off' = in your Claude config, not loaded. */
+export type McpServer = {
+  name: string
+  status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled' | 'off'
+  scope: string
+  error?: string
+}
+
 /** A script a priest runs in the background, and often waits on. */
 export type BackgroundScript = {
   id: string

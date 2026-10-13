@@ -133,6 +133,11 @@ app.post('/api/sessions/:id/note', async (c) => {
   sessions.note(c.req.param('id'), note)
   return c.body(null, 204)
 })
+app.get('/api/sessions/:id/mcp', async (c) => c.json(await sessions.mcp(c.req.param('id'))))
+app.post('/api/sessions/:id/mcp', async (c) => {
+  const { name, enabled } = await c.req.json<{ name: string; enabled: boolean }>()
+  return c.json(await sessions.toggleMcp(c.req.param('id'), name, !!enabled))
+})
 app.post('/api/sessions/:id/seen', (c) => {
   sessions.seen(c.req.param('id'))
   return c.body(null, 202)

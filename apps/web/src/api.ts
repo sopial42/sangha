@@ -1,4 +1,4 @@
-import type { CostReport, Envelope, GlobalEvent, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, ProjectWorktrees, SessionSummary } from '@sangha/shared'
+import type { CostReport, Envelope, GlobalEvent, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, ProjectWorktrees, SessionSummary } from '@sangha/shared'
 import { emptyView, useApp } from './store'
 
 export class ApiError extends Error {
@@ -53,6 +53,10 @@ export const api = {
   costs: () => json<CostReport>('/api/costs'),
   /** Every project's worktrees (its main checkout excepted), flown as prayer flags above its monastery. */
   worktrees: () => json<ProjectWorktrees[]>('/api/worktrees'),
+  /** His MCP servers: may take a few seconds, it wakes his process to ask. */
+  mcpServers: (id: string) => json<McpServer[]>(`/api/sessions/${id}/mcp`),
+  /** Switch one of his MCP servers on or off; enabling can take up to ~30s while it connects. */
+  setMcpServer: (id: string, name: string, enabled: boolean) => json<McpServer[]>(`/api/sessions/${id}/mcp`, post({ name, enabled })),
 }
 
 /** Follow the whole monastery: every session's status, novices and the plan quota. */

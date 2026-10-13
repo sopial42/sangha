@@ -97,6 +97,12 @@ export class Store {
         session_id TEXT PRIMARY KEY,
         note TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS project_mcp (
+        project TEXT NOT NULL,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        PRIMARY KEY (project, name)
+      );
       CREATE TABLE IF NOT EXISTS ignored_projects (
         path TEXT PRIMARY KEY
       );
@@ -323,6 +329,18 @@ export class Store {
   setSessionNote(id: string, note: string | null) {
     if (note) this.db.prepare('INSERT INTO notes (session_id, note) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET note = excluded.note').run(id, note)
     else this.db.prepare('DELETE FROM notes WHERE session_id = ?').run(id)
+  }
+
+  /** MCP servers you switched on or off for a project's priests, by name. */
+  mcpPrefs(project: string): Record<string, boolean> {
+    const rows = this.db.prepare('SELECT name, enabled FROM project_mcp WHERE project = ?').all(project) as { name: string; enabled: number }[]
+    return Object.fromEntries(rows.map((r) => [r.name, !!r.enabled]))
+  }
+
+  setMcpPref(project: string, name: string, enabled: boolean) {
+    this.db
+      .prepare('INSERT INTO project_mcp (project, name, enabled) VALUES (?, ?, ?) ON CONFLICT(project, name) DO UPDATE SET enabled = excluded.enabled')
+      .run(project, name, enabled ? 1 : 0)
   }
 
   /** Folders you took out of the monastery: auto-detection must not bring them back. */

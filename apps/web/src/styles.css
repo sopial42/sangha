@@ -394,6 +394,173 @@ select {
   font-size: 16px;
 }
 
+/* MCP popover: anchored under its 🔌 button, right edge aligned so it never runs past the header. */
+.mcp-control {
+  position: relative;
+  display: inline-flex;
+}
+
+.mcp-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 5;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  max-height: 60vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px #0008;
+}
+
+.mcp-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mcp-popover-head h4 {
+  margin: 0;
+  font: 700 15px var(--serif);
+}
+
+.mcp-error {
+  margin: 0;
+  color: #f5a89b;
+  font-size: 12.5px;
+}
+
+.mcp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mcp-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+
+.mcp-row:first-child {
+  border-top: 0;
+}
+
+.mcp-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+}
+
+.mcp-tag {
+  flex: none;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.mcp-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.mcp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.mcp-status-connected {
+  color: var(--jade);
+}
+
+.mcp-status-failed {
+  color: #f5a89b;
+}
+
+.mcp-status-needs-auth {
+  color: var(--gold);
+}
+
+.mcp-status-pending {
+  color: var(--gold);
+}
+
+.mcp-status-pending .mcp-dot {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+/* Track-and-knob switch: off sits left on the muted track, on slides the knob right over jade. */
+.mcp-switch {
+  flex: none;
+  width: 34px;
+  height: 19px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #3b2b22;
+  cursor: pointer;
+}
+
+.mcp-switch.on {
+  background: var(--jade);
+  border-color: var(--jade);
+}
+
+.mcp-switch:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mcp-switch-knob {
+  display: block;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.mcp-switch.on .mcp-switch-knob {
+  transform: translateX(15px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .mcp-switch-knob {
+    transition: transform 0.16s ease;
+  }
+
+  .mcp-switch {
+    transition: background 0.16s ease, border-color 0.16s ease;
+  }
+}
+
+.mcp-footnote {
+  margin: 2px 0 0;
+}
+
 .sv-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 400px);

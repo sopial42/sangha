@@ -1,12 +1,13 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { query, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { query, type McpServerConfig, type McpServerStatus, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import {
   BUDDHA_SESSION_ID,
   type BackgroundScript,
   type CostReport,
   type Envelope,
   type GlobalEvent,
+  type McpServer,
   type MonasteryEvent,
   type NirvanaEntry,
   type NoviceSummary,
@@ -19,6 +20,7 @@ import type { SessionRow, Shepherd, Store } from './db'
 import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState, type WorktreeState } from './git'
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
+import { enabledExtras, mcpList, readCatalog } from './mcp'
 import { readTailLines } from './files'
 import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
@@ -105,6 +107,7 @@ class LiveSession {
     private onClosed: () => void,
     onClaudeSessionId: (id: string) => void,
     private requestScriptSummary: (taskId: string, command: string) => void,
+    mcpToggles: Record<string, boolean> = {},
   ) {
     const env = { ...process.env } as Record<string, string>
     delete env.ANTHROPIC_API_KEY // belt and braces: never bill the API
@@ -125,6 +128,21 @@ class LiveSession {
       },
     })
     void this.pump(onClaudeSessionId)
+    // A worktree is a new folder for Claude: the servers you switched for this project must be switched again.
+    for (const [name, enabled] of Object.entries(mcpToggles)) void this.q.toggleMcpServer(name, enabled).catch(() => undefined)
+  }
+
+  mcpStatus(): Promise<McpServerStatus[]> {
+    return this.q.mcpServerStatus()
+  }
+
+  toggleMcp(name: string, enabled: boolean): Promise<void> {
+    return this.q.toggleMcpServer(name, enabled)
+  }
+
+  /** The servers Sangha adds from your Claude config; resolves once they connected (or failed to). */
+  async setExtraMcp(servers: Record<string, McpServerConfig>): Promise<void> {
+    await this.q.setMcpServers(servers)
   }
 
   send(text: string) {
@@ -889,6 +907,42 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     this.broadcastSession(id)
   }
 
+  /** A priest's MCP servers, waking his process to ask it. */
+  async mcp(id: string): Promise<McpServer[]> {
+    const row = this.priestRow(id)
+    return mcpList(await this.ensureLive(row).mcpStatus(), readCatalog(this.projects.dir(row.project)))
+  }
+
+  /** Switch a server for this priest and every live priest of his project; the next ones start with it. */
+  async toggleMcp(id: string, name: string, enabled: boolean): Promise<McpServer[]> {
+    const row = this.priestRow(id)
+    this.store.setMcpPref(row.project, name, enabled)
+    const { extras } = this.mcpPlan(row)
+    const fromCatalog = name in readCatalog(this.projects.dir(row.project))
+    const apply = (s: LiveSession) => (fromCatalog ? s.setExtraMcp(extras) : s.toggleMcp(name, enabled))
+    const own = this.ensureLive(row)
+    for (const [otherId, s] of this.live) {
+      if (s !== own && this.store.getSession(otherId)?.project === row.project) void apply(s).catch(() => undefined)
+    }
+    await apply(own).catch((e) => {
+      throw new UserError(`MCP ${name} : ${e instanceof Error ? e.message : String(e)}`)
+    })
+    return this.mcp(id)
+  }
+
+  private priestRow(id: string): SessionRow {
+    const row = this.store.getSession(id)
+    if (!row || row.archivedAt || id === BUDDHA_SESSION_ID || id.startsWith(EXTERNAL_PREFIX)) throw new UserError('session inconnue')
+    return row
+  }
+
+  /** At launch: servers to add from your Claude config, and switches to replay on the ones he loads himself. */
+  private mcpPlan(row: SessionRow): { extras: Record<string, McpServerConfig>; toggles: Record<string, boolean> } {
+    const catalog = readCatalog(this.projects.dir(row.project))
+    const prefs = this.store.mcpPrefs(row.project)
+    return { extras: enabledExtras(catalog, prefs), toggles: Object.fromEntries(Object.entries(prefs).filter(([name]) => !(name in catalog))) }
+  }
+
   /** A free-text note pinned on a priest, for whatever you want to remember about him. */
   note(id: string, note: string | null) {
     if (!this.summaryOf(id)) throw new UserError('session inconnue')
@@ -1103,10 +1157,11 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     if (!s) {
       const isBuddha = row.id === BUDDHA_SESSION_ID
       const cwd = isBuddha ? config.workspacesDir : (row.worktree ?? this.projects.dir(row.project))
+      const mcp = isBuddha ? null : this.mcpPlan(row)
       s = new LiveSession(
         row,
         cwd,
-        isBuddha ? this.buddhaOptions(this) : priestOptions(row.agent),
+        isBuddha ? this.buddhaOptions(this) : { ...priestOptions(row.agent), mcpServers: mcp!.extras },
         (ev) => this.emit(row.id, ev),
         () => {
           this.live.delete(row.id)
@@ -1114,6 +1169,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
         },
         (claudeId) => this.store.setClaudeSessionId(row.id, claudeId),
         (taskId, command) => this.scriptSummaries.request(row.id, taskId, command, row.title),
+        mcp?.toggles,
       )
       this.live.set(row.id, s)
     }
