@@ -551,6 +551,19 @@ export function SessionView() {
               </button>
             )}
             {!isBuddha && !s.external && (
+              <button
+                className="icon-btn"
+                onClick={() => {
+                  if (s.status === 'working' && !confirm('Il travaille : relancer interrompt son tour en cours. Relancer quand même ?')) return
+                  void api.restart(s.id)
+                }}
+                aria-label="Relancer la session"
+                title="Relancer la session : même conversation, mais il relit son agent, ses outils et ses MCP"
+              >
+                ⟳
+              </button>
+            )}
+            {!isBuddha && !s.external && (
               <McpPanel sessionId={s.id} open={mcpOpen} onToggleOpen={() => setMcpOpen((o) => !o)} onClose={() => setMcpOpen(false)} />
             )}
             <button className="icon-btn big" onClick={closeSession} aria-label="Fermer (Échap)" title="Fermer (Échap)">

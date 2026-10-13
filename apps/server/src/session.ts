@@ -86,6 +86,9 @@ class LiveSession {
   private normalizer = new Normalizer()
   private turnRunning = false
   private idleTimer: NodeJS.Timeout | undefined
+  private markClosed!: () => void
+  /** Resolves once his process is gone (and he left the live map). */
+  readonly closed = new Promise<void>((r) => (this.markClosed = r))
   // Said to have stopped only after a few still seconds: a background task reporting back wakes him right after his turn.
   private settle = new BusySettle(config.settleMs, (busy) => this.emit({ t: 'busy', busy }))
   get busy() {
@@ -224,6 +227,7 @@ class LiveSession {
       this.activity = null
       this.refreshBusy(true) // closed: nothing will wake him, no need to wait
       this.onClosed()
+      this.markClosed()
     }
   }
 
@@ -248,6 +252,9 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 /** Sent to an outside session once its work has moved on to a fresh session. */
 export const FAREWELL =
   'La suite de ton travail continue dans une session neuve, qui a reçu ta passation. Arrête ici tout travail : ne lance ni ne relance plus de sous-agents, et ne réponds plus aux notifications de tâches. Tu peux être fermée.'
+
+const RESTARTED =
+  'Ta session vient d’être relancée depuis Sangha : ton fichier d’agent, tes outils, skills et serveurs MCP ont été relus. Vérifie que ce qui te manquait est là, puis reprends où tu en étais (si tu attendais une réponse de ma part, attends-la).'
 
 export class Sessions {
   private live = new Map<string, LiveSession>()
@@ -907,6 +914,23 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     this.broadcastSession(id)
   }
 
+  /**
+   * Stop his Claude process and start a new one on the same conversation: it rereads what is only read
+   * at launch (his agent file and its tools, skills, settings, MCP). A turn in progress is interrupted.
+   */
+  async restart(id: string) {
+    const row = this.priestRow(id)
+    const old = this.live.get(id)
+    if (old) {
+      await old.interrupt()
+      old.close()
+      // Never two processes on one conversation: wait for the old one to be gone.
+      await Promise.race([old.closed, new Promise((r) => setTimeout(r, 15_000))])
+      if (this.live.get(id) === old) this.live.delete(id)
+    }
+    this.send(row.id, RESTARTED)
+  }
+
   /** A priest's MCP servers, waking his process to ask it. */
   async mcp(id: string): Promise<McpServer[]> {
     const row = this.priestRow(id)
@@ -1164,7 +1188,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
         isBuddha ? this.buddhaOptions(this) : { ...priestOptions(row.agent), mcpServers: mcp!.extras },
         (ev) => this.emit(row.id, ev),
         () => {
-          this.live.delete(row.id)
+          if (this.live.get(row.id) === s) this.live.delete(row.id)
           this.broadcastSession(row.id)
         },
         (claudeId) => this.store.setClaudeSessionId(row.id, claudeId),
