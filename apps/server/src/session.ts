@@ -20,7 +20,7 @@ import type { SessionRow, Shepherd, Store } from './db'
 import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState, type WorktreeState } from './git'
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
-import { enabledExtras, mcpList, readCatalog } from './mcp'
+import { enabledExtras, mcpList, mcpLogin, readCatalog } from './mcp'
 import { readTailLines } from './files'
 import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
@@ -141,6 +141,10 @@ class LiveSession {
 
   toggleMcp(name: string, enabled: boolean): Promise<void> {
     return this.q.toggleMcpServer(name, enabled)
+  }
+
+  reconnectMcp(name: string): Promise<void> {
+    return this.q.reconnectMcpServer(name)
   }
 
   /** The servers Sangha adds from your Claude config; resolves once they connected (or failed to). */
@@ -951,6 +955,20 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     await apply(own).catch((e) => {
       throw new UserError(`MCP ${name} : ${e instanceof Error ? e.message : String(e)}`)
     })
+    return this.mcp(id)
+  }
+
+  /** Sign in to a server that needs it (your browser opens), then reconnect it for the project's live priests. */
+  async loginMcp(id: string, name: string): Promise<McpServer[]> {
+    const row = this.priestRow(id)
+    await mcpLogin(this.cwdOf(row) ?? this.projects.dir(row.project), name).catch((e) => {
+      throw new UserError(`connexion à ${name} : ${e instanceof Error ? e.message : String(e)}`)
+    })
+    const own = this.ensureLive(row)
+    for (const [otherId, s] of this.live) {
+      if (s !== own && this.store.getSession(otherId)?.project === row.project) void s.reconnectMcp(name).catch(() => undefined)
+    }
+    await own.reconnectMcp(name).catch(() => undefined)
     return this.mcp(id)
   }
 

@@ -58,6 +58,8 @@ export const api = {
   /** His MCP servers: may take a few seconds, it wakes his process to ask. */
   mcpServers: (id: string) => json<McpServer[]>(`/api/sessions/${id}/mcp`),
   /** Switch one of his MCP servers on or off; enabling can take up to ~30s while it connects. */
+  /** Sign in to one of his servers: opens your browser, answers once you authorized (up to a few minutes). */
+  loginMcpServer: (id: string, name: string) => json<McpServer[]>(`/api/sessions/${id}/mcp/login`, post({ name })),
   setMcpServer: (id: string, name: string, enabled: boolean) => json<McpServer[]>(`/api/sessions/${id}/mcp`, post({ name, enabled })),
 }
 

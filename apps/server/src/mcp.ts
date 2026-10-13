@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -46,4 +47,40 @@ export function mcpList(statuses: McpServerStatus[], catalog: Catalog): McpServe
   const loaded = new Set(list.map((s) => s.name))
   for (const [name, s] of Object.entries(catalog)) if (!loaded.has(name)) list.push({ name, status: 'off', scope: s.scope })
   return list
+}
+
+/**
+ * Sign in to an MCP server the way `/mcp` does in a terminal: `claude mcp login` opens your browser and
+ * waits for the OAuth callback on localhost (so only where Sangha runs on your machine). It wants a
+ * terminal, hence `script`, fed by a pipe that stays open (Node's own stdin is a socket `script` rejects,
+ * and an EOF would make it stop waiting). It refuses project servers not approved in that folder, hence
+ * `--settings`. Credentials land in Claude Code's store, shared by every folder declaring the same server.
+ */
+export function mcpLogin(cwd: string, name: string, timeoutMs = 4 * 60_000): Promise<void> {
+  const env: NodeJS.ProcessEnv = { ...process.env, MCP_NAME: name, MCP_SETTINGS: JSON.stringify({ enabledMcpjsonServers: [name] }) }
+  delete env.ANTHROPIC_API_KEY // never bill the API
+  const cmd = 'script -q /dev/null claude --settings "$MCP_SETTINGS" mcp login "$MCP_NAME" < <(sleep 3600)'
+  return new Promise((resolve, reject) => {
+    const child = spawn('bash', ['-c', cmd], { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    let out = ''
+    child.stdout.on('data', (d) => (out += d))
+    child.stderr.on('data', (d) => (out += d))
+    const stop = () => {
+      try {
+        process.kill(-child.pid!) // the whole group, the feeding `sleep` included
+      } catch {}
+    }
+    const timer = setTimeout(stop, timeoutMs)
+    child.on('close', () => {
+      clearTimeout(timer)
+      stop()
+      const text = out.replace(/\x1b\[[0-9;?]*[a-zA-Z]|\x1b\]8;;[^\x07\x1b]*(\x07|\x1b\\)?|\r|\^D\x08\x08/g, '')
+      if (/Authenticated with/.test(text)) return resolve()
+      const why = text
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => l && !l.startsWith('[mcp-sdk]') && !l.startsWith('Starting authentication'))
+      reject(new Error(/Waiting for authorization/.test(text) ? 'pas d’autorisation reçue à temps' : (why?.slice(0, 200) ?? 'échec de la connexion')))
+    })
+  })
 }

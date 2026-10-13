@@ -224,7 +224,7 @@ const MCP_STATUS_LABEL: Record<McpServer['status'], string> = {
 const mcpOff = (s: McpServer) => s.status === 'disabled' || s.status === 'off'
 
 /** One MCP server row: name (claude.ai ones get their own small tag), status, and its on/off switch. */
-function McpRow({ server, busy, onToggle }: { server: McpServer; busy: boolean; onToggle: () => void }) {
+function McpRow({ server, busy, onToggle, onLogin }: { server: McpServer; busy: boolean; onToggle: () => void; onLogin: () => void }) {
   const claudeAi = server.name.startsWith('claude.ai ')
   const name = claudeAi ? server.name.slice('claude.ai '.length) : server.name
   const on = !mcpOff(server)
@@ -234,10 +234,18 @@ function McpRow({ server, busy, onToggle }: { server: McpServer; busy: boolean; 
         {name}
         {claudeAi && <span className="mcp-tag">claude.ai</span>}
       </span>
-      <span className={`mcp-status mcp-status-${server.status}`} title={server.error}>
-        <span className="mcp-dot" aria-hidden />
-        {MCP_STATUS_LABEL[server.status]}
-      </span>
+      {server.status === 'needs-auth' ? (
+        // Opens your browser on its sign-in page; the row stays busy until you authorized there.
+        <button type="button" className="mcp-login" onClick={onLogin} disabled={busy} title="Ouvre la page de connexion dans ton navigateur">
+          <span className="mcp-dot" aria-hidden />
+          {busy ? 'autorise dans le navigateur…' : 'Se connecter'}
+        </button>
+      ) : (
+        <span className={`mcp-status mcp-status-${server.status}`} title={server.error}>
+          <span className="mcp-dot" aria-hidden />
+          {MCP_STATUS_LABEL[server.status]}
+        </span>
+      )}
       <button
         type="button"
         role="switch"
@@ -307,6 +315,16 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
       .finally(() => setBusy(null))
   }
 
+  const login = (server: McpServer) => {
+    setBusy(server.name)
+    setError(null)
+    api
+      .loginMcpServer(sessionId, server.name)
+      .then(setServers)
+      .catch((e) => setError(e instanceof ApiError ? e.message : `Impossible de se connecter à ${server.name}.`))
+      .finally(() => setBusy(null))
+  }
+
   // Enabled ones first; stable sort keeps the backend's own order inside each group.
   const sorted = servers ? [...servers].sort((a, b) => Number(mcpOff(a)) - Number(mcpOff(b))) : null
 
@@ -329,7 +347,7 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
           {sorted && sorted.length > 0 && (
             <ul className="mcp-list">
               {sorted.map((server) => (
-                <McpRow key={server.name} server={server} busy={busy === server.name} onToggle={() => toggle(server)} />
+                <McpRow key={server.name} server={server} busy={busy === server.name} onToggle={() => toggle(server)} onLogin={() => login(server)} />
               ))}
             </ul>
           )}

@@ -486,6 +486,34 @@ select {
   white-space: nowrap;
 }
 
+.mcp-login {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mcp-login:not(:disabled):hover,
+.mcp-login:not(:disabled):focus-visible {
+  border-color: var(--gold);
+}
+
+.mcp-login:disabled {
+  cursor: progress;
+}
+
+.mcp-login:disabled .mcp-dot {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
 .mcp-dot {
   width: 7px;
   height: 7px;
@@ -501,7 +529,8 @@ select {
   color: #f5a89b;
 }
 
-.mcp-status-needs-auth {
+.mcp-status-needs-auth,
+.mcp-login {
   color: var(--gold);
 }
 

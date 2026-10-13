@@ -137,6 +137,11 @@ app.post('/api/sessions/:id/restart', async (c) => {
   await sessions.restart(c.req.param('id'))
   return c.body(null, 204)
 })
+// Opens your browser on the server's OAuth page and answers once you authorized (or gave up).
+app.post('/api/sessions/:id/mcp/login', async (c) => {
+  const { name } = await c.req.json<{ name: string }>()
+  return c.json(await sessions.loginMcp(c.req.param('id'), name))
+})
 app.get('/api/sessions/:id/mcp', async (c) => c.json(await sessions.mcp(c.req.param('id'))))
 app.post('/api/sessions/:id/mcp', async (c) => {
   const { name, enabled } = await c.req.json<{ name: string; enabled: boolean }>()
