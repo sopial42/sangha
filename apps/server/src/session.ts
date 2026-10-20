@@ -448,7 +448,8 @@ export class Sessions {
     this.live.get(id)?.close()
     this.live.delete(id)
     // Only worktrees Sangha created (they have a base commit); an adopted session's folder is yours.
-    if (row.worktree && row.branch && row.baseSha) await removeWorktree(this.projects.dir(row.project), row.worktree, row.branch, state.ahead)
+    // Kept while another session still works there (the one he renewed into, or that renewed into him).
+    if (row.worktree && row.branch && row.baseSha && !this.store.othersInWorktree(row.worktree, id).length) await removeWorktree(this.projects.dir(row.project), row.worktree, row.branch, state.ahead)
     this.store.archive(id)
     for (const fn of this.globalListeners) fn({ kind: 'removed', id })
     for (const fn of this.globalListeners) fn({ kind: 'nirvana' })
@@ -463,8 +464,6 @@ export class Sessions {
   async reincarnate(id: string): Promise<SessionSummary> {
     const row = this.store.getSession(id)
     if (!row || !row.archivedAt || id === BUDDHA_SESSION_ID) throw new UserError('session inconnue')
-    const renewal = this.store.renewal(id)
-    if (renewal?.state === 'done') throw new UserError('il est reparti à neuf : rien à réincarner')
     if (!this.projects.exists(row.project)) throw new UserError(`projet disparu : ${row.project}`)
     if (row.worktree && !existsSync(row.worktree)) {
       if (row.baseSha) await restoreWorktree(this.projects.dir(row.project), row.worktree, row.branch!, row.baseSha)

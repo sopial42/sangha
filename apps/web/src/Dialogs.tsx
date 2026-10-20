@@ -568,11 +568,16 @@ function Nirvana({ onClose }: { onClose: () => void }) {
                     </button>
                   ) : e.renewed ? (
                     <span className="badge">continué dans une session neuve, partie au nirvana elle aussi</span>
-                  ) : (
-                    <button className="btn btn-ghost" disabled={busyId === e.id} onClick={() => void reincarnate(e.id)}>
-                      {busyId === e.id ? 'Réincarnation…' : 'Réincarner'}
-                    </button>
-                  )}
+                  ) : null}
+                  {/* Even renewed, his own conversation can come back (to read it, or to pick up from there). */}
+                  <button
+                    className="btn btn-ghost"
+                    disabled={busyId === e.id}
+                    onClick={() => void reincarnate(e.id)}
+                    title={e.renewed ? 'Le faire revenir avec son ancienne conversation, à côté de la session neuve (même dossier : ne les fais pas travailler en même temps)' : undefined}
+                  >
+                    {busyId === e.id ? 'Réincarnation…' : 'Réincarner'}
+                  </button>
                 </div>
               </li>
             ))}

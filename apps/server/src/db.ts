@@ -158,6 +158,11 @@ export class Store {
   }
 
   /** Sent to nirvana: archived sessions, newest dismissal first, at most `limit`. */
+  /** Sessions still in the monastery that work in this folder (a priest and the one he renewed into share it). */
+  othersInWorktree(worktree: string, exceptId: string): string[] {
+    return (this.db.prepare('SELECT id FROM sessions WHERE worktree = ? AND id != ? AND archived_at IS NULL').all(worktree, exceptId) as { id: string }[]).map((r) => r.id)
+  }
+
   archivedSessions(limit = 200): SessionRow[] {
     return (this.db.prepare('SELECT * FROM sessions WHERE archived_at IS NOT NULL ORDER BY archived_at DESC LIMIT ?').all(limit) as Row[]).map(toSession)
   }

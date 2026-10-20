@@ -16,6 +16,16 @@ const row = (id: string): SessionRow => ({
 })
 
 describe('Store', () => {
+  it('knows who else still works in a worktree, so sending one to nirvana keeps it for the other', () => {
+    const s = new Store(':memory:')
+    s.createSession(row('old'))
+    s.createSession(row('new'))
+    s.createSession({ ...row('elsewhere'), worktree: '/w/y' })
+    expect(s.othersInWorktree('/w/x', 'old')).toEqual(['new'])
+    s.archive('new')
+    expect(s.othersInWorktree('/w/x', 'old')).toEqual([])
+  })
+
   it('knows when a priest fell idle and whether it was seen', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))
