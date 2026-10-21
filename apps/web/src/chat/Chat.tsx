@@ -58,27 +58,48 @@ export function Chat({ author, external = null }: { author: string; external?: {
 
   // The log follows new words only while you are at its bottom. Reading further up, you stay where you
   // are: a blinking bell tells you new words came. Your own message always brings you down.
+  // Any move up lets go at once, even a pixel: a streaming reply re-renders on every word, often before
+  // the scroll event of your gesture arrives, and would otherwise pull you back down each time.
   const atBottom = useRef(true)
+  const lastTop = useRef(0)
   const [fresh, setFresh] = useState(false)
   const toBottom = () => {
     const el = logRef.current
-    if (el) el.scrollTop = el.scrollHeight
+    if (el) {
+      el.scrollTop = el.scrollHeight
+      lastTop.current = el.scrollTop
+    }
     atBottom.current = true
     setFresh(false)
   }
+  const letGo = () => {
+    atBottom.current = false
+  }
+  // Moved up since we last looked, and not merely clamped by content that shrank under us.
+  const wentUp = (el: HTMLElement) => el.scrollTop < lastTop.current - 1 && el.scrollHeight - el.scrollTop - el.clientHeight > 1
   useEffect(() => {
     atBottom.current = true
     setFresh(false)
   }, [sessionId])
   useLayoutEffect(() => {
+    const el = logRef.current
+    if (el && wentUp(el)) letGo()
     if (atBottom.current || view.chat.at(-1)?.kind === 'user') toBottom()
     else setFresh(true)
   }, [view.chat.length, view.draft])
   const onScroll = () => {
     const el = logRef.current
     if (!el) return
-    atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    if (wentUp(el)) letGo()
+    else if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) atBottom.current = true
+    lastTop.current = el.scrollTop
     if (atBottom.current) setFresh(false)
+  }
+  const onWheel = (e: React.WheelEvent) => {
+    if (e.deltaY < 0) letGo()
+  }
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) letGo()
   }
 
   // Recall past messages with ArrowUp/ArrowDown, like a shell history: -1 means "not browsing".
@@ -185,7 +206,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
           🔔 Nouveaux messages
         </button>
       )}
-      <div className="chat-log" aria-live="polite" ref={logRef} onScroll={onScroll}>
+      <div className="chat-log" aria-live="polite" ref={logRef} onScroll={onScroll} onWheel={onWheel} onKeyDown={onKeyDown}>
         {empty && (
           <div className="chat-empty">
             <p className="chat-empty-title">Silence.</p>
