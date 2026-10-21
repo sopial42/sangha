@@ -198,6 +198,10 @@ export function Chat({ author, external = null }: { author: string; external?: {
     }
   }
 
+  // Rendered once per change of the log, not on every keystroke in the textarea: a long session's
+  // markdown would otherwise be parsed again for each letter typed.
+  const log = useMemo(() => view.chat.map(render), [view.chat, view.monks, author, profiles])
+
   const empty = view.chat.length === 0 && !view.draft
   return (
     <section className="chat" aria-label={`Conversation avec ${author}`}>
@@ -213,7 +217,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
             <p>{`Écris à ${author}.`}</p>
           </div>
         )}
-        {view.chat.map(render)}
+        {log}
         {view.draft && (
           <div className="msg msg-buddha streaming">
             <span className="msg-author">{author}</span>
