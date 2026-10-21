@@ -316,8 +316,8 @@ select {
   position: fixed;
   inset: 0;
   z-index: 10;
-  background: #0b0810b3;
-  backdrop-filter: blur(3px);
+  /* No backdrop blur: redone on every frame of the animated scene underneath, it made typing lag. */
+  background: #0b0810d1;
   display: grid;
   padding: 16px;
 }
