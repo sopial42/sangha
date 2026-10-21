@@ -15,6 +15,17 @@ const Time = ({ at }: { at: number }) =>
 
 // Plumbing that says nothing to the user.
 const HIDDEN_TOOLS = new Set(['ToolSearch', 'TodoWrite'])
+const visible = (item: ChatItem) => item.kind !== 'tool' || !HIDDEN_TOOLS.has(item.tool)
+
+// A long session shows only its last messages, older ones loaded on demand by this many.
+const PAGE = 20
+
+/** Where to start the log so it shows `count` visible items before `end`. */
+function startFor(chat: ChatItem[], end: number, count: number): number {
+  let i = end
+  while (i > 0 && count > 0) if (visible(chat[--i]!)) count--
+  return i
+}
 // Buddha's own tools, in words.
 const SANGHA_TOOLS: Record<string, string> = {
   list_projects: 'Consulte les projets',
@@ -198,9 +209,33 @@ export function Chat({ author, external = null }: { author: string; external?: {
     }
   }
 
+  // Only the last PAGE messages at first: thousands of them in the page made every keystroke slow.
+  // `from` stays null (follow the end) until you load older ones, then holds where the log starts, so
+  // new words arriving do not push what you are reading out of the log.
+  const [from, setFrom] = useState<number | null>(null)
+  useEffect(() => setFrom(null), [sessionId])
+  const start = from ?? startFor(view.chat, view.chat.length, PAGE)
+  const older = useRef<number | null>(null) // scroll height before loading older messages
+  const loadOlder = () => {
+    older.current = logRef.current?.scrollHeight ?? null
+    setFrom(startFor(view.chat, start, PAGE))
+  }
+  // Keep what you were reading in place once older messages appear above it.
+  useLayoutEffect(() => {
+    const el = logRef.current
+    if (!el || older.current === null) return
+    el.scrollTop += el.scrollHeight - older.current
+    lastTop.current = el.scrollTop
+    older.current = null
+  }, [start])
+
   // Rendered once per change of the log, not on every keystroke in the textarea: a long session's
   // markdown would otherwise be parsed again for each letter typed.
-  const log = useMemo(() => view.chat.map(render), [view.chat, view.monks, author, profiles])
+  const log = useMemo(
+    () => view.chat.slice(start).map((item, i) => render(item, start + i)),
+    [view.chat, start, view.monks, author, profiles],
+  )
+  const hiddenOlder = useMemo(() => view.chat.slice(0, start).filter(visible).length, [view.chat, start])
 
   const empty = view.chat.length === 0 && !view.draft
   return (
@@ -216,6 +251,11 @@ export function Chat({ author, external = null }: { author: string; external?: {
             <p className="chat-empty-title">Silence.</p>
             <p>{`Écris à ${author}.`}</p>
           </div>
+        )}
+        {hiddenOlder > 0 && (
+          <button type="button" className="chat-older" onClick={loadOlder}>
+            {Math.min(PAGE, hiddenOlder)} messages plus anciens · {hiddenOlder} masqués
+          </button>
         )}
         {log}
         {view.draft && (

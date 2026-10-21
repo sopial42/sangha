@@ -1644,6 +1644,23 @@ select {
   grid-row: 2;
 }
 
+.chat-older {
+  align-self: center;
+  margin-bottom: 4px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: inherit;
+  font: 500 13px var(--sans);
+  cursor: pointer;
+}
+
+.chat-older:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
 .chat-fresh {
   grid-row: 1;
   grid-column: 1;
