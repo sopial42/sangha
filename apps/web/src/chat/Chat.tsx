@@ -171,8 +171,10 @@ export function Chat({ author, external = null }: { author: string; external?: {
     else setFresh(true)
   }, [view.chat.length, view.draft])
   // A message you just queued brings you down too.
+  const queuedBefore = useRef(queued.length)
   useLayoutEffect(() => {
-    if (queued.length) toBottom()
+    if (queued.length > queuedBefore.current) toBottom()
+    queuedBefore.current = queued.length
   }, [queued.length])
   const onScroll = () => {
     const el = logRef.current
