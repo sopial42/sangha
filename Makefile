@@ -24,7 +24,7 @@ plugins: ## Fetch pinned plugins (superpowers, ui-ux-pro-max, frontend-design)
 install: ## Install npm dependencies
 	npm install
 
-dev: plugins ## Run locally with hot reload: web on :5173, api on :8787
+dev: plugins ## Run locally with hot reload on http://127.0.0.1:8787 (same address as serve/up)
 	npm run dev
 
 test: ## Run tests

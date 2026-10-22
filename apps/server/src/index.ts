@@ -301,15 +301,21 @@ app.get('/api/sessions/:id/events', (c) => {
   })
 })
 
-// In Docker the server also serves the built web app.
+// Built, the server also serves the web app. Not under `make dev`: Vite serves the live one, and a dist
+// left by an old build would show outdated screens.
+const dev = process.env.SANGHA_DEV === '1'
 const webDist = resolve(process.env.SANGHA_WEB_DIST ?? join(import.meta.dirname, '../../web/dist'))
-if (existsSync(webDist)) {
+if (!dev && existsSync(webDist)) {
   app.use('/*', serveStatic({ root: webDist }))
   app.get('/*', serveStatic({ path: join(webDist, 'index.html') }))
 }
 
 const server = serve({ fetch: app.fetch, port: config.port, hostname: process.env.HOST ?? '127.0.0.1' }, (i) =>
-  console.log(`☸ Sangha on http://${i.address}:${i.port} — workspaces: ${config.workspacesDir}`),
+  console.log(
+    dev
+      ? `☸ Sangha API on :${i.port} (internal) — open http://127.0.0.1:${process.env.SANGHA_PORT ?? 8787} — workspaces: ${config.workspacesDir}`
+      : `☸ Sangha on http://${i.address}:${i.port} — workspaces: ${config.workspacesDir}`,
+  ),
 )
 
 const shutdown = () => {

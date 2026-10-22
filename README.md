@@ -52,8 +52,12 @@ Ajoute tes projets avec **+ Projet** :
 **En local** (utilise ta session Claude Code déjà connectée sur la machine) :
 
 ```sh
-make dev            # http://localhost:5173
+make dev            # http://127.0.0.1:8787
 ```
+
+Une seule adresse, comme en `make serve` et `make up` : en dev, Vite prend le port 8787 (rechargement à chaud de
+l'interface) et passe `/api` au serveur, déplacé sur un port interne (8788, `SANGHA_API_PORT` pour le changer).
+`make serve` et `make dev` ne peuvent donc pas tourner en même temps.
 
 En `make dev`, le serveur **ne redémarre pas** quand son code change : les sessions lancées par Sangha tournent
 à l'intérieur, un redémarrage les couperait toutes. Pour prendre en compte une modification du serveur,
