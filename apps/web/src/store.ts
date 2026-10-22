@@ -164,7 +164,6 @@ type AppState = {
   moonArrivals: number
   /** Bumped on every `{kind:'session'}` global event: what the cost chip watches, throttled, to refresh its total. */
   sessionsVersion: number
-  /** Étendards toggle in the scene: shown until switched off, remembered across reloads. */
   /** The bowl stays silent when a priest finishes (notifications still show), remembered across reloads. */
   muted: boolean
   /** Session shown in the panel: a priest id, 'buddha', or null. */
