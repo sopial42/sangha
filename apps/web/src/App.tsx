@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { BUDDHA_SESSION_ID } from '@sangha/shared'
 import { api, openMonastery, openSession } from './api'
+import { Bell } from './Bell'
 import { CostChip } from './CostChip'
 import { Dialogs } from './Dialogs'
-import { requestNotifications, watchPriests } from './notify'
+import { keepAudioUnlocked, watchPriests } from './notify'
 import { Quota } from './quota/Quota'
 import { Monastery } from './scene/Monastery'
 import { SessionView } from './SessionView'
@@ -11,9 +11,9 @@ import { useApp } from './store'
 
 export function App() {
   const set = useApp((s) => s.set)
-  const projects = useApp((s) => s.projects)
-  const prayerFlags = useApp((s) => s.prayerFlags)
-  const togglePrayerFlags = useApp((s) => s.togglePrayerFlags)
+  const models = useApp((s) => s.models)
+  const defaultModel = useApp((s) => s.defaultModel)
+  const setDefaultModel = useApp((s) => s.setDefaultModel)
   const [offline, setOffline] = useState(false)
 
   useEffect(() => {
@@ -24,9 +24,10 @@ export function App() {
         setOffline(false)
       })
       .catch(() => setOffline(true))
+    api.models().then((models) => set({ models }), () => undefined)
     const close = openMonastery(() => setOffline(true))
     const unwatch = watchPriests()
-    requestNotifications()
+    keepAudioUnlocked()
     const session = params.get('session')
     if (session) openSession(session)
     return () => {
@@ -44,27 +45,27 @@ export function App() {
           </span>
           <span className="brand-name">Sangha</span>
           <CostChip onOpen={() => set({ dialog: { kind: 'costs' } })} />
+          {models.length > 0 && (
+            <select
+              className="model-pick"
+              value={models.some((m) => m.id === defaultModel) ? defaultModel : ''}
+              onChange={(e) => setDefaultModel(e.target.value)}
+              aria-label="Modèle des nouvelles sessions"
+              title="Modèle des nouvelles sessions (modifiable à chaque lancement)"
+            >
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          )}
+          <button className="btn btn-ghost" onClick={() => set({ dialog: { kind: 'providers' } })} title="Ajouter un endpoint de modèles (ex. OVH) à la place de Claude">
+            Fournisseurs
+          </button>
         </div>
-        <nav className="top-actions" aria-label="Actions">
-          <button className="btn btn-ghost" onClick={() => openSession(BUDDHA_SESSION_ID)}>
-            ☸ Bouddha
-          </button>
-          <button className="btn btn-primary" onClick={() => set({ dialog: { kind: 'new-session' } })} disabled={projects.length === 0}>
-            + Session
-          </button>
-          <button className="btn btn-ghost" onClick={() => set({ dialog: { kind: 'add-project' } })}>
-            + Projet
-          </button>
-          <button
-            className={`btn btn-ghost ${prayerFlags ? 'active' : ''}`}
-            aria-pressed={prayerFlags}
-            onClick={togglePrayerFlags}
-            title="Un étendard par worktree, au-dessus de chaque monastère"
-          >
-            Étendards
-          </button>
-        </nav>
         <Quota />
+        <Bell />
       </header>
       {offline && (
         <p className="banner" role="alert">

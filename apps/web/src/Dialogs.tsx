@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { CostReport, NirvanaEntry, ProjectSuggestion } from '@sangha/shared'
+import type { CostReport, NirvanaEntry, ProjectSuggestion, Provider } from '@sangha/shared'
 import { ApiError, api, openSession } from './api'
 import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
@@ -35,6 +35,9 @@ function NewSession({ project: initial, onClose }: { project?: string; onClose: 
   const [agent, setAgent] = useState('')
   const [branches, setBranches] = useState<string[]>([])
   const [baseRef, setBaseRef] = useState('')
+  const models = useApp((s) => s.models)
+  const defaultModel = useApp((s) => s.defaultModel)
+  const [model, setModel] = useState(defaultModel)
   const [prompt, setPrompt] = useState(() => draftOf(NEW_PRIEST_DRAFT))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -52,7 +55,7 @@ function NewSession({ project: initial, onClose }: { project?: string; onClose: 
     setBusy(true)
     setError(null)
     try {
-      const s = await api.createSession({ project, agent, prompt, baseRef: baseRef || undefined })
+      const s = await api.createSession({ project, agent, prompt, baseRef: baseRef || undefined, model: models.some((m) => m.id === model) ? model : '' })
       saveDraft(NEW_PRIEST_DRAFT, '')
       onClose()
       openSession(s.id)
@@ -97,6 +100,21 @@ function NewSession({ project: initial, onClose }: { project?: string; onClose: 
               ))}
             </select>
             <span className="hint">Le prêtre travaille dans son propre worktree, sur une branche sangha/…</span>
+          </label>
+        )}
+        {models.length > 0 && (
+          <label>
+            Modèle
+            <select value={model} onChange={(e) => setModel(e.target.value)}>
+              {models.map((x) => (
+                <option key={x.id} value={x.id}>
+                  {x.label}
+                </option>
+              ))}
+            </select>
+            {models.find((x) => x.id === model)?.engine !== 'claude' && (
+              <span className="hint">Hors de ton abonnement Claude : ni quota consommé ni coût affiché.</span>
+            )}
           </label>
         )}
         <label>
@@ -669,5 +687,201 @@ export function Dialogs() {
   if (dialog.kind === 'note') return <NoteEditor id={dialog.id} onClose={close} />
   if (dialog.kind === 'nirvana') return <Nirvana onClose={close} />
   if (dialog.kind === 'costs') return <Costs onClose={close} />
+  if (dialog.kind === 'providers') return <Providers onClose={close} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
+}
+
+const EMPTY_PROVIDER: Partial<Provider> = { name: '', baseUrl: '', apiKey: '', authToken: '', timeoutMs: 3_000_000, models: null }
+
+/**
+ * Endpoints Claude Code can run on instead of Claude (e.g. OVH AI endpoints): address and credentials set
+ * once; Sangha sets every ANTHROPIC_* model variable to the model each session picks. Models: all those the
+ * endpoint lists (kept current), or only the ones you tick.
+ */
+function Providers({ onClose }: { onClose: () => void }) {
+  const set = useApp((s) => s.set)
+  const [list, setList] = useState<Provider[] | null>(null)
+  const [edit, setEdit] = useState<Partial<Provider> | null>(null)
+  const [found, setFound] = useState<string[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const reload = () => {
+    api.providers().then(
+      (l) => {
+        setList(l)
+        setError(null)
+      },
+      (e: unknown) => {
+        setList([])
+        setError(
+          e instanceof ApiError && e.status === 404
+            ? 'Le serveur tourne sur une version d’avant les fournisseurs : redémarre-le (make dev).'
+            : `Fournisseurs illisibles : ${message(e)}`,
+        )
+      },
+    )
+    // The model choices (top left, new session, each session) follow.
+    api.models().then((models) => set({ models }), () => undefined)
+  }
+  useEffect(reload, [])
+
+  const open = (p: Partial<Provider>) => {
+    setEdit({ ...p })
+    setFound(null)
+    setError(null)
+  }
+  const field = (k: keyof Provider) => (e: React.ChangeEvent<HTMLInputElement>) => setEdit((p) => ({ ...p, [k]: e.target.value }))
+
+  const probe = async () => {
+    if (!edit?.baseUrl) return
+    setBusy(true)
+    setError(null)
+    try {
+      setFound(await api.probeModels({ baseUrl: edit.baseUrl, apiKey: edit.apiKey ?? '', authToken: edit.authToken ?? '' }))
+    } catch (e) {
+      setError(message(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!edit) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.saveProvider(edit)
+      setEdit(null)
+      reload()
+    } catch (err) {
+      setError(message(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (p: Provider) => {
+    if (!confirm(`Retirer ${p.name} ? Ses sessions repasseront sur Claude.`)) return
+    await api.removeProvider(p.id).catch((e: Error) => setError(e.message))
+    reload()
+  }
+
+  const chosen = edit?.models ?? null
+  const toggle = (m: string) =>
+    setEdit((p) => {
+      const cur = p?.models ?? []
+      return { ...p, models: cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m] }
+    })
+  // Everything to tick: what the endpoint lists, plus what you kept that it no longer lists.
+  const tickable = [...new Set([...(found ?? []), ...(chosen ?? [])])].sort()
+
+  return (
+    <Modal title="Fournisseurs de modèles" onClose={onClose}>
+      {!edit ? (
+        <div className="form">
+          <p className="hint">Un endpoint compatible Anthropic (ex. OVH AI Endpoints) à la place de Claude : adresse et identifiants une fois, le modèle au choix pour chaque session.</p>
+          {error ? (
+            <p className="form-error">{error}</p>
+          ) : list === null ? (
+            <p className="muted small">Chargement…</p>
+          ) : list.length === 0 ? (
+            <p className="muted small">Aucun fournisseur pour l’instant : tout tourne sur Claude.</p>
+          ) : (
+            <ul className="provider-list">
+              {list.map((p) => (
+                <li key={p.id}>
+                  <span>
+                    <b>{p.name}</b> <span className="muted small">{p.baseUrl}</span>
+                    <br />
+                    <span className="muted small">{p.models ? `${p.models.length} modèle(s) choisi(s)` : 'Tous les modèles de l’endpoint'}</span>
+                  </span>
+                  <span className="provider-actions">
+                    <button type="button" className="text-link" onClick={() => open(p)}>
+                      Modifier
+                    </button>
+                    <button type="button" className="text-link" onClick={() => void remove(p)}>
+                      Retirer
+                    </button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="form-actions">
+            <button type="button" className="btn btn-primary" onClick={() => open(EMPTY_PROVIDER)}>
+              + Fournisseur
+            </button>
+          </div>
+        </div>
+      ) : (
+        <form className="form" onSubmit={save}>
+          <label>
+            Nom
+            <input value={edit.name ?? ''} onChange={field('name')} required placeholder="OVH" />
+          </label>
+          <label>
+            URL de base (ANTHROPIC_BASE_URL)
+            <input value={edit.baseUrl ?? ''} onChange={field('baseUrl')} required placeholder="https://internal-ai.ovhcloud.tools/v1" />
+          </label>
+          <label>
+            Clé (ANTHROPIC_API_KEY)
+            <input value={edit.apiKey ?? ''} onChange={field('apiKey')} placeholder="prenom.nom@corp.ovh.com" autoComplete="off" />
+          </label>
+          <label>
+            Jeton (ANTHROPIC_AUTH_TOKEN, facultatif)
+            <input value={edit.authToken ?? ''} onChange={field('authToken')} placeholder="not-really-needed" autoComplete="off" />
+          </label>
+          <label>
+            Délai max d’une requête, ms (API_TIMEOUT_MS)
+            <input type="number" min={1000} value={edit.timeoutMs ?? 3_000_000} onChange={field('timeoutMs')} />
+          </label>
+          <fieldset>
+            <legend>Modèles</legend>
+            <label className="inline-radio">
+              <input type="radio" checked={chosen === null} onChange={() => setEdit((p) => ({ ...p, models: null }))} />
+              Tous ceux que l’endpoint liste (liste tenue à jour)
+            </label>
+            <label className="inline-radio">
+              <input
+                type="radio"
+                checked={chosen !== null}
+                onChange={() => {
+                  setEdit((p) => ({ ...p, models: p?.models ?? [] }))
+                  if (!found) void probe()
+                }}
+              />
+              Seulement ceux que je coche
+            </label>
+            <div className="provider-probe">
+              <button type="button" className="btn btn-ghost" onClick={() => void probe()} disabled={busy || !edit.baseUrl}>
+                {busy ? 'Interrogation…' : 'Voir les modèles de l’endpoint'}
+              </button>
+              {found && <span className="muted small">{found.length} modèle(s) trouvé(s)</span>}
+            </div>
+            {tickable.length > 0 && (
+              <div className="provider-models">
+                {tickable.map((m) => (
+                  <label key={m} className="inline-radio">
+                    <input type="checkbox" disabled={chosen === null} checked={chosen === null || chosen.includes(m)} onChange={() => toggle(m)} />
+                    {m}
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
+          {error && <p className="form-error">{error}</p>}
+          <div className="form-actions">
+            <button type="button" className="btn btn-ghost" onClick={() => setEdit(null)}>
+              Retour
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={busy || (chosen !== null && chosen.length === 0)}>
+              Enregistrer
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  )
 }

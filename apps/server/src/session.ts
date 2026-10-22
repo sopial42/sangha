@@ -12,10 +12,12 @@ import {
   type NirvanaEntry,
   type NoviceSummary,
   type Quota,
+  type SessionRecap,
   type SessionStatus,
   type SessionSummary,
 } from '@sangha/shared'
 import { config } from './config'
+import { Providers } from './providers'
 import type { SessionRow, Shepherd, Store } from './db'
 import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState, type WorktreeState } from './git'
 import { EXTERNAL_PREFIX, type Observer } from './observer'
@@ -94,6 +96,10 @@ class LiveSession {
   get busy() {
     return this.settle.busy
   }
+  /** A turn runs: a message sent now would only be read once it ends. */
+  get turning() {
+    return this.turnRunning
+  }
   activity: string | null = null
   novices = new Map<string, NoviceSummary>()
   /** Background work the turn left running (a script, a novice): he waits on it, so he is still at work. */
@@ -112,6 +118,7 @@ class LiveSession {
     private requestScriptSummary: (taskId: string, command: string) => void,
     mcpToggles: Record<string, boolean> = {},
   ) {
+    // Claude by default; a provider's session gets its own environment through `options.env`.
     const env = { ...process.env } as Record<string, string>
     delete env.ANTHROPIC_API_KEY // belt and braces: never bill the API
     this.q = query({
@@ -141,6 +148,11 @@ class LiveSession {
 
   toggleMcp(name: string, enabled: boolean): Promise<void> {
     return this.q.toggleMcpServer(name, enabled)
+  }
+
+  /** Switches his model for his next replies, without restarting him (same engine only). */
+  setModel(model: string | undefined): Promise<void> {
+    return this.q.setModel(model)
   }
 
   reconnectMcp(name: string): Promise<void> {
@@ -249,7 +261,8 @@ class LiveSession {
   }
 }
 
-export type CreateSession = { project: string; agent: string; prompt: string; baseRef?: string }
+/** `model`: an id of `models()` ('' or absent: the agent's own). */
+export type CreateSession = { project: string; agent: string; prompt: string; baseRef?: string; model?: string }
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30)
 
@@ -283,6 +296,8 @@ export class Sessions {
   private meter = new CostMeter()
   private renewing = false
   quota: Quota | null = null
+  /** Endpoints other than Claude a priest can think with, and the models they offer. */
+  readonly providers: Providers
   // Pull requests of each session's folder, cached and refreshed in the background (see startPullsLoop).
   private pulls = new PullRequests((cwd) => this.pullsChanged(cwd))
   // Haiku summaries of background scripts, one call at a time across every live session (see LiveSession.scripts).
@@ -296,6 +311,7 @@ export class Sessions {
     private projects: Projects,
     private buddhaOptions: (sessions: Sessions) => Partial<Options>,
   ) {
+    this.providers = new Providers(store)
     this.quota = store.latestQuota()
     // No session process survives a server restart: novices still marked as working died with it.
     for (const row of store.listSessions()) {
@@ -320,8 +336,10 @@ export class Sessions {
     }
   }
 
-  async create({ project, agent, prompt, baseRef }: CreateSession): Promise<SessionSummary> {
+  async create({ project, agent, prompt, baseRef, model = '' }: CreateSession): Promise<SessionSummary> {
     if (!this.projects.exists(project)) throw new UserError(`projet inconnu : ${project}`)
+    const choice = await this.providers.choice(model)
+    if (!choice) throw new UserError(`modèle indisponible : ${model}`)
     if (!this.projects.agentsOf(project).some((a) => a.id === agent)) throw new UserError(`agent inconnu pour ${project} : ${agent}`)
     if (!prompt.trim()) throw new UserError('consigne vide')
     const id = crypto.randomUUID()
@@ -349,6 +367,8 @@ export class Sessions {
       baseSha,
       archivedAt: null,
       lastSeenSeq: 0,
+      engine: choice.engine,
+      model: choice.model,
     }
     this.store.createSession(row)
     this.send(id, prompt.trim())
@@ -384,7 +404,7 @@ export class Sessions {
     if (!s) throw new UserError('session introuvable')
     const proc = this.observer?.procOf(id)
     if (proc) {
-      const r = await relayToPeer({ cwd: proc.cwd, startedAt: s.createdAt }, text)
+      const r = await relayToPeer({ cwd: proc.cwd, startedAt: s.createdAt }, this.withReminder(id, text))
       if (!r.ok) throw new UserError(`message non transmis : ${r.error}`)
       return { via: 'peer', to: r.to }
     }
@@ -412,8 +432,45 @@ export class Sessions {
     if (id.startsWith(EXTERNAL_PREFIX)) throw new UserError('utilise reply() pour une session externe')
     const row = this.store.getSession(id)
     if (!row || row.archivedAt) throw new UserError('session inconnue')
-    this.emit(id, { t: 'user.message', text })
-    this.ensureLive(row).send(text)
+    // He is in the middle of a turn: the message waits, editable, and leaves once the turn ends.
+    if (this.live.get(id)?.turning) {
+      this.store.addQueued(id, { id: crypto.randomUUID(), text, at: Date.now() })
+      this.broadcastSession(id)
+      return
+    }
+    this.deliver(row, text)
+  }
+
+  private deliver(row: SessionRow, text: string) {
+    this.emit(row.id, { t: 'user.message', text })
+    this.ensureLive(row).send(this.withReminder(row.id, text))
+  }
+
+  /** His turn ended (or his process did): what you wrote meanwhile leaves, as one message. */
+  private flushQueued(id: string) {
+    const row = this.store.getSession(id)
+    if (!row || row.archivedAt || this.live.get(id)?.turning) return
+    const queued = this.store.takeQueued(id)
+    if (queued.length) this.deliver(row, queued.map((m) => m.text).join('\n\n'))
+  }
+
+  editQueued(id: string, messageId: string, text: string) {
+    if (!text.trim()) throw new UserError('message vide')
+    if (!this.store.editQueued(id, messageId, text.trim())) throw new UserError('déjà parti : il l’a reçu')
+    this.broadcastSession(id)
+  }
+
+  withdrawQueued(id: string, messageId: string) {
+    if (!this.store.takeQueued(id, [messageId]).length) throw new UserError('déjà parti : il l’a reçu')
+    this.broadcastSession(id)
+  }
+
+  /** Sends a waiting message right away: he reads it in the middle of his turn. */
+  sendQueuedNow(id: string, messageId: string) {
+    const row = this.store.getSession(id)
+    const [m] = this.store.takeQueued(id, [messageId])
+    if (!row || !m) throw new UserError('déjà parti : il l’a reçu')
+    this.deliver(row, m.text)
   }
 
   /** Relaunch a session the server stopped mid-work. */
@@ -639,6 +696,7 @@ export class Sessions {
       doing: s.status === 'working' ? (this.doingOf(s.id)?.text ?? null) : null,
       silenced: this.store.silencedIds().has(s.id),
       note: this.store.notes().get(s.id) ?? null,
+      reminder: this.store.reminders().get(s.id) ?? null,
       renewal: this.renewalState(s.id),
       shepherd: this.shepherdState(s.id),
       cost: this.costOf(s.id),
@@ -880,6 +938,9 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       baseSha: old?.baseSha ?? null,
       archivedAt: null,
       lastSeenSeq: 0,
+      // The fresh session thinks with the same model.
+      engine: old?.engine,
+      model: old?.model,
     }
     this.store.createSession(row)
     // The bill follows the work: the fresh session starts from what the old one had cost.
@@ -887,6 +948,8 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     if (this.store.silencedIds().has(s.id)) this.store.setSilenced(row.id, true)
     const carriedNote = this.store.notes().get(s.id)
     if (carriedNote) this.store.setSessionNote(row.id, carriedNote)
+    const carriedReminder = this.store.reminders().get(s.id)
+    if (carriedReminder) this.store.setReminder(row.id, carriedReminder)
     this.store.setSuccessor(s.id, row.id)
     this.store.setRenewal(s.id, { ...(this.store.renewal(s.id) ?? { bucket: 0, askedAt: Date.now() }), state: 'done' })
     // The old one leaves the courtyard: a Sangha priest is closed (his worktree stays for the new one),
@@ -932,6 +995,23 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       if (this.live.get(id) === old) this.live.delete(id)
     }
     this.send(row.id, RESTARTED)
+  }
+
+  /**
+   * Changes the model he thinks with. Same endpoint: switched live, from his next reply on. Another endpoint
+   * (Claude ↔ a provider): his process must start again with it, so he is relaunched on the same conversation.
+   */
+  async setModel(id: string, model: string) {
+    const row = this.priestRow(id)
+    const choice = await this.providers.choice(model)
+    if (!choice) throw new UserError(`modèle indisponible : ${model}`)
+    this.store.setModel(id, choice.engine, choice.model)
+    this.broadcastSession(id)
+    const live = this.live.get(id)
+    if (!live) return // his next process starts with it
+    if (choice.engine !== (row.engine ?? 'claude')) return this.restart(id)
+    // '' : back to the model of his agent's definition.
+    await live.setModel(choice.model ?? (priestOptions(row.agent).model as string | undefined))
   }
 
   /** A priest's MCP servers, waking his process to ask it. */
@@ -989,6 +1069,19 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     if (!this.summaryOf(id)) throw new UserError('session inconnue')
     this.store.setSessionNote(id, note?.trim().slice(0, 500) || null)
     this.broadcastSession(id)
+  }
+
+  /** Your standing instruction for him, recalled with each of your messages (null clears it). */
+  reminder(id: string, text: string | null) {
+    if (!this.summaryOf(id)) throw new UserError('session inconnue')
+    this.store.setReminder(id, text?.trim().slice(0, 500) || null)
+    this.broadcastSession(id)
+  }
+
+  /** The message as he receives it: your words, then your standing instruction if you set one. The chat shows your words alone. */
+  private withReminder(id: string, text: string) {
+    const r = this.store.reminders().get(id)
+    return r ? `${text}\n\n(Rappel permanent de l'utilisateur, à respecter : ${r})` : text
   }
 
   /**
@@ -1168,6 +1261,8 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       createdAt: row.createdAt,
       claudeSessionId: row.claudeSessionId,
       branch: row.branch,
+      engine: row.engine,
+      model: row.model ?? null,
       status,
       activity: live?.activity ?? null,
       doing: live?.busy ? (this.doingOf(row.id)?.text ?? null) : null,
@@ -1177,6 +1272,8 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       alive: false,
       silenced: this.store.silencedIds().has(row.id),
       note: this.store.notes().get(row.id) ?? null,
+      reminder: this.store.reminders().get(row.id) ?? null,
+      queued: this.store.queued(row.id),
       context: row.id === BUDDHA_SESSION_ID ? null : this.contextOf(row),
       renewal: this.renewalState(row.id),
       shepherd: this.shepherdState(row.id),
@@ -1187,10 +1284,17 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     }
   }
 
-  private currentRecap(id: string): { done: string; next: string } | null {
+  private currentRecap(id: string): SessionRecap | null {
     const r = this.store.lastEvent(id, 'recap')
     const user = this.store.lastEvent(id, 'user.message')
-    return r && (!user || r.seq > user.seq) ? { done: r.ev.done, next: r.ev.next } : null
+    return r && (!user || r.seq > user.seq) ? { done: r.ev.done, next: r.ev.next, ...(r.ev.state && { state: r.ev.state }) } : null
+  }
+
+  /** His model and, on a provider, its environment. A provider removed since: back to Claude and his agent's model. */
+  private engineOptions(row: SessionRow): Partial<Options> {
+    const onProvider = !!row.engine && row.engine !== 'claude'
+    if (onProvider && !this.providers.get(row.engine!)) return {}
+    return { ...(row.model && { model: row.model }), ...(onProvider && { env: this.providers.env(row.engine, row.model) }) }
   }
 
   private ensureLive(row: SessionRow): LiveSession {
@@ -1202,11 +1306,14 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       s = new LiveSession(
         row,
         cwd,
-        isBuddha ? this.buddhaOptions(this) : { ...priestOptions(row.agent), mcpServers: mcp!.extras },
+        isBuddha
+          ? this.buddhaOptions(this)
+          : { ...priestOptions(row.agent), ...this.engineOptions(row), mcpServers: mcp!.extras },
         (ev) => this.emit(row.id, ev),
         () => {
           if (this.live.get(row.id) === s) this.live.delete(row.id)
           this.broadcastSession(row.id)
+          this.flushQueued(row.id)
         },
         (claudeId) => this.store.setClaudeSessionId(row.id, claudeId),
         (taskId, command) => this.scriptSummaries.request(row.id, taskId, command, row.title),
@@ -1225,6 +1332,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       for (const fn of this.globalListeners) fn({ kind: 'quota', quota: ev.quota })
     }
     if (SUMMARY_EVENTS.has(ev.t)) this.broadcastSession(id)
+    if (ev.t === 'turn.done') this.flushQueued(id)
     if (ev.t === 'busy' && !ev.busy && id !== BUDDHA_SESSION_ID) {
       void this.writeRecap(id, env.seq)
       this.pullSoonAfter(id) // he may just have run `gh pr create`

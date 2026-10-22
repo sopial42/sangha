@@ -1,4 +1,4 @@
-import type { CostReport, Envelope, GlobalEvent, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, ProjectWorktrees, SessionSummary } from '@sangha/shared'
+import type { CostReport, Envelope, ModelChoice, Provider, GlobalEvent, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
 import { emptyView, useApp } from './store'
 
 export class ApiError extends Error {
@@ -25,11 +25,17 @@ const post = (body?: unknown): RequestInit => ({ method: 'POST', body: body === 
 
 export const api = {
   monks: () => json<MonkProfile[]>('/api/monks'),
+  models: () => json<ModelChoice[]>('/api/models'),
+  /** Endpoints other than Claude (address and credentials set once) and the models they offer. */
+  providers: () => json<Provider[]>('/api/providers'),
+  saveProvider: (p: Partial<Provider>) => json<Provider>('/api/providers', post(p)),
+  removeProvider: (id: string) => json<void>(`/api/providers/${id}/remove`, post()),
+  probeModels: (p: Pick<Provider, 'baseUrl' | 'apiKey' | 'authToken'>) => json<string[]>('/api/providers/probe', post(p)),
   projects: () => json<ProjectInfo[]>('/api/projects'),
   addProject: (source: { gitUrl: string } | { path: string }, name?: string) => json<{ name: string }>('/api/projects', post({ ...source, name })),
   suggestions: () => json<ProjectSuggestion[]>('/api/projects/suggestions'),
   branches: (project: string) => json<string[]>(`/api/projects/${encodeURIComponent(project)}/branches`),
-  createSession: (b: { project: string; agent: string; prompt: string; baseRef?: string }) => json<SessionSummary>('/api/sessions', post(b)),
+  createSession: (b: { project: string; agent: string; prompt: string; baseRef?: string; model?: string }) => json<SessionSummary>('/api/sessions', post(b)),
   /** Your reply: straight to a Sangha priest, relayed to a terminal session, or resuming an ended one. */
   send: (id: string, text: string) =>
     json<{ via: 'sangha' } | { via: 'peer'; to: string } | { via: 'adopted'; id: string }>(`/api/sessions/${id}/messages`, post({ text })),
@@ -42,6 +48,14 @@ export const api = {
   silence: (id: string, silent: boolean) => json<void>(`/api/sessions/${id}/silence`, post({ silent })),
   /** Your own note about him, shown under him in the courtyard (null clears it). */
   note: (id: string, note: string | null) => json<void>(`/api/sessions/${id}/note`, post({ note })),
+  /** Your messages still waiting for his turn to end: change one, take it back, or send it right away. */
+  editQueued: (id: string, mid: string, text: string) => json<void>(`/api/sessions/${id}/queued/${mid}`, post({ text })),
+  withdrawQueued: (id: string, mid: string) => json<void>(`/api/sessions/${id}/queued/${mid}/withdraw`, post()),
+  sendQueuedNow: (id: string, mid: string) => json<void>(`/api/sessions/${id}/queued/${mid}/now`, post()),
+  /** Changes the model he thinks with ('' : his agent's own); switching Claude ↔ OVH relaunches him. */
+  setModel: (id: string, model: string) => json<void>(`/api/sessions/${id}/model`, post({ model })),
+  /** A standing instruction recalled to him with each of your messages (null clears it). */
+  reminder: (id: string, text: string | null) => json<void>(`/api/sessions/${id}/reminder`, post({ text })),
   seen: (id: string) => json<void>(`/api/sessions/${id}/seen`, post()),
   removeProject: (name: string, force = false) => json<void>(`/api/projects/${encodeURIComponent(name)}${force ? '?force=1' : ''}`, { method: 'DELETE' }),
   archive: (id: string, force = false) => json<void>(`/api/sessions/${id}${force ? '?force=1' : ''}`, { method: 'DELETE' }),
@@ -53,8 +67,6 @@ export const api = {
   reincarnate: (id: string) => json<SessionSummary>(`/api/sessions/${id}/reincarnate`, post()),
   /** What every session would have cost at API prices, since monitoring began, broken down by month. */
   costs: () => json<CostReport>('/api/costs'),
-  /** Every project's worktrees (its main checkout excepted), flown as prayer flags above its monastery. */
-  worktrees: () => json<ProjectWorktrees[]>('/api/worktrees'),
   /** His MCP servers: may take a few seconds, it wakes his process to ask. */
   mcpServers: (id: string) => json<McpServer[]>(`/api/sessions/${id}/mcp`),
   /** Switch one of his MCP servers on or off; enabling can take up to ~30s while it connects. */
@@ -68,21 +80,20 @@ export function openMonastery(onError: () => void) {
   const es = new EventSource('/api/events')
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data) as GlobalEvent
-    const { set, sessions, nirvanaTick, moonArrivals, sessionsVersion, worktreesTick } = useApp.getState()
+    const { set, sessions, nirvanaTick, moonArrivals, sessionsVersion } = useApp.getState()
     switch (ev.kind) {
       case 'snapshot':
         set({ sessions: Object.fromEntries(ev.sessions.map((s) => [s.id, s])), ...(ev.quota ? { quota: ev.quota } : {}) })
         break
       case 'session':
-        // Also what the cost chip watches (throttled) to keep its total roughly current, and what
-        // the prayer flags watch (debounced) to refresh which worktree carries which priest.
-        set({ sessions: { ...sessions, [ev.session.id]: ev.session }, sessionsVersion: sessionsVersion + 1, worktreesTick: worktreesTick + 1 })
+        // Also what the cost chip watches (throttled) to keep its total roughly current.
+        set({ sessions: { ...sessions, [ev.session.id]: ev.session }, sessionsVersion: sessionsVersion + 1 })
         break
       case 'removed': {
         const { [ev.id]: gone, ...rest } = sessions
         // The moon only glows when a priest actually flew into it: a non-external session leaving
         // the courtyard (an external one just returns to its own terminal, nothing to see here).
-        set({ sessions: rest, worktreesTick: worktreesTick + 1, ...(gone && !gone.external ? { moonArrivals: moonArrivals + 1 } : {}) })
+        set({ sessions: rest, ...(gone && !gone.external ? { moonArrivals: moonArrivals + 1 } : {}) })
         if (useApp.getState().selectedId === ev.id) closeSession()
         break
       }

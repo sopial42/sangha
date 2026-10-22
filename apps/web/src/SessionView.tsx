@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { BUDDHA_SESSION_ID, type BackgroundScript, type McpServer, type SessionSummary } from '@sangha/shared'
+import { BUDDHA_SESSION_ID, modelKey, type BackgroundScript, type McpServer, type SessionSummary } from '@sangha/shared'
 import { api, ApiError, closeSession, finishClose } from './api'
 import { Chat } from './chat/Chat'
 import { Md, MdInline } from './Md'
@@ -223,6 +223,77 @@ const MCP_STATUS_LABEL: Record<McpServer['status'], string> = {
 // simply never loaded from the user's Claude config).
 const mcpOff = (s: McpServer) => s.status === 'disabled' || s.status === 'off'
 
+/**
+ * The model he thinks with, changeable at any time: within Claude (or within OVH) from his next reply on;
+ * Claude ↔ OVH relaunches him on the same conversation, which interrupts a turn in progress (asked first).
+ */
+function ModelPick({ session: s }: { session: SessionSummary }) {
+  const models = useApp((st) => st.models)
+  const [error, setError] = useState<string | null>(null)
+  if (!models.length) return null
+  const key = modelKey(s.engine, s.model)
+  const current = models.some((m) => m.id === key) ? key : ''
+  const change = (id: string) => {
+    const next = models.find((m) => m.id === id)
+    const relaunch = next && next.engine !== (s.engine ?? 'claude')
+    if (relaunch && s.status === 'working' && !confirm('Changer de fournisseur le relance : son tour en cours sera interrompu. Continuer ?')) return
+    api.setModel(s.id, id).then(
+      () => setError(null),
+      (e: Error) => setError(e.message),
+    )
+  }
+  return (
+    <select
+      className={`model-pick ${s.engine && s.engine !== 'claude' ? 'ovh' : ''}`}
+      value={current}
+      onChange={(e) => change(e.target.value)}
+      aria-label="Modèle de cette session"
+      title={error ?? 'Modèle de cette session : change dès sa prochaine réponse (changer de fournisseur le relance)'}
+    >
+      {models.map((m) => (
+        <option key={m.id} value={m.id}>
+          {m.label}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+/**
+ * Your standing instruction for him ("sois concis"…), recalled with each of your messages. Saved when you leave
+ * the field or press Enter; Escape puts back what was saved.
+ */
+function ReminderBox({ id, saved }: { id: string; saved: string | null }) {
+  const [text, setText] = useState(saved ?? '')
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setText(saved ?? ''), [saved])
+  const save = () => {
+    if (text.trim() !== (saved ?? '')) api.reminder(id, text.trim() || null).then(() => setFailed(false), () => setFailed(true))
+  }
+  return (
+    <label
+      className={`sv-reminder ${saved ? 'set' : ''} ${failed ? 'failed' : ''}`}
+      title={failed ? 'Pas enregistré : le serveur a refusé (redémarré depuis ?)' : 'Ajouté à chacun de tes messages, sans apparaître dans la conversation'}
+    >
+      <span className="sv-reminder-label">Rappel</span>
+      <input
+        value={text}
+        maxLength={500}
+        placeholder="Consigne rappelée à chaque message, ex. : sois concis"
+        onChange={(e) => setText(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+          if (e.key === 'Escape') {
+            e.stopPropagation()
+            setText(saved ?? '')
+          }
+        }}
+      />
+    </label>
+  )
+}
+
 /** One MCP server row: name (claude.ai ones get their own small tag), status, and its on/off switch. */
 function McpRow({ server, busy, onToggle, onLogin }: { server: McpServer; busy: boolean; onToggle: () => void; onLogin: () => void }) {
   const claudeAi = server.name.startsWith('claude.ai ')
@@ -330,15 +401,15 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
 
   return (
     <div className="mcp-control" ref={wrapRef}>
-      <button className="icon-btn" aria-haspopup="true" aria-expanded={open} aria-label="Serveurs MCP" title="MCP" onClick={onToggleOpen}>
-        🔌
+      <button className={`btn btn-ghost ${open ? 'active' : ''}`} aria-haspopup="true" aria-expanded={open} title="Serveurs MCP" onClick={onToggleOpen}>
+        MCP
       </button>
       {open && (
         <div className="mcp-popover" role="menu" aria-label="Serveurs MCP">
           <header className="mcp-popover-head">
             <h4>Serveurs MCP</h4>
-            <button className={`icon-btn ${loading ? 'spinning' : ''}`} onClick={load} disabled={loading} aria-label="Rafraîchir" title="Rafraîchir">
-              ↻
+            <button type="button" className="text-link" onClick={load} disabled={loading}>
+              {loading ? 'Rafraîchissement…' : 'Rafraîchir'}
             </button>
           </header>
           {loading && !sorted && <p className="muted small">Je réveille le prêtre…</p>}
@@ -514,80 +585,80 @@ export function SessionView() {
                 )}
               </p>
             )}
+            <div className="sv-tags">
+              <span className={`status status-${s.status}`}>{STATUS_LABEL[s.status]}</span>
+              {!isBuddha && !s.external && <ModelPick session={s} />}
+              {s.context != null && (
+                <span className="context-chip" style={{ color: CONTEXT_COLOR[contextLevel(s.context)!] }} title="Taille du contexte de la session">
+                  Contexte {formatTokens(s.context)}
+                  {s.renewal === 'asked' ? ' · session neuve proposée' : s.renewal === 'postponed' ? ' · reportée' : ''}
+                </span>
+              )}
+              {s.cost != null && s.cost >= 0.01 && (
+                <span className="context-chip" title="Ce qu'aurait coûté cette session au prix de l'API, sous-agents et sessions précédentes compris. Elle tourne sur ton abonnement.">
+                  {formatCost(s.cost)}
+                </span>
+              )}
+              {s.shepherd && (
+                <span className="context-chip shepherd-chip" title={s.shepherd.note ? `Sa dernière réponse : ${s.shepherd.note}` : undefined}>
+                  ☸{' '}
+                  {s.shepherd.state === 'asked'
+                    ? 'Bouddha attend sa réponse'
+                    : s.shepherd.state === 'refused'
+                      ? 'a refusé de repartir à neuf'
+                      : s.shepherd.nextAt > Date.now()
+                        ? `Bouddha revient à ${formatTime(s.shepherd.nextAt)}`
+                        : 'Bouddha lui demandera dès qu’il s’arrête'}
+                </span>
+              )}
+            </div>
           </div>
-          <div className="sv-actions">
-            {s.context != null && (
-              <span className="context-chip" style={{ color: CONTEXT_COLOR[contextLevel(s.context)!] }} title="Taille du contexte de la session">
-                Contexte {formatTokens(s.context)}
-                {s.renewal === 'asked' ? ' · session neuve proposée' : s.renewal === 'postponed' ? ' · reportée' : ''}
-              </span>
-            )}
-            {s.cost != null && s.cost >= 0.01 && (
-              <span className="context-chip" title="Ce qu'aurait coûté cette session au prix de l'API, sous-agents et sessions précédentes compris. Elle tourne sur ton abonnement.">
-                {formatCost(s.cost)}
-              </span>
-            )}
-            {s.shepherd && (
-              <span className="context-chip shepherd-chip" title={s.shepherd.note ? `Sa dernière réponse : ${s.shepherd.note}` : undefined}>
-                ☸{' '}
-                {s.shepherd.state === 'asked'
-                  ? 'Bouddha attend sa réponse'
-                  : s.shepherd.state === 'refused'
-                    ? 'a refusé de repartir à neuf'
-                    : s.shepherd.nextAt > Date.now()
-                      ? `Bouddha revient à ${formatTime(s.shepherd.nextAt)}`
-                      : 'Bouddha lui demandera dès qu’il s’arrête'}
-              </span>
-            )}
-            {!isBuddha && (!s.external || s.alive) && (
-              <button
-                className="btn btn-ghost"
-                onClick={() => void api.shepherd(s.id, !s.shepherd || s.shepherd.state === 'refused')}
-                title={
-                  s.shepherd && s.shepherd.state !== 'refused'
-                    ? 'Bouddha arrête de le suivre'
-                    : 'Bouddha lui fera prendre une session neuve au moment qui lui convient, sans jamais l’interrompre, jusqu’à ce que ce soit fait'
-                }
-              >
-                {s.shepherd && s.shepherd.state !== 'refused' ? 'Reprendre à Bouddha' : 'Confier à Bouddha'}
-              </button>
-            )}
-            {!isBuddha && (!s.shepherd || s.shepherd.state === 'refused') && s.status !== 'working' && s.renewal !== 'asked' && (!s.external || s.alive) && (
-              <button className="btn btn-ghost" onClick={() => void api.renew(s.id)} title="Lui proposer de continuer dans une session neuve, avec une passation">
-                Repartir à neuf
-              </button>
-            )}
-            <span className={`status status-${s.status}`}>{STATUS_LABEL[s.status]}</span>
-            {s.status === 'interrupted' && (
-              <button className="btn btn-primary" onClick={() => void api.resume(s.id)}>
-                Reprendre
-              </button>
-            )}
-            {!isBuddha && !s.external && (
-              <button className="btn btn-ghost" onClick={() => set({ dialog: { kind: 'dismiss', id: s.id } })}>
-                Envoyer au nirvana
-              </button>
-            )}
-            {!isBuddha && !s.external && (
-              <button
-                className="icon-btn"
-                onClick={() => {
-                  if (s.status === 'working' && !confirm('Il travaille : relancer interrompt son tour en cours. Relancer quand même ?')) return
-                  void api.restart(s.id)
-                }}
-                aria-label="Relancer la session"
-                title="Relancer la session : même conversation, mais il relit son agent, ses outils et ses MCP"
-              >
-                ⟳
-              </button>
-            )}
-            {!isBuddha && !s.external && (
-              <McpPanel sessionId={s.id} open={mcpOpen} onToggleOpen={() => setMcpOpen((o) => !o)} onClose={() => setMcpOpen(false)} />
-            )}
-            <button className="icon-btn big" onClick={closeSession} aria-label="Fermer (Échap)" title="Fermer (Échap)">
-              ✕
-            </button>
+          <div className="sv-act-col">
+            {!isBuddha && <ReminderBox key={s.id} id={s.id} saved={s.reminder} />}
+            <div className="sv-actions">
+              {!isBuddha && (!s.external || s.alive) && (
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => void api.shepherd(s.id, !s.shepherd || s.shepherd.state === 'refused')}
+                  title={
+                    s.shepherd && s.shepherd.state !== 'refused'
+                      ? 'Bouddha arrête de le suivre'
+                      : 'Bouddha lui fera prendre une session neuve au moment qui lui convient, sans jamais l’interrompre, jusqu’à ce que ce soit fait'
+                  }
+                >
+                  {s.shepherd && s.shepherd.state !== 'refused' ? 'Reprendre à Bouddha' : 'Confier à Bouddha'}
+                </button>
+              )}
+              {s.status === 'interrupted' && (
+                <button className="btn btn-primary" onClick={() => void api.resume(s.id)}>
+                  Reprendre
+                </button>
+              )}
+              {!isBuddha && !s.external && (
+                <button className="btn btn-ghost" onClick={() => set({ dialog: { kind: 'dismiss', id: s.id } })}>
+                  Envoyer au nirvana
+                </button>
+              )}
+              {!isBuddha && !s.external && (
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => {
+                    if (s.status === 'working' && !confirm('Il travaille : relancer interrompt son tour en cours. Relancer quand même ?')) return
+                    void api.restart(s.id)
+                  }}
+                  title="Relancer la session : même conversation, mais il relit son agent, ses outils et ses MCP"
+                >
+                  Relancer
+                </button>
+              )}
+              {!isBuddha && !s.external && (
+                <McpPanel sessionId={s.id} open={mcpOpen} onToggleOpen={() => setMcpOpen((o) => !o)} onClose={() => setMcpOpen(false)} />
+              )}
+            </div>
           </div>
+          <button className="icon-btn big" onClick={closeSession} aria-label="Fermer (Échap)" title="Fermer (Échap)">
+            ✕
+          </button>
         </header>
 
         <div className={`sv-body ${hasColumn ? (novicesClosed ? 'novices-closed' : '') : 'no-novices'}`}>

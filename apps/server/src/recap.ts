@@ -1,18 +1,26 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import type { RecapState, SessionRecap } from '@sangha/shared'
 import { cleanScriptSummary, scriptPrompt } from './scripts'
 
 const RECAP_MODEL = process.env.SANGHA_RECAP_MODEL ?? 'haiku'
 const MAX_INPUT = 8000
 
-export type Recap = { done: string; next: string }
+export type Recap = SessionRecap
+
+const STATES: RecapState[] = ['fini', 'question', 'attente']
 
 const SCHEMA = {
   type: 'object',
   properties: {
     done: { type: 'string', description: 'Ce qui a été obtenu, en une phrase complète de 70 caractères maximum.' },
     next: { type: 'string', description: 'Ce qu’il attend maintenant (une décision de l’utilisateur, ou quelque chose qui tourne seul : CI, déploiement, revue…) ou ce qui reste, en une phrase complète de 70 caractères maximum.' },
+    state: {
+      type: 'string',
+      enum: STATES,
+      description: '"fini" : la tâche est faite, il n’attend rien. "question" : il pose une question ou attend une décision de l’utilisateur. "attente" : il attend quelque chose qui tourne sans l’utilisateur (CI, déploiement, revue, calcul, autre agent).',
+    },
   },
-  required: ['done', 'next'],
+  required: ['done', 'next', 'state'],
   additionalProperties: false,
 }
 
@@ -26,6 +34,7 @@ Lis surtout son dernier message : s'il attend quelque chose qui tourne sans l'ut
 une revue, un calcul, un autre agent), dis-le ("Attend le résultat de la CI pour fusionner") : ce n'est pas une
 consigne de l'utilisateur. S'il pose une question ou attend une décision, dis laquelle.
 Seulement si tout est fini et qu'il n'attend rien : "next" = "Rien : il attend ta prochaine consigne."
+"state" classe cet arrêt : "fini", "question" (même une simple proposition « je le fais ? ») ou "attente".
 Les messages très courts de l'utilisateur ("reprends", "continue", "ok") ne disent rien de la tâche : appuie-toi sur
 les échanges d'avant.
 ${STYLE}`
@@ -59,7 +68,9 @@ async function ask<T>(system: string, schema: Record<string, unknown>, input: st
 export async function recap(transcript: string): Promise<Recap | null> {
   const out = await ask<Recap>(SYSTEM, SCHEMA, transcript, MAX_INPUT)
   // Never cut here: the texts are asked short, and shown in full.
-  return typeof out?.done === 'string' && typeof out.next === 'string' ? { done: out.done.trim(), next: out.next.trim() } : null
+  if (typeof out?.done !== 'string' || typeof out.next !== 'string') return null
+  const state = STATES.find((s) => s === out.state)
+  return { done: out.done.trim(), next: out.next.trim(), ...(state && { state }) }
 }
 
 const DOING_SCHEMA = {

@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Envelope, MonkProfile, MonkStatus, ProjectInfo, Quota, SessionSummary, Usage } from '@sangha/shared'
+import type { Envelope, ModelChoice, MonkProfile, MonkStatus, ProjectInfo, Quota, SessionSummary, Usage } from '@sangha/shared'
 
 export type LogItem = { at: number } & ({ kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string })
 
@@ -139,10 +139,21 @@ export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-pr
   | { kind: 'incense'; id: string }
   | { kind: 'note'; id: string }
   | { kind: 'nirvana' }
-  | { kind: 'costs' } | null
+  | { kind: 'costs' }
+  | { kind: 'providers' } | null
 
 type AppState = {
   profiles: MonkProfile[]
+  /** What rang lately (newest first), for the bell's list; kept across reloads. */
+  notifications: Notice[]
+  notify: (n: Omit<Notice, 'id' | 'at' | 'read'>) => void
+  readNotifications: () => void
+  clearNotifications: () => void
+  /** The models a session can run on, as the server offers them. */
+  models: ModelChoice[]
+  /** The model new sessions start with ('' : the agent's own), remembered across reloads. */
+  defaultModel: string
+  setDefaultModel: (id: string) => void
   projects: ProjectInfo[]
   /** Every priest (and Buddha), kept live by the monastery-wide stream. */
   sessions: Record<string, SessionSummary>
@@ -153,10 +164,9 @@ type AppState = {
   moonArrivals: number
   /** Bumped on every `{kind:'session'}` global event: what the cost chip watches, throttled, to refresh its total. */
   sessionsVersion: number
-  /** Bumped on every `{kind:'session'}` or `{kind:'removed'}` global event: what the prayer flags watch to refresh (debounced). */
-  worktreesTick: number
   /** Étendards toggle in the scene: shown until switched off, remembered across reloads. */
-  prayerFlags: boolean
+  /** The bowl stays silent when a priest finishes (notifications still show), remembered across reloads. */
+  muted: boolean
   /** Session shown in the panel: a priest id, 'buddha', or null. */
   selectedId: string | null
   view: SessionView
@@ -178,14 +188,42 @@ type AppState = {
   /** Apply a batch of events with a single re-render (a session's history arrives in bulk). */
   applyMany: (envs: Envelope[]) => void
   set: (p: Partial<AppState>) => void
-  /** Switches the courtyard's prayer flags on/off, remembered across reloads. */
-  togglePrayerFlags: () => void
+  toggleMuted: () => void
 }
 
-const PRAYER_FLAGS_KEY = 'sangha.prayerFlags'
-const initialPrayerFlags = (() => {
+/** One ring of the bowl: who, why, and what he waits for. */
+export type Notice = { id: string; sessionId: string; who: string; what: string; body: string; at: number; read: boolean }
+
+const NOTICES_KEY = 'sangha.notifications'
+const MAX_NOTICES = 50
+const initialNotices = (() => {
   try {
-    return localStorage.getItem(PRAYER_FLAGS_KEY) === '1'
+    return JSON.parse(localStorage.getItem(NOTICES_KEY) ?? '[]') as Notice[]
+  } catch {
+    return []
+  }
+})()
+function saveNotices(list: Notice[]) {
+  try {
+    localStorage.setItem(NOTICES_KEY, JSON.stringify(list))
+  } catch {
+    // localStorage unavailable: the list just won't survive a reload.
+  }
+}
+
+const DEFAULT_MODEL_KEY = 'sangha.defaultModel'
+const initialDefaultModel = (() => {
+  try {
+    return localStorage.getItem(DEFAULT_MODEL_KEY) ?? ''
+  } catch {
+    return ''
+  }
+})()
+
+const MUTED_KEY = 'sangha.muted'
+const initialMuted = (() => {
+  try {
+    return localStorage.getItem(MUTED_KEY) === '1'
   } catch {
     return false
   }
@@ -193,14 +231,41 @@ const initialPrayerFlags = (() => {
 
 export const useApp = create<AppState>((set) => ({
   profiles: [],
+  notifications: initialNotices,
+  notify: (n) =>
+    set((st) => {
+      const notifications = [{ ...n, id: crypto.randomUUID(), at: Date.now(), read: false }, ...st.notifications].slice(0, MAX_NOTICES)
+      saveNotices(notifications)
+      return { notifications }
+    }),
+  readNotifications: () =>
+    set((st) => {
+      if (!st.notifications.some((n) => !n.read)) return {}
+      const notifications = st.notifications.map((n) => ({ ...n, read: true }))
+      saveNotices(notifications)
+      return { notifications }
+    }),
+  clearNotifications: () => {
+    saveNotices([])
+    set({ notifications: [] })
+  },
+  models: [],
+  defaultModel: initialDefaultModel,
+  setDefaultModel: (id) => {
+    try {
+      localStorage.setItem(DEFAULT_MODEL_KEY, id)
+    } catch {
+      // localStorage unavailable: the choice just won't persist across reloads.
+    }
+    set({ defaultModel: id })
+  },
   projects: [],
   sessions: {},
   quota: null,
   nirvanaTick: 0,
   moonArrivals: 0,
   sessionsVersion: 0,
-  worktreesTick: 0,
-  prayerFlags: initialPrayerFlags,
+  muted: initialMuted,
   selectedId: null,
   view: emptyView(),
   selectedMonk: null,
@@ -232,14 +297,14 @@ export const useApp = create<AppState>((set) => ({
       return { view, quota }
     }),
   set: (p) => set(p),
-  togglePrayerFlags: () =>
+  toggleMuted: () =>
     set((st) => {
-      const next = !st.prayerFlags
+      const next = !st.muted
       try {
-        localStorage.setItem(PRAYER_FLAGS_KEY, next ? '1' : '0')
+        localStorage.setItem(MUTED_KEY, next ? '1' : '0')
       } catch {
-        // localStorage unavailable (private mode…): the toggle just won't persist across reloads.
+        // localStorage unavailable: the toggle just won't persist across reloads.
       }
-      return { prayerFlags: next }
+      return { muted: next }
     }),
 }))

@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { Envelope, MonasteryEvent, Quota, SessionInfo } from '@sangha/shared'
+import type { Engine, Envelope, MonasteryEvent, Provider, QueuedMessage, Quota, SessionInfo } from '@sangha/shared'
 
 export type NoteKind = 'recap' | 'progress' | 'doing' | 'nirvana'
 export type Note<T> = { key: string; value: T; at: number }
@@ -30,6 +30,8 @@ const SESSION_COLUMNS: Record<string, string> = {
   base_sha: 'TEXT',
   archived_at: 'INTEGER',
   last_seen_seq: 'INTEGER NOT NULL DEFAULT 0',
+  engine: "TEXT NOT NULL DEFAULT 'claude'",
+  model: 'TEXT',
 }
 
 // Index of sessions and their event log. Claude Code's own JSONL transcripts
@@ -97,6 +99,20 @@ export class Store {
         session_id TEXT PRIMARY KEY,
         note TEXT NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS providers (
+        id TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS queued_messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS reminders (
+        session_id TEXT PRIMARY KEY,
+        text TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS project_mcp (
         project TEXT NOT NULL,
         name TEXT NOT NULL,
@@ -125,10 +141,10 @@ export class Store {
   createSession(s: SessionRow) {
     this.db
       .prepare(
-        `INSERT INTO sessions (id, project, agent, title, created_at, claude_session_id, branch, worktree, base_sha, archived_at, last_seen_seq)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sessions (id, project, agent, title, created_at, claude_session_id, branch, worktree, base_sha, archived_at, last_seen_seq, engine, model)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(s.id, s.project, s.agent, s.title, s.createdAt, s.claudeSessionId, s.branch, s.worktree, s.baseSha, s.archivedAt, s.lastSeenSeq)
+      .run(s.id, s.project, s.agent, s.title, s.createdAt, s.claudeSessionId, s.branch, s.worktree, s.baseSha, s.archivedAt, s.lastSeenSeq, s.engine ?? 'claude', s.model ?? null)
   }
 
   listSessions(): SessionRow[] {
@@ -147,6 +163,10 @@ export class Store {
 
   setClaudeSessionId(id: string, claudeSessionId: string) {
     this.db.prepare('UPDATE sessions SET claude_session_id = ? WHERE id = ?').run(claudeSessionId, id)
+  }
+
+  setModel(id: string, engine: Engine, model: string | null) {
+    this.db.prepare('UPDATE sessions SET engine = ?, model = ? WHERE id = ?').run(engine, model, id)
   }
 
   setTitle(id: string, title: string) {
@@ -336,6 +356,52 @@ export class Store {
     else this.db.prepare('DELETE FROM notes WHERE session_id = ?').run(id)
   }
 
+  /** Endpoints Claude Code can run on instead of Claude, in the order you added them. */
+  providers(): Provider[] {
+    return (this.db.prepare('SELECT value FROM providers ORDER BY rowid').all() as { value: string }[]).map((r) => JSON.parse(r.value) as Provider)
+  }
+
+  saveProvider(p: Provider) {
+    this.db.prepare('INSERT INTO providers (id, value) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value').run(p.id, JSON.stringify(p))
+  }
+
+  removeProvider(id: string) {
+    this.db.prepare('DELETE FROM providers WHERE id = ?').run(id)
+  }
+
+  /** Your messages waiting for a priest's turn to end, oldest first. */
+  queued(sessionId: string): QueuedMessage[] {
+    return this.db.prepare('SELECT id, text, at FROM queued_messages WHERE session_id = ? ORDER BY at').all(sessionId) as QueuedMessage[]
+  }
+
+  addQueued(sessionId: string, m: QueuedMessage) {
+    this.db.prepare('INSERT INTO queued_messages (id, session_id, text, at) VALUES (?, ?, ?, ?)').run(m.id, sessionId, m.text, m.at)
+  }
+
+  /** False when it already left (sent meanwhile). */
+  editQueued(sessionId: string, id: string, text: string): boolean {
+    return this.db.prepare('UPDATE queued_messages SET text = ? WHERE id = ? AND session_id = ?').run(text, id, sessionId).changes > 0
+  }
+
+  /** Takes messages out of the queue (sent, or withdrawn by you); returns those that were still there. */
+  takeQueued(sessionId: string, ids?: string[]): QueuedMessage[] {
+    const all = this.queued(sessionId)
+    const taken = ids ? all.filter((m) => ids.includes(m.id)) : all
+    const del = this.db.prepare('DELETE FROM queued_messages WHERE id = ?')
+    for (const m of taken) del.run(m.id)
+    return taken
+  }
+
+  /** Standing instructions recalled to priests with each of your messages, by session id. */
+  reminders(): Map<string, string> {
+    return new Map((this.db.prepare('SELECT session_id AS id, text FROM reminders').all() as { id: string; text: string }[]).map((r) => [r.id, r.text]))
+  }
+
+  setReminder(id: string, text: string | null) {
+    if (text) this.db.prepare('INSERT INTO reminders (session_id, text) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET text = excluded.text').run(id, text)
+    else this.db.prepare('DELETE FROM reminders WHERE session_id = ?').run(id)
+  }
+
   /** MCP servers you switched on or off for a project's priests, by name. */
   mcpPrefs(project: string): Record<string, boolean> {
     const rows = this.db.prepare('SELECT name, enabled FROM project_mcp WHERE project = ?').all(project) as { name: string; enabled: number }[]
@@ -387,6 +453,8 @@ type Row = {
   base_sha: string | null
   archived_at: number | null
   last_seen_seq: number
+  engine: string
+  model: string | null
 }
 type EventRow = { seq: number; at: number; ev: string }
 
@@ -402,4 +470,6 @@ const toSession = (r: Row): SessionRow => ({
   baseSha: r.base_sha,
   archivedAt: r.archived_at,
   lastSeenSeq: r.last_seen_seq,
+  engine: r.engine || 'claude',
+  model: r.model,
 })

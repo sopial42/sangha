@@ -18,6 +18,14 @@ export type Quota = {
 
 export type MonkStatus = 'working' | 'completed' | 'failed' | 'stopped'
 
+/**
+ * Why he stopped, as a small model read his last words: `fini` (nothing left), `question` (he needs you),
+ * `attente` (something runs without you: CI, deploy, review…). Rings a different bowl for each.
+ */
+export type RecapState = 'fini' | 'question' | 'attente'
+
+export type SessionRecap = { done: string; next: string; state?: RecapState }
+
 export type MonasteryEvent =
   | { t: 'session.started'; model: string; agents: string[]; skills: string[]; plugins: string[]; claudeSessionId: string }
   | { t: 'user.message'; text: string }
@@ -35,7 +43,7 @@ export type MonasteryEvent =
   /** Background work still running (a script launched in the background, a novice…): the full set, replacing the last one. */
   | { t: 'background'; tasks: { id: string; type: string; description: string }[] }
   /** Micro recap written when a priest stops: what was done, what is left (or awaited from you). */
-  | { t: 'recap'; done: string; next: string }
+  | ({ t: 'recap' } & SessionRecap)
   | { t: 'error'; message: string }
 
 /** An event as stored and streamed: numbered per session, timestamped. */
@@ -71,6 +79,36 @@ export type ProjectSuggestion = { name: string; path: string; lastUsed: number }
 /** The single Buddha: a dispatcher session that can start and follow priests for you. */
 export const BUDDHA_SESSION_ID = 'buddha'
 
+/** What a priest thinks with: 'claude' (your subscription), or the id of a provider you added (e.g. OVH AI endpoints). */
+export type Engine = string
+
+/**
+ * An Anthropic-compatible endpoint Claude Code can run on instead of Claude: its address and credentials, set once.
+ * `models` null: every model the endpoint lists (GET {baseUrl}/models), kept current; else only those.
+ */
+export type Provider = {
+  id: string
+  name: string
+  baseUrl: string
+  apiKey: string
+  authToken: string
+  timeoutMs: number
+  models: string[] | null
+}
+
+/**
+ * A model a session can think with. `id` is the choice's key (see modelKey); `model` null: Claude, with
+ * the model of the agent's own definition.
+ */
+export type ModelChoice = { id: string; label: string; engine: Engine; model: string | null }
+
+/** Key of a model choice: a Claude alias as is ('' : the agent's own), a provider's model as `provider::model`. */
+export const modelKey = (engine: Engine | undefined, model: string | null | undefined) =>
+  !engine || engine === 'claude' ? (model ?? '') : `${engine}::${model ?? ''}`
+
+/** A message of yours waiting for his turn to end. */
+export type QueuedMessage = { id: string; text: string; at: number }
+
 export type SessionInfo = {
   id: string
   project: string
@@ -80,6 +118,10 @@ export type SessionInfo = {
   claudeSessionId: string | null
   /** Git branch of the session's worktree, null when the project is not a git repo. */
   branch: string | null
+  /** Absent: Claude. */
+  engine?: Engine
+  /** The model you chose for him; null: the one of his agent's definition. */
+  model?: string | null
 }
 
 /**
@@ -99,7 +141,7 @@ export type SessionSummary = SessionInfo & {
   doing: string | null
   novices: NoviceSummary[]
   /** Recap of his last piece of work, while he waits for you. */
-  recap: { done: string; next: string } | null
+  recap: SessionRecap | null
   /** A Claude Code session started outside Sangha (e.g. in a terminal). */
   external: boolean
   /** For an outside session: its `claude` process is still running (replies are relayed to it). */
@@ -108,6 +150,10 @@ export type SessionSummary = SessionInfo & {
   silenced: boolean
   /** Your own note about him, shown under him in the courtyard (null when there is none). */
   note: string | null
+  /** A standing instruction of yours (e.g. "sois concis"), recalled to him with each of your messages. */
+  reminder: string | null
+  /** Your messages written while he works: not read yet, sent together once his turn ends (editable until then). */
+  queued: QueuedMessage[]
   /** Tokens his context weighs, as of his latest reply (null until known). */
   context: number | null
   /** What the session would have cost at API prices, in dollars, novices and earlier sessions it took over from included. */

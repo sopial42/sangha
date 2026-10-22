@@ -26,6 +26,20 @@ describe('Store', () => {
     expect(s.othersInWorktree('/w/x', 'old')).toEqual([])
   })
 
+  it('keeps messages queued while he works, editable until they leave', () => {
+    const s = new Store(':memory:')
+    s.addQueued('a', { id: 'm1', text: 'un', at: 1 })
+    s.addQueued('a', { id: 'm2', text: 'deux', at: 2 })
+    s.addQueued('b', { id: 'm3', text: 'autre', at: 3 })
+    expect(s.editQueued('a', 'm1', 'un bis')).toBe(true)
+    expect(s.editQueued('b', 'm1', 'pas à lui')).toBe(false)
+    expect(s.takeQueued('a', ['m2']).map((m) => m.text)).toEqual(['deux'])
+    expect(s.takeQueued('a').map((m) => m.text)).toEqual(['un bis'])
+    expect(s.queued('a')).toEqual([])
+    expect(s.editQueued('a', 'm1', 'trop tard')).toBe(false)
+    expect(s.queued('b')).toHaveLength(1)
+  })
+
   it('knows when a priest fell idle and whether it was seen', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))

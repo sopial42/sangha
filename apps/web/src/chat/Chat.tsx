@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { QueuedMessage } from '@sangha/shared'
 import { api, openSession } from '../api'
 import { Md } from '../Md'
 import { formatTime } from '../priests'
@@ -6,12 +7,82 @@ import { profileFor, toolIcon } from '../profiles'
 import { useApp, type ChatItem } from '../store'
 import { draftOf, saveDraft } from '../drafts'
 
+const NO_QUEUED: QueuedMessage[] = []
+
 const Time = ({ at }: { at: number }) =>
   at ? (
     <time className="msg-time" dateTime={new Date(at).toISOString()}>
       {formatTime(at)}
     </time>
   ) : null
+
+/**
+ * A message of yours he has not read yet (he is mid-turn): dimmed, and yours to change, take back or
+ * push into his current turn until it leaves on its own when the turn ends.
+ */
+function Queued({ sessionId, m }: { sessionId: string; m: QueuedMessage }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(m.text)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => setText(m.text), [m.text])
+  const run = (p: Promise<void>) => p.then(() => setError(null), (e: Error) => setError(e.message))
+  return (
+    <div className="msg msg-user queued">
+      <span className="msg-queued-label">En attente · il le lira à la fin de son tour</span>
+      {editing ? (
+        <form
+          className="msg-queued-edit"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void run(api.editQueued(sessionId, m.id, text)).then(() => setEditing(false))
+          }}
+        >
+          <textarea
+            value={text}
+            autoFocus
+            rows={Math.min(8, text.split('\n').length + 1)}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                e.currentTarget.form?.requestSubmit()
+              }
+              if (e.key === 'Escape') {
+                e.stopPropagation()
+                setText(m.text)
+                setEditing(false)
+              }
+            }}
+          />
+          <div className="msg-queued-actions">
+            <button type="submit" className="text-link" disabled={!text.trim()}>
+              Enregistrer
+            </button>
+            <button type="button" className="text-link" onClick={() => (setText(m.text), setEditing(false))}>
+              Annuler
+            </button>
+          </div>
+        </form>
+      ) : (
+        <>
+          {m.text}
+          <div className="msg-queued-actions">
+            <button type="button" className="text-link" onClick={() => setEditing(true)}>
+              Modifier
+            </button>
+            <button type="button" className="text-link" onClick={() => void run(api.sendQueuedNow(sessionId, m.id))} title="Il le lit tout de suite, au milieu de son tour">
+              Envoyer maintenant
+            </button>
+            <button type="button" className="text-link" onClick={() => void run(api.withdrawQueued(sessionId, m.id))}>
+              Retirer
+            </button>
+          </div>
+        </>
+      )}
+      {error && <p className="form-error">{error}</p>}
+    </div>
+  )
+}
 
 // Plumbing that says nothing to the user.
 const HIDDEN_TOOLS = new Set(['ToolSearch', 'TodoWrite'])
@@ -42,6 +113,7 @@ const SANGHA_TOOLS: Record<string, string> = {
  */
 export function Chat({ author, external = null }: { author: string; external?: { alive: boolean } | null }) {
   const { view, selectedId: sessionId, profiles, dialog, set } = useApp()
+  const queued = useApp((s) => (sessionId ? s.sessions[sessionId]?.queued : undefined)) ?? NO_QUEUED
   const [text, setText] = useState(() => (sessionId ? draftOf(sessionId) : ''))
   useEffect(() => setText(sessionId ? draftOf(sessionId) : ''), [sessionId])
   const [sending, setSending] = useState(false)
@@ -98,6 +170,10 @@ export function Chat({ author, external = null }: { author: string; external?: {
     if (atBottom.current || view.chat.at(-1)?.kind === 'user') toBottom()
     else setFresh(true)
   }, [view.chat.length, view.draft])
+  // A message you just queued brings you down too.
+  useLayoutEffect(() => {
+    if (queued.length) toBottom()
+  }, [queued.length])
   const onScroll = () => {
     const el = logRef.current
     if (!el) return
@@ -264,6 +340,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
             {view.draft}
           </div>
         )}
+        {sessionId && queued.map((m) => <Queued key={m.id} sessionId={sessionId} m={m} />)}
       </div>
       <form className="chat-input" onSubmit={submit}>
         <textarea

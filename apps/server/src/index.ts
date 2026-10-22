@@ -4,18 +4,18 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE, type SSEStreamingApi } from 'hono/streaming'
-import type { Envelope, GlobalEvent } from '@sangha/shared'
+import type { Envelope, GlobalEvent, Provider } from '@sangha/shared'
 import { buddhaOptions } from './buddha'
 import { assertQuotaOnly, config } from './config'
+import { probeModels } from './providers'
 import { Store } from './db'
 import { branches } from './git'
 import { profiles } from './monks'
 import { readNewLines, readTailLines } from './files'
 import { EXTERNAL_PREFIX, Observer } from './observer'
 import { Projects } from './projects'
-import { Sessions, UserError } from './session'
+import { type CreateSession, Sessions, UserError } from './session'
 import { noviceLog, parseLine, TranscriptReader } from './transcript'
-import { allProjectWorktrees } from './worktrees'
 
 assertQuotaOnly()
 
@@ -46,6 +46,36 @@ app.onError((err, c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('/api/monks', (c) => c.json(profiles()))
+app.get('/api/models', async (c) => c.json(await sessions.providers.choices()))
+app.get('/api/providers', (c) => c.json(sessions.providers.all()))
+app.post('/api/providers', async (c) => {
+  const p = await c.req.json<Partial<Provider>>()
+  if (!p.name?.trim() || !p.baseUrl?.trim()) throw new UserError('nom et URL requis')
+  const provider: Provider = {
+    id: p.id || `p${crypto.randomUUID().slice(0, 8)}`,
+    name: p.name.trim(),
+    baseUrl: p.baseUrl.trim().replace(/\/+$/, ''),
+    apiKey: p.apiKey?.trim() ?? '',
+    authToken: p.authToken?.trim() ?? '',
+    timeoutMs: Number(p.timeoutMs) || 3_000_000,
+    models: p.models?.length ? p.models.map((m) => m.trim()).filter(Boolean) : null,
+  }
+  sessions.providers.save(provider)
+  return c.json(provider)
+})
+app.post('/api/providers/:id/remove', (c) => {
+  sessions.providers.remove(c.req.param('id'))
+  return c.body(null, 204)
+})
+// The models an endpoint lists, to choose among before saving it.
+app.post('/api/providers/probe', async (c) => {
+  const p = await c.req.json<Pick<Provider, 'baseUrl' | 'apiKey' | 'authToken'>>()
+  try {
+    return c.json(await probeModels(p))
+  } catch (err) {
+    throw new UserError(`liste des modèles introuvable : ${err instanceof Error ? err.message : err}`)
+  }
+})
 
 app.get('/api/projects', async (c) => c.json(await projects.list()))
 // A project is either a local folder (registered where it is) or a git URL (cloned into workspaces/).
@@ -83,12 +113,10 @@ app.get('/api/projects/:name/branches', async (c) => {
   return c.json(await branches(projects.dir(c.req.param('name'))))
 })
 
-// Every project's worktrees, its main checkout excepted, as prayer flags in the courtyard.
-app.get('/api/worktrees', async (c) => c.json(await allProjectWorktrees(projects, sessions)))
 
 app.get('/api/sessions', (c) => c.json(sessions.summaries()))
 app.post('/api/sessions', async (c) => {
-  const body = await c.req.json<{ project: string; agent: string; prompt: string; baseRef?: string }>()
+  const body = await c.req.json<CreateSession>()
   return c.json(await sessions.create(body), 201)
 })
 app.post('/api/sessions/:id/messages', async (c) => {
@@ -126,6 +154,29 @@ app.post('/api/sessions/:id/shepherd', async (c) => {
 app.post('/api/sessions/:id/silence', async (c) => {
   const { silent } = await c.req.json<{ silent: boolean }>()
   sessions.silence(c.req.param('id'), !!silent)
+  return c.body(null, 204)
+})
+app.post('/api/sessions/:id/queued/:mid', async (c) => {
+  const { text } = await c.req.json<{ text: string }>()
+  sessions.editQueued(c.req.param('id'), c.req.param('mid'), text ?? '')
+  return c.body(null, 204)
+})
+app.post('/api/sessions/:id/queued/:mid/withdraw', (c) => {
+  sessions.withdrawQueued(c.req.param('id'), c.req.param('mid'))
+  return c.body(null, 204)
+})
+app.post('/api/sessions/:id/queued/:mid/now', (c) => {
+  sessions.sendQueuedNow(c.req.param('id'), c.req.param('mid'))
+  return c.body(null, 204)
+})
+app.post('/api/sessions/:id/model', async (c) => {
+  const { model } = await c.req.json<{ model: string }>()
+  await sessions.setModel(c.req.param('id'), model ?? '')
+  return c.body(null, 204)
+})
+app.post('/api/sessions/:id/reminder', async (c) => {
+  const { text } = await c.req.json<{ text: string | null }>()
+  sessions.reminder(c.req.param('id'), text)
   return c.body(null, 204)
 })
 app.post('/api/sessions/:id/note', async (c) => {
