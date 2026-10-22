@@ -96,7 +96,12 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
           endedAt: null,
         },
       }
-      return { ...s, monkOrder: [...s.monkOrder, ev.monkId], chat: [...s.chat, { kind: 'summon', monkId: ev.monkId, at }] }
+      // The same novice can be announced twice (a replayed transcript): one entry, or the list repeats keys.
+      return {
+        ...s,
+        monkOrder: s.monkOrder.includes(ev.monkId) ? s.monkOrder : [...s.monkOrder, ev.monkId],
+        chat: [...s.chat, { kind: 'summon', monkId: ev.monkId, at }],
+      }
     case 'monk.tool':
       patchMonk(ev.monkId, (m) => ({ lastTool: { tool: ev.tool, summary: ev.summary }, log: [...m.log, { kind: 'tool', tool: ev.tool, summary: ev.summary, at }] }))
       return s
