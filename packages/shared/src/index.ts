@@ -97,6 +97,29 @@ export type Provider = {
 }
 
 /**
+ * What Claude Code needs to run on a provider's model: its address and credentials, and every model alias
+ * and subagent pointed at that one model. Sangha's sessions get it; you can paste it in a terminal too.
+ */
+export const providerEnv = (p: Pick<Provider, 'baseUrl' | 'apiKey' | 'authToken' | 'timeoutMs'>, model: string): Record<string, string> => ({
+  ANTHROPIC_BASE_URL: p.baseUrl,
+  ANTHROPIC_API_KEY: p.apiKey,
+  ANTHROPIC_AUTH_TOKEN: p.authToken || 'not-needed',
+  ANTHROPIC_MODEL: model,
+  ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
+  ANTHROPIC_DEFAULT_SONNET_MODEL: model,
+  ANTHROPIC_DEFAULT_OPUS_MODEL: model,
+  CLAUDE_CODE_SUBAGENT_MODEL: model,
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+  API_TIMEOUT_MS: String(p.timeoutMs || 3_000_000),
+})
+
+/** An environment as `export K="V"` lines for a POSIX shell, values escaped. */
+export const shellExports = (env: Record<string, string>) =>
+  Object.entries(env)
+    .map(([k, v]) => `export ${k}="${v.replace(/[\\"$`]/g, '\\$&')}"`)
+    .join('\n')
+
+/**
  * A model a session can think with. `id` is the choice's key (see modelKey); `model` null: Claude, with
  * the model of the agent's own definition.
  */

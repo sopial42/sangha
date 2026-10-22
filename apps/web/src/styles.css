@@ -1381,6 +1381,37 @@ select {
   font-size: 13px;
 }
 
+.provider-model {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.shell-snippet {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.shell-snippet-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.shell-snippet pre {
+  margin: 0;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 12px;
+  user-select: all;
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;

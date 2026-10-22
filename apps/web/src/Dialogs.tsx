@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { CostReport, NirvanaEntry, ProjectSuggestion, Provider } from '@sangha/shared'
+import { providerEnv, shellExports, type CostReport, type NirvanaEntry, type ProjectSuggestion, type Provider } from '@sangha/shared'
 import { ApiError, api, openSession } from './api'
 import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
@@ -703,6 +703,7 @@ function Providers({ onClose }: { onClose: () => void }) {
   const [list, setList] = useState<Provider[] | null>(null)
   const [edit, setEdit] = useState<Partial<Provider> | null>(null)
   const [found, setFound] = useState<string[] | null>(null)
+  const [exported, setExported] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -729,6 +730,7 @@ function Providers({ onClose }: { onClose: () => void }) {
   const open = (p: Partial<Provider>) => {
     setEdit({ ...p })
     setFound(null)
+    setExported(null)
     setError(null)
   }
   const field = (k: keyof Provider) => (e: React.ChangeEvent<HTMLInputElement>) => setEdit((p) => ({ ...p, [k]: e.target.value }))
@@ -863,12 +865,20 @@ function Providers({ onClose }: { onClose: () => void }) {
             {tickable.length > 0 && (
               <div className="provider-models">
                 {tickable.map((m) => (
-                  <label key={m} className="inline-radio">
-                    <input type="checkbox" disabled={chosen === null} checked={chosen === null || chosen.includes(m)} onChange={() => toggle(m)} />
-                    {m}
-                  </label>
+                  <div key={m} className="provider-model">
+                    <label className="inline-radio">
+                      <input type="checkbox" disabled={chosen === null} checked={chosen === null || chosen.includes(m)} onChange={() => toggle(m)} />
+                      {m}
+                    </label>
+                    <button type="button" className="text-link small" onClick={() => setExported((x) => (x === m ? null : m))} title="Les variables pour lancer Claude Code sur ce modèle dans un terminal">
+                      exports
+                    </button>
+                  </div>
                 ))}
               </div>
+            )}
+            {exported && edit.baseUrl && (
+              <ShellSnippet title={`Claude Code sur ${exported}, dans un terminal`} text={shellExports(providerEnv({ baseUrl: edit.baseUrl, apiKey: edit.apiKey ?? '', authToken: edit.authToken ?? '', timeoutMs: Number(edit.timeoutMs) }, exported))} />
             )}
           </fieldset>
           {error && <p className="form-error">{error}</p>}
@@ -883,5 +893,26 @@ function Providers({ onClose }: { onClose: () => void }) {
         </form>
       )}
     </Modal>
+  )
+}
+
+/** Shell lines to read and copy in one click. */
+function ShellSnippet({ title, text }: { title: string; text: string }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () =>
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    })
+  return (
+    <div className="shell-snippet">
+      <div className="shell-snippet-head">
+        <span className="muted small">{title}</span>
+        <button type="button" className="text-link small" onClick={() => void copy()}>
+          {copied ? 'Copié ✓' : 'Copier'}
+        </button>
+      </div>
+      <pre>{text}</pre>
+    </div>
   )
 }

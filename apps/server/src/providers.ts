@@ -1,4 +1,4 @@
-import type { Engine, ModelChoice, Provider } from '@sangha/shared'
+import { providerEnv, type Engine, type ModelChoice, type Provider } from '@sangha/shared'
 import type { Store } from './db'
 
 const CLAUDE: ModelChoice[] = [
@@ -82,7 +82,7 @@ export class Providers {
 
   /**
    * Environment of a session's Claude Code process. Claude: the subscription only (an API key would bill the API).
-   * A provider: its address and credentials, and every model alias and subagent pointed at the chosen model.
+   * A provider: its environment for the chosen model (see providerEnv).
    */
   env(engine: Engine | undefined, model: string | null | undefined): Record<string, string> {
     const env = { ...process.env } as Record<string, string>
@@ -90,18 +90,6 @@ export class Providers {
     const p = engine && engine !== 'claude' ? this.get(engine) : undefined
     if (!p || !model) return env
     delete env.CLAUDE_CODE_OAUTH_TOKEN
-    return {
-      ...env,
-      ANTHROPIC_BASE_URL: p.baseUrl,
-      ANTHROPIC_API_KEY: p.apiKey,
-      ANTHROPIC_AUTH_TOKEN: p.authToken || 'not-needed',
-      ANTHROPIC_MODEL: model,
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
-      ANTHROPIC_DEFAULT_SONNET_MODEL: model,
-      ANTHROPIC_DEFAULT_OPUS_MODEL: model,
-      CLAUDE_CODE_SUBAGENT_MODEL: model,
-      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
-      API_TIMEOUT_MS: String(p.timeoutMs || 3_000_000),
-    }
+    return { ...env, ...providerEnv(p, model) }
   }
 }
