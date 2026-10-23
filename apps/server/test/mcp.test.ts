@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { catalogFrom, enabledExtras, mcpList, mcpSettle } from '../src/mcp'
+import { catalogFrom, enabledExtras, mcpList, mcpSettle, pluginServers } from '../src/mcp'
 import { Store } from '../src/db'
 
 const json = {
@@ -74,5 +74,26 @@ describe('after a sign-in', () => {
     expect(await mcpSettle(async () => server('needs-auth'), timeout, fast)).toBe('Request timed out')
     expect(await mcpSettle(async () => server('failed', 'HTTP 500'), async () => {}, fast)).toBe('HTTP 500')
     expect(await mcpSettle(async () => server('needs-auth'), async () => {}, fast)).toBe('needs-auth')
+  })
+})
+
+describe('MCP servers of your plugins', () => {
+  const installed = {
+    'sentry-mcp@sentry-mcp': [{ scope: 'user', installPath: '/c/sentry' }],
+    'miro@miro-ai': [{ scope: 'user', installPath: '/c/miro' }],
+    'kit@kit': [{ scope: 'user', installPath: '/c/kit' }],
+  }
+  const files: Record<string, unknown> = {
+    '/c/sentry/.mcp.json': { sentry: { type: 'http', url: 'https://mcp.sentry.dev/mcp' } },
+    '/c/miro/.mcp.json': { mcpServers: { miro: { type: 'http', url: 'https://mcp.miro.com' } } },
+    '/c/kit/.claude-plugin/plugin.json': { name: 'kit', mcpServers: { kit: { command: '${CLAUDE_PLUGIN_ROOT}/bin/kit' } } },
+  }
+
+  it('come from enabled plugins only, named as Claude Code names them', () => {
+    const catalog = pluginServers({ 'sentry-mcp@sentry-mcp': true, 'miro@miro-ai': false, 'kit@kit': true }, installed, (p) => files[p])
+    expect(catalog).toEqual({
+      'plugin:sentry-mcp:sentry': { scope: 'user', config: { type: 'http', url: 'https://mcp.sentry.dev/mcp' } },
+      'plugin:kit:kit': { scope: 'user', config: { command: '/c/kit/bin/kit' } },
+    })
   })
 })

@@ -295,16 +295,18 @@ function ReminderBox({ id, saved }: { id: string; saved: string | null }) {
   )
 }
 
-/** One MCP server row: name (claude.ai ones get their own small tag), status, and its on/off switch. */
+/** One MCP server row: name (claude.ai and plugin ones get their own small tag), status, and its on/off switch. */
 function McpRow({ server, busy, onToggle, onLogin }: { server: McpServer; busy: boolean; onToggle: () => void; onLogin: () => void }) {
   const claudeAi = server.name.startsWith('claude.ai ')
-  const name = claudeAi ? server.name.slice('claude.ai '.length) : server.name
+  const plugin = /^plugin:[^:]+:(.+)$/.exec(server.name)?.[1]
+  const name = claudeAi ? server.name.slice('claude.ai '.length) : (plugin ?? server.name)
   const on = !mcpOff(server)
   return (
     <li className="mcp-row">
       <span className="mcp-name" title={`Portée : ${server.scope}`}>
         {name}
         {claudeAi && <span className="mcp-tag">claude.ai</span>}
+        {plugin && <span className="mcp-tag">plugin</span>}
       </span>
       {server.status === 'needs-auth' ? (
         // Opens your browser on its sign-in page; the row stays busy until you authorized there.

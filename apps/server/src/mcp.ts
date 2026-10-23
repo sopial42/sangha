@@ -7,7 +7,7 @@ import type { McpServer } from '@sangha/shared'
 
 /**
  * MCP servers of your own Claude config that a priest does not load by himself: he reads only the
- * project's settings, so your user-scope servers and the ones you added for this project (local scope,
+ * project's settings, so your user-scope servers (your enabled plugins' included) and the ones you added for this project (local scope,
  * keyed by its folder, which a worktree does not share) stay out unless you switch them on.
  */
 export type Catalog = Record<string, { scope: 'user' | 'local'; config: McpServerConfig }>
@@ -22,13 +22,52 @@ export function catalogFrom(json: ClaudeJson, projectDir: string | null): Catalo
   return out
 }
 
+type Installed = Record<string, { scope?: string; installPath?: string }[]>
+
+/**
+ * MCP servers of the plugins you enabled for your user (`enabledPlugins` of your settings), named the way
+ * Claude Code names them (`plugin:<plugin>:<server>`), so a sign-in made in a terminal is the same one here.
+ * A plugin declares them in its `.mcp.json`, flat or under `mcpServers`, or in its manifest.
+ */
+export function pluginServers(enabled: Record<string, boolean>, installed: Installed, read: (path: string) => unknown): Catalog {
+  const out: Catalog = {}
+  for (const [id, on] of Object.entries(enabled)) {
+    const install = on ? installed[id]?.find((i) => i.scope === 'user' && i.installPath) : undefined
+    if (!install) continue
+    const root = install.installPath!
+    const plugin = id.split('@')[0]!
+    const manifest = read(join(root, '.claude-plugin', 'plugin.json')) as { mcpServers?: unknown } | undefined
+    const file = read(join(root, '.mcp.json')) as { mcpServers?: unknown } | undefined
+    const declared = { ...asServers(file?.mcpServers ?? file), ...asServers(manifest?.mcpServers) }
+    for (const [name, config] of Object.entries(declared)) {
+      const resolved = JSON.parse(JSON.stringify(config).replaceAll('${CLAUDE_PLUGIN_ROOT}', root)) as McpServerConfig
+      out[`plugin:${plugin}:${name}`] = { scope: 'user', config: resolved }
+    }
+  }
+  return out
+}
+
+const asServers = (v: unknown): Record<string, McpServerConfig> =>
+  v && typeof v === 'object' && !Array.isArray(v)
+    ? Object.fromEntries(Object.entries(v).filter(([, c]) => c && typeof c === 'object' && ('url' in c || 'command' in c)))
+    : {}
+
+const readJson = (path: string): unknown => {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+
 export function readCatalog(projectDir: string | null): Catalog {
   const dir = process.env.CLAUDE_CONFIG_DIR ?? homedir()
-  try {
-    return catalogFrom(JSON.parse(readFileSync(join(dir, '.claude.json'), 'utf8')), projectDir)
-  } catch {
-    return {}
-  }
+  const claude = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+  const settings = readJson(join(claude, 'settings.json')) as { enabledPlugins?: Record<string, boolean> } | undefined
+  const installed = readJson(join(claude, 'plugins', 'installed_plugins.json')) as { plugins?: Installed } | undefined
+  const plugins = pluginServers(settings?.enabledPlugins ?? {}, installed?.plugins ?? {}, readJson)
+  const json = readJson(join(dir, '.claude.json')) as ClaudeJson | undefined
+  return { ...plugins, ...(json ? catalogFrom(json, projectDir) : {}) }
 }
 
 /** The catalog servers you switched on for this project, as the SDK's `mcpServers` option. */
