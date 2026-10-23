@@ -88,6 +88,15 @@ export function mcpList(statuses: McpServerStatus[], catalog: Catalog): McpServe
   return list
 }
 
+/** Resolves once no server is still connecting (or after `waitMs`, or if his status cannot be read). */
+export async function mcpReady(status: () => Promise<McpServerStatus[]>, { waitMs = 30_000, stepMs = 500 } = {}): Promise<void> {
+  for (let waited = 0; waited < waitMs; waited += stepMs) {
+    const all = await status().catch(() => null)
+    if (!all?.some((s) => s.status === 'pending')) return
+    await new Promise((r) => setTimeout(r, stepMs))
+  }
+}
+
 /**
  * After a sign-in: reconnect the server until it is connected, up to `tries` reconnects, waiting while it is
  * pending. Resolves to null once connected, else to why it is not (the last reconnect error or its status).

@@ -24,7 +24,7 @@ import type { SessionRow, Shepherd, Store } from './db'
 import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState, type WorktreeState } from './git'
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
-import { enabledExtras, mcpList, mcpLogin, mcpSettle, readCatalog } from './mcp'
+import { enabledExtras, mcpList, mcpLogin, mcpReady, mcpSettle, readCatalog } from './mcp'
 import { readTailLines } from './files'
 import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
@@ -1005,7 +1005,10 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       await Promise.race([old.closed, new Promise((r) => setTimeout(r, 15_000))])
       if (this.live.get(id) === old) this.live.delete(id)
     }
-    this.send(row.id, RESTARTED)
+    // He looks for what was missing as soon as he reads this: let his MCP servers finish connecting first
+    // (a remote one like Sentry takes seconds), or he finds nothing and says it is still not there.
+    const fresh = this.ensureLive(row)
+    void mcpReady(() => fresh.mcpStatus()).then(() => this.send(row.id, RESTARTED))
   }
 
   /**

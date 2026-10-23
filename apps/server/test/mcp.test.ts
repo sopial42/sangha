@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { catalogFrom, enabledExtras, mcpList, mcpSettle, pluginServers } from '../src/mcp'
+import { catalogFrom, enabledExtras, mcpList, mcpReady, mcpSettle, pluginServers } from '../src/mcp'
 import { Store } from '../src/db'
 
 const json = {
@@ -95,5 +95,17 @@ describe('MCP servers of your plugins', () => {
       'plugin:sentry-mcp:sentry': { scope: 'user', config: { type: 'http', url: 'https://mcp.sentry.dev/mcp' } },
       'plugin:kit:kit': { scope: 'user', config: { command: '/c/kit/bin/kit' } },
     })
+  })
+})
+
+describe('after a relaunch', () => {
+  it('waits for servers still connecting, not forever', async () => {
+    let calls = 0
+    const status = async () => [{ name: 'sentry', status: ++calls < 3 ? ('pending' as const) : ('connected' as const) }]
+    await mcpReady(status, { waitMs: 50, stepMs: 1 })
+    expect(calls).toBe(3)
+    let stuck = 0
+    await mcpReady(async () => (stuck++, [{ name: 'sentry', status: 'pending' as const }]), { waitMs: 5, stepMs: 1 })
+    expect(stuck).toBe(5)
   })
 })
