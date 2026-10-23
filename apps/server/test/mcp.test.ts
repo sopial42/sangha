@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { catalogFrom, enabledExtras, mcpList, mcpSettle, pluginServers } from '../src/mcp'
+import { catalogFrom, enabledExtras, mcpList, mcpSettle, pluginServers, withDisabled } from '../src/mcp'
 import { Store } from '../src/db'
 
 const json = {
@@ -17,13 +17,19 @@ describe('MCP servers a priest does not load himself', () => {
     expect(Object.keys(catalogFrom(json, null))).toEqual(['atlassian'])
   })
 
-  it('are added only once switched on', () => {
+  it('are added like `claude` in the project would, unless switched off', () => {
     const catalog = catalogFrom(json, '/p/Robia')
-    expect(enabledExtras(catalog, {})).toEqual({})
+    expect(Object.keys(enabledExtras(catalog, {})).sort()).toEqual(['atlassian', 'playwright'])
     expect(enabledExtras(catalog, { playwright: true, atlassian: false, 'claude.ai Gmail': true })).toEqual({ playwright: json.projects['/p/Robia'].mcpServers.playwright })
   })
 
-  it('are listed as off until loaded, alongside what the priest runs', () => {
+  it('stay off when you turned them off for the project in /mcp, until switched on', () => {
+    const catalog = withDisabled(catalogFrom(json, '/p/Robia'), { projects: { '/p/Robia': { disabledMcpServers: ['atlassian'] } } }, '/p/Robia')
+    expect(Object.keys(enabledExtras(catalog, {}))).toEqual(['playwright'])
+    expect(Object.keys(enabledExtras(catalog, { atlassian: true })).sort()).toEqual(['atlassian', 'playwright'])
+  })
+
+  it('are listed as off when not loaded, alongside what the priest runs', () => {
     const list = mcpList(
       [
         { name: 'claude.ai Gmail', status: 'disabled', scope: 'claudeai' },

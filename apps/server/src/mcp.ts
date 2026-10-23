@@ -7,12 +7,16 @@ import type { McpServer } from '@sangha/shared'
 
 /**
  * MCP servers of your own Claude config that a priest does not load by himself: he reads only the
- * project's settings, so your user-scope servers (your enabled plugins' included) and the ones you added for this project (local scope,
- * keyed by its folder, which a worktree does not share) stay out unless you switch them on.
+ * project's settings, so your user-scope servers (your enabled plugins' included) and the ones you added
+ * for this project (local scope, keyed by its folder, which a worktree does not share) are handed to him,
+ * as `claude` run in the project would load them, unless you switched them off.
  */
-export type Catalog = Record<string, { scope: 'user' | 'local'; config: McpServerConfig }>
+export type Catalog = Record<string, { scope: 'user' | 'local'; config: McpServerConfig; off?: true }>
 
-type ClaudeJson = { mcpServers?: Record<string, McpServerConfig>; projects?: Record<string, { mcpServers?: Record<string, McpServerConfig> }> }
+type ClaudeJson = {
+  mcpServers?: Record<string, McpServerConfig>
+  projects?: Record<string, { mcpServers?: Record<string, McpServerConfig>; disabledMcpServers?: string[] }>
+}
 
 export function catalogFrom(json: ClaudeJson, projectDir: string | null): Catalog {
   const out: Catalog = {}
@@ -20,6 +24,12 @@ export function catalogFrom(json: ClaudeJson, projectDir: string | null): Catalo
   const local = projectDir ? json.projects?.[projectDir]?.mcpServers : undefined
   for (const [name, config] of Object.entries(local ?? {})) out[name] = { scope: 'local', config }
   return out
+}
+
+/** The servers you turned off for this project in `/mcp`: off here too, until you switch them on. */
+export function withDisabled(catalog: Catalog, json: ClaudeJson | undefined, projectDir: string | null): Catalog {
+  const disabled = new Set(projectDir ? (json?.projects?.[projectDir]?.disabledMcpServers ?? []) : [])
+  return Object.fromEntries(Object.entries(catalog).map(([name, s]) => [name, disabled.has(name) ? { ...s, off: true as const } : s]))
 }
 
 type Installed = Record<string, { scope?: string; installPath?: string }[]>
@@ -67,12 +77,12 @@ export function readCatalog(projectDir: string | null): Catalog {
   const installed = readJson(join(claude, 'plugins', 'installed_plugins.json')) as { plugins?: Installed } | undefined
   const plugins = pluginServers(settings?.enabledPlugins ?? {}, installed?.plugins ?? {}, readJson)
   const json = readJson(join(dir, '.claude.json')) as ClaudeJson | undefined
-  return { ...plugins, ...(json ? catalogFrom(json, projectDir) : {}) }
+  return withDisabled({ ...plugins, ...(json ? catalogFrom(json, projectDir) : {}) }, json, projectDir)
 }
 
-/** The catalog servers you switched on for this project, as the SDK's `mcpServers` option. */
+/** The catalog servers you did not switch off for this project, as the SDK's `mcpServers` option. */
 export function enabledExtras(catalog: Catalog, prefs: Record<string, boolean>): Record<string, McpServerConfig> {
-  return Object.fromEntries(Object.entries(catalog).filter(([name]) => prefs[name]).map(([name, s]) => [name, s.config]))
+  return Object.fromEntries(Object.entries(catalog).filter(([name, s]) => prefs[name] ?? !s.off).map(([name, s]) => [name, s.config]))
 }
 
 /** What the priest runs, plus the catalog servers he does not load, shown as off. */
