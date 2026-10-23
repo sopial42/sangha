@@ -24,7 +24,7 @@ import type { SessionRow, Shepherd, Store } from './db'
 import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState, type WorktreeState } from './git'
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
-import { enabledExtras, mcpList, mcpLogin, readCatalog } from './mcp'
+import { enabledExtras, mcpList, mcpLogin, mcpSettle, readCatalog } from './mcp'
 import { readTailLines } from './files'
 import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
@@ -1058,7 +1058,13 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     for (const [otherId, s] of this.live) {
       if (s !== own && this.store.getSession(otherId)?.project === row.project) void s.reconnectMcp(name).catch(() => undefined)
     }
-    await own.reconnectMcp(name).catch(() => undefined)
+    // A reconnect can fail or time out (slow server, tools fetch) while the sign-in did work: retry, wait for
+    // it to settle, and say why it is still not connected rather than show "Se connecter" again.
+    const reason = await mcpSettle(
+      async () => (await own.mcpStatus()).find((s) => s.name === name),
+      () => own.reconnectMcp(name),
+    )
+    if (reason) throw new UserError(`connecté à ${name}, mais le prêtre n’arrive pas à le joindre (${reason}). Relance-le pour qu’il le recharge.`)
     return this.mcp(id)
   }
 

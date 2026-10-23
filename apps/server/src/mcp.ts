@@ -50,6 +50,34 @@ export function mcpList(statuses: McpServerStatus[], catalog: Catalog): McpServe
 }
 
 /**
+ * After a sign-in: reconnect the server until it is connected, up to `tries` reconnects, waiting while it is
+ * pending. Resolves to null once connected, else to why it is not (the last reconnect error or its status).
+ */
+export async function mcpSettle(
+  status: () => Promise<McpServerStatus | undefined>,
+  reconnect: () => Promise<void>,
+  { tries = 2, waitMs = 15_000, stepMs = 1_000 } = {},
+): Promise<string | null> {
+  let why = 'introuvable'
+  for (let i = 0; i < tries; i++) {
+    why = await reconnect().then(
+      () => '',
+      (e) => (e instanceof Error ? e.message : String(e)),
+    )
+    for (let waited = 0; ; waited += stepMs) {
+      const s = await status().catch(() => undefined)
+      if (s?.status === 'connected') return null
+      if (s?.status !== 'pending' || waited >= waitMs) {
+        why = why || s?.error || (s ? s.status : 'introuvable')
+        break
+      }
+      await new Promise((r) => setTimeout(r, stepMs))
+    }
+  }
+  return why.slice(0, 200)
+}
+
+/**
  * Sign in to an MCP server the way `/mcp` does in a terminal: `claude mcp login` opens your browser and
  * waits for the OAuth callback on localhost (so only where Sangha runs on your machine). It wants a
  * terminal, hence `script`, fed by a pipe that stays open (Node's own stdin is a socket `script` rejects,

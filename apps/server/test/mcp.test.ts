@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { catalogFrom, enabledExtras, mcpList } from '../src/mcp'
+import { catalogFrom, enabledExtras, mcpList, mcpSettle } from '../src/mcp'
 import { Store } from '../src/db'
 
 const json = {
@@ -45,5 +45,34 @@ describe('MCP servers a priest does not load himself', () => {
     store.setMcpPref('Robia', 'playwright', false)
     expect(store.mcpPrefs('Robia')).toEqual({ playwright: false, 'claude.ai Gmail': false })
     expect(store.mcpPrefs('kiat')).toEqual({})
+  })
+})
+
+describe('after a sign-in', () => {
+  const fast = { waitMs: 3, stepMs: 1 }
+  const server = (status: 'connected' | 'pending' | 'needs-auth' | 'failed', error?: string) => ({ name: 'sentry', status, ...(error ? { error } : {}) })
+
+  it('waits while the server is pending, until it connects', async () => {
+    const seen = ['pending', 'pending', 'connected'] as const
+    let i = 0
+    expect(await mcpSettle(async () => server(seen[Math.min(i++, 2)]!), async () => {}, fast)).toBeNull()
+  })
+
+  it('reconnects again when the first reconnect fails', async () => {
+    let calls = 0
+    const reconnect = async () => {
+      if (++calls === 1) throw new Error('Request timed out')
+    }
+    expect(await mcpSettle(async () => server(calls > 1 ? 'connected' : 'needs-auth'), reconnect, fast)).toBeNull()
+    expect(calls).toBe(2)
+  })
+
+  it('says why it is still not connected', async () => {
+    const timeout = async () => {
+      throw new Error('Request timed out')
+    }
+    expect(await mcpSettle(async () => server('needs-auth'), timeout, fast)).toBe('Request timed out')
+    expect(await mcpSettle(async () => server('failed', 'HTTP 500'), async () => {}, fast)).toBe('HTTP 500')
+    expect(await mcpSettle(async () => server('needs-auth'), async () => {}, fast)).toBe('needs-auth')
   })
 })

@@ -393,7 +393,11 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
     api
       .loginMcpServer(sessionId, server.name)
       .then(setServers)
-      .catch((e) => setError(e instanceof ApiError ? e.message : `Impossible de se connecter à ${server.name}.`))
+      .catch((e) => {
+        setError(e instanceof ApiError ? e.message : `Impossible de se connecter à ${server.name}.`)
+        // The sign-in may have worked even if he cannot reach it yet: show where it stands now.
+        api.mcpServers(sessionId).then(setServers, () => undefined)
+      })
       .finally(() => setBusy(null))
   }
 
