@@ -77,6 +77,20 @@ textarea {
   position: relative;
 }
 
+/* The bell and the full screen button: same square-ish key, side by side at the top right. */
+.bell-btn,
+.fullscreen-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 44px;
+  height: 36px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
 .bell-count {
   position: absolute;
   top: -4px;
@@ -2406,12 +2420,6 @@ select {
 /* Full screen, like a film player: the scene takes the whole screen, the top bar floats over it and
    fades out with the cursor after a few still seconds (kept while you point at it, tab through it
    with the keyboard, or have a menu of it open; a mere click leaves a focus that must not pin it). */
-.fullscreen-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 7px 9px;
-}
-
 .app.is-fullscreen .topbar {
   position: fixed;
   inset: 0 0 auto 0;
