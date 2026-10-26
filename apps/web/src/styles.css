@@ -2415,7 +2415,7 @@ select {
 .app.is-fullscreen .topbar {
   position: fixed;
   inset: 0 0 auto 0;
-  z-index: 30;
+  z-index: 9; /* under a conversation (.overlay, 10), which covers it as it covers the scene */
   border-bottom-color: transparent;
   background: linear-gradient(180deg, rgba(20, 15, 26, 0.92), rgba(20, 15, 26, 0));
   transition: opacity 0.4s ease, transform 0.4s ease;
