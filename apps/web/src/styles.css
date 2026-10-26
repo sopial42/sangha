@@ -2402,3 +2402,32 @@ select {
     min-height: 40px;
   }
 }
+
+/* Full screen, like a film player: the scene takes the whole screen, the top bar floats over it and
+   fades out with the cursor after a few still seconds (kept while you point at it, tab through it
+   with the keyboard, or have a menu of it open; a mere click leaves a focus that must not pin it). */
+.fullscreen-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 7px 9px;
+}
+
+.app.is-fullscreen .topbar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 30;
+  border-bottom-color: transparent;
+  background: linear-gradient(180deg, rgba(20, 15, 26, 0.92), rgba(20, 15, 26, 0));
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.app.is-idle .topbar:not(:hover):not(:has(:focus-visible, [aria-expanded='true'])) {
+  opacity: 0;
+  transform: translateY(-100%);
+  pointer-events: none;
+}
+
+.app.is-idle,
+.app.is-idle * {
+  cursor: none !important;
+}

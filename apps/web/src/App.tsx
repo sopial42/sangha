@@ -3,6 +3,7 @@ import { api, openMonastery, openSession } from './api'
 import { Bell } from './Bell'
 import { CostChip } from './CostChip'
 import { Dialogs } from './Dialogs'
+import { FullscreenButton, useFullscreen } from './Fullscreen'
 import { keepAudioUnlocked, watchPriests } from './notify'
 import { Quota } from './quota/Quota'
 import { Monastery } from './scene/Monastery'
@@ -15,6 +16,7 @@ export function App() {
   const defaultModel = useApp((s) => s.defaultModel)
   const setDefaultModel = useApp((s) => s.setDefaultModel)
   const [offline, setOffline] = useState(false)
+  const { full, idle } = useFullscreen()
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -37,7 +39,7 @@ export function App() {
   }, [set])
 
   return (
-    <div className="app">
+    <div className={`app${full ? ' is-fullscreen' : ''}${full && idle ? ' is-idle' : ''}`}>
       <header className="topbar">
         <div className="brand">
           <span className="brand-mark" aria-hidden>
@@ -66,6 +68,7 @@ export function App() {
         </div>
         <Quota />
         <Bell />
+        <FullscreenButton full={full} />
       </header>
       {offline && (
         <p className="banner" role="alert">
