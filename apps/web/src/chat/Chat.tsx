@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { QueuedMessage } from '@sangha/shared'
+import { splitQuote, withQuote, type Quote, type QueuedMessage } from '@sangha/shared'
 import { api, openSession } from '../api'
 import { Md } from '../Md'
 import { formatTime } from '../priests'
@@ -8,6 +8,21 @@ import { useApp, type ChatItem } from '../store'
 import { draftOf, saveDraft } from '../drafts'
 
 const NO_QUEUED: QueuedMessage[] = []
+
+/** Appears on a message you point at: quote it in your reply (only the part you selected, if any). */
+const ReplyButton = ({ onReply }: { onReply: (msg: HTMLElement | null) => void }) => (
+  <button
+    type="button"
+    className="msg-reply"
+    // Keeps your text selection alive until the click reads it.
+    onMouseDown={(e) => e.preventDefault()}
+    onClick={(e) => onReply(e.currentTarget.parentElement)}
+    aria-label="Répondre à ce message"
+    title="Répondre (cite ce message, ou ce que tu y as sélectionné)"
+  >
+    ↩
+  </button>
+)
 
 const Time = ({ at }: { at: number }) =>
   at ? (
@@ -20,6 +35,32 @@ const Time = ({ at }: { at: number }) =>
  * A message of yours he has not read yet (he is mid-turn): dimmed, and yours to change, take back or
  * push into his current turn until it leaves on its own when the turn ends.
  */
+/** The message a reply quotes: who said it and the start of it; a click brings you back to it. */
+function QuoteBlock({ quote, onClick, onClear }: { quote: Quote; onClick?: () => void; onClear?: () => void }) {
+  const inner = (
+    <>
+      <span className="quote-author">{quote.author}</span>
+      <span className="quote-text">{quote.text}</span>
+    </>
+  )
+  return (
+    <div className={`quote ${onClear ? 'quote-draft' : ''}`}>
+      {onClick ? (
+        <button type="button" className="quote-body" onClick={onClick} title="Revoir le message cité">
+          {inner}
+        </button>
+      ) : (
+        <div className="quote-body">{inner}</div>
+      )}
+      {onClear && (
+        <button type="button" className="icon-btn quote-clear" onClick={onClear} aria-label="Ne plus citer" title="Ne plus citer (Échap)">
+          ✕
+        </button>
+      )}
+    </div>
+  )
+}
+
 function Queued({ sessionId, m }: { sessionId: string; m: QueuedMessage }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(m.text)
@@ -65,7 +106,7 @@ function Queued({ sessionId, m }: { sessionId: string; m: QueuedMessage }) {
         </form>
       ) : (
         <>
-          {m.text}
+          <Said text={m.text} />
           <div className="msg-queued-actions">
             <button type="button" className="text-link" onClick={() => setEditing(true)}>
               Modifier
@@ -81,6 +122,18 @@ function Queued({ sessionId, m }: { sessionId: string; m: QueuedMessage }) {
       )}
       {error && <p className="form-error">{error}</p>}
     </div>
+  )
+}
+
+/** Your words, with the message they reply to above them when they quote one. */
+function Said({ text, onQuote }: { text: string; onQuote?: (q: Quote) => void }) {
+  const { quote, body } = splitQuote(text)
+  if (!quote) return <>{text}</>
+  return (
+    <>
+      <QuoteBlock quote={quote} onClick={onQuote && (() => onQuote(quote))} />
+      {body}
+    </>
   )
 }
 
@@ -193,7 +246,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
 
   // Recall past messages with ArrowUp/ArrowDown, like a shell history: -1 means "not browsing".
   const [histIndex, setHistIndex] = useState(-1)
-  const sentMessages = useMemo(() => view.chat.filter((i): i is Extract<ChatItem, { kind: 'user' }> => i.kind === 'user').map((i) => i.text), [view.chat])
+  const sentMessages = useMemo(() => view.chat.filter((i): i is Extract<ChatItem, { kind: 'user' }> => i.kind === 'user').map((i) => splitQuote(i.text).body), [view.chat])
   useEffect(() => setHistIndex(-1), [sessionId])
   // Only after we move the caret ourselves (browsing history), not on every keystroke.
   useEffect(() => {
@@ -201,6 +254,38 @@ export function Chat({ author, external = null }: { author: string; external?: {
     const el = inputRef.current
     el?.setSelectionRange(el.value.length, el.value.length)
   }, [histIndex])
+
+  // Replying to a message, WhatsApp-like: it shows above the field, then leaves ahead of your words.
+  const [quote, setQuote] = useState<Quote | null>(null)
+  useEffect(() => setQuote(null), [sessionId])
+  const replyTo = (who: string, full: string, el: HTMLElement | null) => {
+    // Text selected inside that message: only that part is quoted.
+    const sel = window.getSelection()
+    const picked = sel && !sel.isCollapsed && el?.contains(sel.anchorNode) && el.contains(sel.focusNode) ? sel.toString().trim() : ''
+    setQuote({ author: who, text: picked || splitQuote(full).body })
+    inputRef.current?.focus()
+  }
+  const replyRef = useRef(replyTo)
+  replyRef.current = replyTo
+
+  // Back to the quoted message: loaded first if it sits among the older ones, then centered and lit up.
+  const [jump, setJump] = useState<number | null>(null)
+  const goToQuote = (q: Quote) => {
+    const head = q.text.replace(/…$/, '').slice(0, 200)
+    const chat = useApp.getState().view.chat
+    let idx = -1
+    for (let i = chat.length - 1; i >= 0 && idx < 0; i--) {
+      const it = chat[i]!
+      if ((it.kind === 'buddha' || it.kind === 'user') && splitQuote(it.text).body.includes(head)) idx = i
+    }
+    if (idx < 0) return
+    letGo()
+    setFresh(false)
+    setFrom((f) => Math.min(f ?? startRef.current, Math.max(0, idx - 2)))
+    setJump(idx)
+  }
+  const goRef = useRef(goToQuote)
+  goRef.current = goToQuote
 
   const monkName = (id: string) => {
     const m = view.monks[id]
@@ -215,9 +300,10 @@ export function Chat({ author, external = null }: { author: string; external?: {
     setNote(external?.alive ? 'Transmission à la session du terminal…' : null)
     const to = sessionId
     try {
-      const r = await api.send(to, text)
+      const r = await api.send(to, quote ? withQuote(quote, text) : text)
       saveDraft(to, '')
       setText('')
+      setQuote(null)
       if (r?.via === 'peer') setNote(`Transmis à ${r.to} ; sa réponse apparaîtra ici.`)
       else if (r?.via === 'adopted') {
         setNote(null)
@@ -235,14 +321,16 @@ export function Chat({ author, external = null }: { author: string; external?: {
     switch (item.kind) {
       case 'user':
         return (
-          <div key={i} className="msg msg-user">
+          <div key={i} data-i={i} className="msg msg-user">
+            <ReplyButton onReply={(el) => replyRef.current('toi', item.text, el)} />
             <Time at={item.at} />
-            {item.text}
+            <Said text={item.text} onQuote={(q) => goRef.current(q)} />
           </div>
         )
       case 'buddha':
         return (
-          <div key={i} className="msg msg-buddha">
+          <div key={i} data-i={i} className="msg msg-buddha">
+            <ReplyButton onReply={(el) => replyRef.current(author, item.text, el)} />
             <span className="msg-author">
               {author} <Time at={item.at} />
             </span>
@@ -293,6 +381,18 @@ export function Chat({ author, external = null }: { author: string; external?: {
   const [from, setFrom] = useState<number | null>(null)
   useEffect(() => setFrom(null), [sessionId])
   const start = from ?? startFor(view.chat, view.chat.length, PAGE)
+  const startRef = useRef(start)
+  startRef.current = start
+  useLayoutEffect(() => {
+    if (jump === null) return
+    const el = logRef.current?.querySelector<HTMLElement>(`[data-i="${jump}"]`)
+    setJump(null)
+    if (!el) return
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    el.classList.remove('msg-found')
+    void el.offsetWidth // restart the glow when the same message is found twice
+    el.classList.add('msg-found')
+  }, [jump, start])
   const older = useRef<number | null>(null) // scroll height before loading older messages
   const loadOlder = () => {
     older.current = logRef.current?.scrollHeight ?? null
@@ -345,6 +445,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
         {sessionId && queued.map((m) => <Queued key={m.id} sessionId={sessionId} m={m} />)}
       </div>
       <form className="chat-input" onSubmit={submit}>
+        {quote && <QuoteBlock quote={quote} onClear={() => (setQuote(null), inputRef.current?.focus())} />}
         <textarea
           ref={inputRef}
           value={text}
@@ -354,7 +455,11 @@ export function Chat({ author, external = null }: { author: string; external?: {
             setHistIndex(-1) // typing by hand always leaves history browsing
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === 'Escape' && quote) {
+              // Drops the quote, not the conversation.
+              e.stopPropagation()
+              setQuote(null)
+            } else if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
               void submit(e)
             } else if (e.key === 'ArrowUp') {

@@ -2470,3 +2470,114 @@ select {
 .app.is-idle * {
   cursor: none !important;
 }
+
+/* Replying to a message, WhatsApp-like: ↩ on the message you point at, the quote above your field, then
+   above your words in the log (a click goes back to the original, which glows briefly). */
+.msg {
+  position: relative;
+}
+
+.msg-reply {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.msg-user .msg-reply {
+  right: auto;
+  left: -36px;
+}
+
+.msg:hover .msg-reply,
+.msg-reply:focus-visible {
+  opacity: 1;
+}
+
+.msg-reply:hover {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.quote {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-bottom: 6px;
+  border-left: 3px solid var(--gold);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.22);
+  white-space: normal;
+}
+
+.quote-body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.quote-body {
+  cursor: pointer;
+}
+
+button.quote-body:hover .quote-author {
+  text-decoration: underline;
+}
+
+.quote-author {
+  font: 700 13px var(--serif);
+  color: var(--gold);
+}
+
+.quote-text {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.quote-draft {
+  margin: 0;
+}
+
+.quote-draft .quote-text {
+  -webkit-line-clamp: 2;
+}
+
+.quote-clear {
+  margin: 4px 4px 0 0;
+}
+
+.msg-found {
+  animation: msg-found 1.8s ease-out;
+}
+
+@keyframes msg-found {
+  0%,
+  30% {
+    box-shadow: 0 0 0 2px var(--gold);
+  }
+  100% {
+    box-shadow: 0 0 0 2px transparent;
+  }
+}

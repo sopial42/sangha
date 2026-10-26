@@ -282,3 +282,29 @@ export type MonkProfile = {
   model: string
 }
 
+
+/**
+ * A reply to a message, WhatsApp-like. The quote travels inside the text, as a Markdown blockquote ahead
+ * of your words: he reads it as context whatever the road (queued, relayed to a terminal, resumed), and
+ * the chat recognizes its first line to show it as a quote you can click back to.
+ */
+export type Quote = { author: string; text: string }
+
+const QUOTE_MARK = '> ↩ En réponse à '
+/** Longer quotes are cut: enough context, without resending a whole report. */
+export const QUOTE_MAX = 1500
+
+export const withQuote = (q: Quote, body: string) => {
+  const text = q.text.length > QUOTE_MAX ? `${q.text.slice(0, QUOTE_MAX)}…` : q.text
+  return `${QUOTE_MARK}${q.author} :\n${text.split('\n').map((l) => `> ${l}`).join('\n')}\n\n${body}`
+}
+
+export const splitQuote = (text: string): { quote: Quote | null; body: string } => {
+  if (!text.startsWith(QUOTE_MARK)) return { quote: null, body: text }
+  const lines = text.split('\n')
+  const author = lines[0]!.slice(QUOTE_MARK.length).replace(/ :$/, '')
+  let i = 1
+  while (i < lines.length && lines[i]!.startsWith('>')) i++
+  const quoted = lines.slice(1, i).map((l) => l.replace(/^> ?/, ''))
+  return { quote: { author, text: quoted.join('\n') }, body: lines.slice(i).join('\n').replace(/^\n+/, '') }
+}
