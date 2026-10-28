@@ -1,15 +1,16 @@
 import { existsSync, statSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE, type SSEStreamingApi } from 'hono/streaming'
-import type { Envelope, GlobalEvent, Provider } from '@sangha/shared'
+import type { Envelope, GitIdentity, GlobalEvent, Provider } from '@sangha/shared'
 import { buddhaOptions } from './buddha'
 import { assertQuotaOnly, config } from './config'
 import { probeModels } from './providers'
 import { Store } from './db'
 import { branches } from './git'
+import { GitIdentitySetting, validIdentity } from './gitIdentity'
 import { profiles } from './monks'
 import { readNewLines, readTailLines } from './files'
 import { EXTERNAL_PREFIX, Observer } from './observer'
@@ -21,7 +22,9 @@ assertQuotaOnly()
 
 const store = new Store(config.dbPath)
 const projects = new Projects(store)
-const sessions = new Sessions(store, projects, (s) => buddhaOptions(s, projects))
+// Next to the database: the git config priests commit with (see gitIdentity).
+const gitIdentity = new GitIdentitySetting(dirname(config.dbPath), () => store.setting<GitIdentity>('gitIdentity'), (v) => store.setSetting('gitIdentity', v))
+const sessions = new Sessions(store, projects, (s) => buddhaOptions(s, projects), gitIdentity)
 const observer = new Observer(
   store,
   projects,
@@ -118,6 +121,14 @@ app.get('/api/sessions', (c) => c.json(sessions.summaries()))
 app.post('/api/sessions', async (c) => {
   const body = await c.req.json<CreateSession>()
   return c.json(await sessions.create(body), 201)
+})
+// Who priests commit as: nothing until you set it, and git stays closed to them until then.
+app.get('/api/git-identity', (c) => c.json(gitIdentity.get()))
+app.put('/api/git-identity', async (c) => {
+  const body = await c.req.json<Partial<GitIdentity>>()
+  if (!validIdentity(body)) throw new UserError('nom et email valides requis')
+  gitIdentity.set(body)
+  return c.json(gitIdentity.get())
 })
 app.post('/api/sessions/:id/messages', async (c) => {
   const { text } = await c.req.json<{ text: string }>()

@@ -109,6 +109,10 @@ export class Store {
         text TEXT NOT NULL,
         at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS reminders (
         session_id TEXT PRIMARY KEY,
         text TEXT NOT NULL
@@ -393,6 +397,16 @@ export class Store {
   }
 
   /** Standing instructions recalled to priests with each of your messages, by session id. */
+  /** A Sangha-wide setting (JSON), null when never set. */
+  setting<T>(key: string): T | null {
+    const r = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined
+    return r ? (JSON.parse(r.value) as T) : null
+  }
+
+  setSetting(key: string, value: unknown) {
+    this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, JSON.stringify(value))
+  }
+
   reminders(): Map<string, string> {
     return new Map((this.db.prepare('SELECT session_id AS id, text FROM reminders').all() as { id: string; text: string }[]).map((r) => [r.id, r.text]))
   }

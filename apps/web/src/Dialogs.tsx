@@ -688,7 +688,61 @@ export function Dialogs() {
   if (dialog.kind === 'nirvana') return <Nirvana onClose={close} />
   if (dialog.kind === 'costs') return <Costs onClose={close} />
   if (dialog.kind === 'providers') return <Providers onClose={close} />
+  if (dialog.kind === 'git') return <GitIdentityDialog onClose={close} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
+}
+
+/** Who every priest commits as. Required: until it is set, Sangha refuses them git. */
+function GitIdentityDialog({ onClose }: { onClose: () => void }) {
+  const { gitIdentity, set } = useApp()
+  const [name, setName] = useState(gitIdentity?.name ?? '')
+  const [email, setEmail] = useState(gitIdentity?.email ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      set({ gitIdentity: await api.saveGitIdentity({ name: name.trim(), email: email.trim() }) })
+      onClose()
+    } catch (err) {
+      setError(message(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title="Identité git des commits" onClose={onClose}>
+      <form className="form" onSubmit={save}>
+        <p className="muted">
+          Tous les prêtres commitent sous ce nom et cet email, quel que soit le projet. Tant qu'ils ne sont pas renseignés, git leur est refusé.
+        </p>
+        <label>
+          Nom
+          <input autoFocus required value={name} onChange={(e) => setName(e.target.value)} placeholder="Prénom Nom" autoComplete="name" />
+        </label>
+        <label>
+          Email
+          <input required type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="prenom.nom@exemple.com" autoComplete="email" />
+        </label>
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="form-actions">
+          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+            Annuler
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !name.trim() || !email.trim()}>
+            Enregistrer
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
 }
 
 const EMPTY_PROVIDER: Partial<Provider> = { name: '', baseUrl: '', apiKey: '', authToken: '', timeoutMs: 3_000_000, models: null }

@@ -2635,3 +2635,19 @@ button.quote-body:hover .quote-author {
     transform: translateY(-3px);
   }
 }
+
+/* Something to fill before a feature works (e.g. the git identity of commits). */
+.btn-ghost.btn-needed {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.banner-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.banner-action .btn {
+  padding: 4px 12px;
+}

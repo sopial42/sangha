@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Envelope, ModelChoice, MonkProfile, MonkStatus, ProjectInfo, Quota, SessionSummary, Usage } from '@sangha/shared'
+import type { Envelope, ModelChoice, MonkProfile, MonkStatus, ProjectInfo, Quota, SessionSummary, Usage, GitIdentity } from '@sangha/shared'
 
 export type LogItem = { at: number } & ({ kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string })
 
@@ -145,7 +145,8 @@ export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-pr
   | { kind: 'note'; id: string }
   | { kind: 'nirvana' }
   | { kind: 'costs' }
-  | { kind: 'providers' } | null
+  | { kind: 'providers' }
+  | { kind: 'git' } | null
 
 type AppState = {
   profiles: MonkProfile[]
@@ -184,6 +185,8 @@ type AppState = {
    *  animation even when the same priest is closed twice in a row. */
   closingAck: { id: string; token: number } | null
   dialog: Dialog
+  /** Who priests commit as: undefined while loading, null when not set (git is closed to them). */
+  gitIdentity: GitIdentity | null | undefined
   /** Sessions the user just interrupted: their next status change must not ring the bell or notify. */
   interruptedIds: Set<string>
   markInterrupted: (id: string) => void
@@ -276,6 +279,7 @@ export const useApp = create<AppState>((set) => ({
   closing: null,
   closingAck: null,
   dialog: null,
+  gitIdentity: undefined,
   interruptedIds: new Set(),
   markInterrupted: (id) => set((st) => ({ interruptedIds: new Set(st.interruptedIds).add(id) })),
   clearInterrupted: (id) =>

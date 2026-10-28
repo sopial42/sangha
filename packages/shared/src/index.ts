@@ -308,3 +308,6 @@ export const splitQuote = (text: string): { quote: Quote | null; body: string } 
   const quoted = lines.slice(1, i).map((l) => l.replace(/^> ?/, ''))
   return { quote: { author, text: quoted.join('\n') }, body: lines.slice(i).join('\n').replace(/^\n+/, '') }
 }
+
+/** The name and email every priest commits with, set once for all of Sangha. */
+export type GitIdentity = { name: string; email: string }

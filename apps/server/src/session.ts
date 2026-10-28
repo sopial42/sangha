@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { query, type McpServerConfig, type McpServerStatus, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import type { GitIdentitySetting } from './gitIdentity'
 import {
   BUDDHA_SESSION_ID,
   type BackgroundScript,
@@ -310,6 +311,7 @@ export class Sessions {
     private store: Store,
     private projects: Projects,
     private buddhaOptions: (sessions: Sessions) => Partial<Options>,
+    private git?: GitIdentitySetting,
   ) {
     this.providers = new Providers(store)
     this.quota = store.latestQuota()
@@ -1290,6 +1292,14 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     return r && (!user || r.seq > user.seq) ? { done: r.ev.done, next: r.ev.next, ...(r.ev.state && { state: r.ev.state }) } : null
   }
 
+  /** Commits as the identity set in Sangha, and no git at all while there is none. */
+  private withGit(o: Partial<Options>): Partial<Options> {
+    if (!this.git) return o
+    const env = { ...(o.env ?? process.env) } as Record<string, string>
+    delete env.ANTHROPIC_API_KEY // belt and braces: never bill the API
+    return { ...o, env: { ...env, ...this.git.env() }, hooks: { ...o.hooks, PreToolUse: [...(o.hooks?.PreToolUse ?? []), ...this.git.hooks().PreToolUse] } }
+  }
+
   /** His model and, on a provider, its environment. A provider removed since: back to Claude and his agent's model. */
   private engineOptions(row: SessionRow): Partial<Options> {
     const onProvider = !!row.engine && row.engine !== 'claude'
@@ -1306,9 +1316,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       s = new LiveSession(
         row,
         cwd,
-        isBuddha
-          ? this.buddhaOptions(this)
-          : { ...priestOptions(row.agent), ...this.engineOptions(row), mcpServers: mcp!.extras },
+        this.withGit(isBuddha ? this.buddhaOptions(this) : { ...priestOptions(row.agent), ...this.engineOptions(row), mcpServers: mcp!.extras }),
         (ev) => this.emit(row.id, ev),
         () => {
           if (this.live.get(row.id) === s) this.live.delete(row.id)

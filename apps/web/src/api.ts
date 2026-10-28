@@ -1,4 +1,4 @@
-import type { CostReport, Envelope, ModelChoice, Provider, GlobalEvent, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
+import type { CostReport, Envelope, GitIdentity, ModelChoice, Provider, GlobalEvent, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
 import { emptyView, useApp } from './store'
 
 export class ApiError extends Error {
@@ -24,6 +24,9 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
 const post = (body?: unknown): RequestInit => ({ method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) })
 
 export const api = {
+  /** Who priests commit as (null: not set yet, and git stays closed to them). */
+  gitIdentity: () => json<GitIdentity | null>('/api/git-identity'),
+  saveGitIdentity: (v: GitIdentity) => json<GitIdentity>('/api/git-identity', { method: 'PUT', body: JSON.stringify(v) }),
   monks: () => json<MonkProfile[]>('/api/monks'),
   models: () => json<ModelChoice[]>('/api/models'),
   /** Endpoints other than Claude (address and credentials set once) and the models they offer. */

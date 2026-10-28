@@ -16,6 +16,7 @@ export function App() {
   const defaultModel = useApp((s) => s.defaultModel)
   const setDefaultModel = useApp((s) => s.setDefaultModel)
   const [offline, setOffline] = useState(false)
+  const gitIdentity = useApp((s) => s.gitIdentity)
   const { full, idle } = useFullscreen()
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export function App() {
       })
       .catch(() => setOffline(true))
     api.models().then((models) => set({ models }), () => undefined)
+    api.gitIdentity().then((gitIdentity) => set({ gitIdentity }), () => undefined)
     const close = openMonastery(() => setOffline(true))
     const unwatch = watchPriests()
     keepAudioUnlocked()
@@ -65,11 +67,26 @@ export function App() {
           <button className="btn btn-ghost" onClick={() => set({ dialog: { kind: 'providers' } })} title="Ajouter un endpoint de modèles (ex. OVH) à la place de Claude">
             Fournisseurs
           </button>
+          <button
+            className={`btn btn-ghost ${gitIdentity === null ? 'btn-needed' : ''}`}
+            onClick={() => set({ dialog: { kind: 'git' } })}
+            title={gitIdentity ? `Les prêtres commitent en tant que ${gitIdentity.name} <${gitIdentity.email}>` : 'Identité git des commits : à renseigner'}
+          >
+            Git{gitIdentity === null && ' ⚠'}
+          </button>
         </div>
         <Quota />
         <Bell />
         <FullscreenButton full={full} />
       </header>
+      {gitIdentity === null && (
+        <p className="banner banner-action" role="alert">
+          Les prêtres ne peuvent pas utiliser git tant que l'identité des commits n'est pas renseignée.
+          <button type="button" className="btn btn-primary" onClick={() => set({ dialog: { kind: 'git' } })}>
+            Renseigner
+          </button>
+        </p>
+      )}
       {offline && (
         <p className="banner" role="alert">
           Serveur injoignable. Lance <code>make dev</code> ou <code>make up</code>.
