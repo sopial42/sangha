@@ -16,11 +16,13 @@ const PAVILION_W = 140
 const PAVILION_Y = 565 // base of the first row of pavilions
 const PRIESTS_BELOW = 165 // priests sit this far in front of their pavilion
 const ROW_H = 420 // next row of pavilions: behind the previous row's priests, labels and novices
-const BOTTOM = 290 // room under the last row for priests, their labels, context gauge and novices
+const BOTTOM = 265 // room under the last row for priests, their labels, context gauge and novices
 const HALL_W = 1000 // Buddha's hall needs this much courtyard
 const PRIEST_W = 196 // a priest with his novices, incense and recap bubble
 const PRIEST_SCALE = 0.85
-const TOP = 110 // empty sky above the hall, cropped out
+const TOP = 110 // empty sky above the hall, cropped out (mobile reference)
+// On desktop, cropped closer to the hall's roof: the courtyard, not the sky, gets the screen.
+const DESKTOP_TOP = 175
 const PER_ROW = 6
 // Below this courtyard width, a pavilion's priests stack one per line, their bubbles narrowed
 // (`compact`) to fit; above it, two columns still leave enough room for a bubble on each side.
@@ -29,7 +31,7 @@ const MOBILE_MIN_WIDTH = 300
 // Between two rows of priests: room for the back row's labels (title, branch, gauge, cost, note) and
 // the front row's recap/doing bubble above him. On mobile, stacking one priest per line is the normal
 // case, with taller (narrower) bubbles.
-const ROW_GAP = 240
+const ROW_GAP = 225
 const MOBILE_ROW_GAP = 260
 // Courtyard kept free at each side of the scene: the bubble of a priest at the far end opens outward.
 const EDGE = 100
@@ -92,7 +94,7 @@ function pack(widths: number[], width: number, extras: number[] = []): { spots: 
 }
 
 /** Visible height of a packing (the sky above the hall is cropped). */
-const shown = (p: { height: number }) => p.height - TOP
+const shown = (p: { height: number }) => p.height - DESKTOP_TOP
 
 /**
  * Courtyard width that lets the scene render largest in the space it has:
@@ -222,7 +224,7 @@ export function Monastery() {
   // On mobile, the hall shrinks with the courtyard (never wider than it), and the sky crops tighter
   // to match: less empty space above a smaller hall.
   const hallScale = mobile ? Math.max(0.4, Math.min(HALL_SCALE, width / 620)) : HALL_SCALE
-  const top = mobile ? Math.round(FLOOR_Y - (FLOOR_Y - TOP) * (hallScale / HALL_SCALE)) : TOP
+  const top = mobile ? Math.round(FLOOR_Y - (FLOOR_Y - TOP) * (hallScale / HALL_SCALE)) : DESKTOP_TOP
   const moon = moonPosition(width, mobile, top)
 
   const anyWorking = priests.some((p) => p.status === 'working') || buddha?.status === 'working'

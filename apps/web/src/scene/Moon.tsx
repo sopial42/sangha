@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
  * exit flight, which targets these exact coordinates.
  */
 export function moonPosition(width: number, mobile: boolean, top: number): { x: number; y: number; r: number } {
-  return mobile ? { x: Math.max(width * 0.6, width - 70), y: Math.max(70, top + 36), r: 20 } : { x: width - 160, y: 170, r: 30 }
+  return mobile ? { x: Math.max(width * 0.6, width - 70), y: Math.max(70, top + 36), r: 20 } : { x: width - 160, y: Math.max(170, top + 50), r: 30 }
 }
 
 /**
