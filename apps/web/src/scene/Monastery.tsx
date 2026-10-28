@@ -26,16 +26,23 @@ const PER_ROW = 6
 // (`compact`) to fit; above it, two columns still leave enough room for a bubble on each side.
 const MOBILE_TWO_COL_MIN = 480
 const MOBILE_MIN_WIDTH = 300
-// On desktop a second row is rare (over PER_ROW priests): 120 is enough since it mostly never fires.
-// On mobile, stacking one priest per line is the *normal* case, and each needs room for a tall
-// recap/doing bubble above him and his labels below: a much taller gap between rows.
+// Between two rows of priests: room for the back row's labels (title, branch, gauge, cost, note) and
+// the front row's recap/doing bubble above him. On mobile, stacking one priest per line is the normal
+// case, with taller (narrower) bubbles.
+const ROW_GAP = 240
 const MOBILE_ROW_GAP = 260
+// Courtyard kept free at each side of the scene: the bubble of a priest at the far end opens outward.
+const EDGE = 100
+
+/** Rows of priests in front of a pavilion, filled evenly (7 sit 4 + 3, not 6 + 1). */
+const rowsFor = (priests: number) => Math.max(1, Math.ceil(priests / PER_ROW))
+const perRowFor = (priests: number) => Math.ceil(priests / rowsFor(priests))
 
 /** Width a pavilion needs so its priests sit in front of it in one readable row. */
-const slotWidth = (priests: number) => Math.max(MIN_SLOT, Math.min(priests, PER_ROW) * PRIEST_W * PRIEST_SCALE + 30)
+const slotWidth = (priests: number) => Math.max(MIN_SLOT, perRowFor(priests) * PRIEST_W * PRIEST_SCALE + 30)
 
 /** Seats in front of a pavilion at (cx, baseY): rows of up to `perRow` priests, `rowGap` apart. */
-function seats(count: number, cx: number, baseY: number, perRow = PER_ROW, rowGap = 120): { x: number; y: number; scale: number; bubbleSide: 1 | -1 }[] {
+function seats(count: number, cx: number, baseY: number, perRow = perRowFor(count), rowGap = ROW_GAP): { x: number; y: number; scale: number; bubbleSide: 1 | -1 }[] {
   return Array.from({ length: count }, (_, i) => {
     const row = Math.floor(i / perRow)
     const inRow = Math.min(perRow, count - row * perRow)
@@ -53,12 +60,15 @@ function seats(count: number, cx: number, baseY: number, perRow = PER_ROW, rowGa
 
 type Placed = { x: number; y: number }
 
-/** Pack slots into centered rows no wider than `width`. */
-function pack(widths: number[], width: number): { spots: Placed[]; height: number } {
+/**
+ * Pack slots into centered rows no wider than `width`. `extras`: height a slot needs below a single
+ * row of priests (its further rows), so the next row of pavilions starts behind all of them.
+ */
+function pack(widths: number[], width: number, extras: number[] = []): { spots: Placed[]; height: number } {
   const rows: number[][] = [[]]
   let used = 0
   widths.forEach((w, i) => {
-    if (used + w > width - 40 && rows.at(-1)!.length) {
+    if (used + w > width - 2 * EDGE && rows.at(-1)!.length) {
       rows.push([])
       used = 0
     }
@@ -66,15 +76,19 @@ function pack(widths: number[], width: number): { spots: Placed[]; height: numbe
     used += w
   })
   const spots: Placed[] = []
+  let y = PAVILION_Y
+  let extra = 0
   rows.forEach((row, r) => {
+    if (r) y += ROW_H + extra
     const total = row.reduce((a, i) => a + widths[i]!, 0)
     let x = (width - total) / 2
     for (const i of row) {
-      spots[i] = { x: x + widths[i]! / 2, y: PAVILION_Y + r * ROW_H }
+      spots[i] = { x: x + widths[i]! / 2, y }
       x += widths[i]!
     }
+    extra = Math.max(0, ...row.map((i) => extras[i] ?? 0))
   })
-  return { spots, height: PAVILION_Y + (rows.length - 1) * ROW_H + BOTTOM }
+  return { spots, height: y + BOTTOM + extra }
 }
 
 /** Visible height of a packing (the sky above the hall is cropped). */
@@ -84,12 +98,13 @@ const shown = (p: { height: number }) => p.height - TOP
  * Courtyard width that lets the scene render largest in the space it has:
  * wide rows on a wide screen, more rows on a narrow one.
  */
-function arrange(widths: number[], box: { w: number; h: number }) {
-  const total = widths.reduce((a, b) => a + b, 0) + 80
-  const min = Math.max(HALL_W, ...widths.map((w) => w + 60), 0)
-  let best: ReturnType<typeof pack> & { width: number } = { ...pack(widths, min), width: min }
-  for (let width = min; width <= Math.max(min, total); width += 20) {
-    const p = pack(widths, width)
+function arrange(widths: number[], box: { w: number; h: number }, extras: number[] = []) {
+  const total = widths.reduce((a, b) => a + b, 0) + 2 * EDGE
+  const min = Math.max(HALL_W, ...widths.map((w) => w + 2 * EDGE), 0)
+  let best: ReturnType<typeof pack> & { width: number } = { ...pack(widths, min, extras), width: min }
+  // Up to one step past `total`: the width that fits every pavilion on one row is always tried.
+  for (let width = min; width < Math.max(min, total) + 20; width += 20) {
+    const p = pack(widths, width, extras)
     if (Math.max(width / box.w, shown(p) / box.h) < Math.max(best.width / box.w, shown(best) / box.h)) best = { ...p, width }
   }
   return best
@@ -194,8 +209,9 @@ export function Monastery() {
   const mobile = box.w < 900
   const counts = pavilions.map((p) => priests.filter((s) => s.project === p.name).length)
   const widths = counts.map((n) => slotWidth(n))
-  const { spots: places, width, height, ...rest } = mobile ? arrangeMobile(counts, box.w) : arrange(widths, box)
-  const perRow = mobile ? (rest as { perRow: 1 | 2 }).perRow : PER_ROW
+  const extras = counts.map((n) => (rowsFor(n) - 1) * ROW_GAP)
+  const { spots: places, width, height, ...rest } = mobile ? arrangeMobile(counts, box.w) : arrange(widths, box, extras)
+  const mobilePerRow = mobile ? (rest as { perRow: 1 | 2 }).perRow : null
   // The add-project marker sits just right of the last pavilion on desktop, or as one more row on mobile.
   const last = places.at(-1)
   const marker = mobile
@@ -229,7 +245,7 @@ export function Monastery() {
   // the mobile column stacks one priest per row, where this collision never arises).
   const seatsByPavilion = pavilions.map((p, i) => {
     const mine = priests.filter((s) => s.project === p.name)
-    return { p, mine, spots: seats(mine.length, places[i]!.x, places[i]!.y, perRow, mobile ? MOBILE_ROW_GAP : 120) }
+    return { p, mine, spots: seats(mine.length, places[i]!.x, places[i]!.y, mobilePerRow ?? perRowFor(mine.length), mobile ? MOBILE_ROW_GAP : ROW_GAP) }
   })
   const bubbleSides = mobile
     ? {}
