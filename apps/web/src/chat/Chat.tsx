@@ -137,6 +137,21 @@ function Said({ text, onQuote }: { text: string; onQuote?: (q: Quote) => void })
   )
 }
 
+/**
+ * He is on it, with nothing to show yet: reading your message (the one he just got, or the next one once
+ * you interrupted the first), or thinking between two steps. Three dots, like someone typing.
+ */
+const Typing = ({ author, reading }: { author: string; reading: boolean }) => (
+  <div className="msg-typing" role="status">
+    <span className="typing-dots" aria-hidden>
+      <i />
+      <i />
+      <i />
+    </span>
+    {author} {reading ? 'lit ton message…' : 'travaille…'}
+  </div>
+)
+
 // Plumbing that says nothing to the user.
 const HIDDEN_TOOLS = new Set(['ToolSearch', 'TodoWrite'])
 const visible = (item: ChatItem) => item.kind !== 'tool' || !HIDDEN_TOOLS.has(item.tool)
@@ -222,7 +237,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
     if (el && wentUp(el)) letGo()
     if (atBottom.current || view.chat.at(-1)?.kind === 'user') toBottom()
     else setFresh(true)
-  }, [view.chat.length, view.draft])
+  }, [view.chat.length, view.draft, view.busy])
   // A message you just queued brings you down too.
   const queuedBefore = useRef(queued.length)
   useLayoutEffect(() => {
@@ -416,6 +431,8 @@ export function Chat({ author, external = null }: { author: string; external?: {
   const hiddenOlder = useMemo(() => view.chat.slice(0, start).filter(visible).length, [view.chat, start])
 
   const empty = view.chat.length === 0 && !view.draft
+  // What he last had in front of him: your message (he is reading it) or his own work.
+  const lastSaid = view.chat.findLast(visible)
   return (
     <section className="chat" aria-label={`Conversation avec ${author}`}>
       {fresh && (
@@ -442,6 +459,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
             {view.draft}
           </div>
         )}
+        {view.busy && !view.draft && <Typing author={author} reading={lastSaid?.kind === 'user'} />}
         {sessionId && queued.map((m) => <Queued key={m.id} sessionId={sessionId} m={m} />)}
       </div>
       <form className="chat-input" onSubmit={submit}>

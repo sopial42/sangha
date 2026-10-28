@@ -2581,3 +2581,57 @@ button.quote-body:hover .quote-author {
     box-shadow: 0 0 0 2px transparent;
   }
 }
+
+/* He is on it with nothing to show yet: three dots breathing, like someone typing. */
+.msg-typing {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.typing-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.typing-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .typing-dots i {
+    animation: typing-dot 1.2s ease-in-out infinite;
+  }
+
+  .typing-dots i:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .typing-dots i:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+}
+
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
