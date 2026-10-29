@@ -128,7 +128,8 @@ class LiveSession {
       options: {
         cwd,
         plugins: localPlugins(),
-        settingSources: ['project'],
+        // Yours too (~/.claude): your skills, your CLAUDE.md, your agents and settings, as in a terminal.
+        settingSources: ['user', 'project'],
         permissionMode: 'bypassPermissions',
         allowDangerouslySkipPermissions: true,
         includePartialMessages: true,
