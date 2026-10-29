@@ -299,8 +299,10 @@ export function Priest({
   const chipInline = !!pr && branchLabel.length + 1 + chipText.length <= lineBudget
   const shownBranch = truncate(branchLabel, chipInline ? Math.max(6, lineBudget - chipText.length - 1) : aloneBudget)
   const chipBelow = !!pr && !chipInline
-  // Every line below the branch shifts down when the chip needs a line of its own.
-  const shift = chipBelow ? 14 : 0
+  // His note, once written, is what he is about: it reads right under his name, before the branch,
+  // and pushes every other line down. Every line below the branch shifts down when the chip needs a line of its own.
+  const noteShift = session.note && onNote ? 20 : 0
+  const shift = (chipBelow ? 14 : 0) + noteShift
   // Where his note (or, absent one, the "+ note" hint) sits: right under whichever lines already show
   // above (name, branch, context, cost), and clear of the "+N novices" label at y=80 when there is one.
   const contextShown = session.context != null && !!level
@@ -463,19 +465,19 @@ export function Priest({
             </text>
             {pr && chipInline ? (
               <>
-                <text y="48" x="-3" textAnchor="end" className="scene-repo">
+                <text y={48 + noteShift} x="-3" textAnchor="end" className="scene-repo">
                   {session.external ? '⌨ ' : '⎇ '}
                   {shownBranch}
                 </text>
-                <PRChip x={3} y={48} align="start" pr={pr} />
+                <PRChip x={3} y={48 + noteShift} align="start" pr={pr} />
               </>
             ) : (
-              <text y="48" textAnchor="middle" className="scene-repo">
+              <text y={48 + noteShift} textAnchor="middle" className="scene-repo">
                 {session.external ? '⌨ ' : '⎇ '}
                 {shownBranch}
               </text>
             )}
-            {pr && chipBelow && <PRChip x={0} y={62} align="middle" pr={pr} />}
+            {pr && chipBelow && <PRChip x={0} y={62 + noteShift} align="middle" pr={pr} />}
             {session.context != null && level && (
               <g transform={`translate(0 ${58 + shift})`} aria-label={`Contexte : ${formatTokens(session.context)} tokens`}>
                 <title>{`Contexte : ${formatTokens(session.context)} tokens${session.renewal === 'asked' ? ' · session neuve proposée, en attente de sa réponse' : session.renewal === 'postponed' ? ' · session neuve reportée (redemandé 100K plus loin)' : ''}`}</title>
@@ -513,9 +515,9 @@ export function Priest({
                 }}
               >
                 {session.note && <title>{session.note}</title>}
-                <rect x="-60" y={noteY - 12} width="120" height="18" fill="transparent" />
-                <text y={noteY} textAnchor="middle" className={session.note ? 'scene-note' : 'scene-note-add'}>
-                  {session.note ? truncate(session.note, compact ? 28 : 36) : '+ note'}
+                <rect x="-80" y={(session.note ? 49 : noteY) - 14} width="160" height="20" fill="transparent" />
+                <text y={session.note ? 49 : noteY} textAnchor="middle" className={session.note ? 'scene-note' : 'scene-note-add'}>
+                  {session.note ? truncate(session.note, compact ? 20 : 26) : '+ note'}
                 </text>
               </g>
             )}

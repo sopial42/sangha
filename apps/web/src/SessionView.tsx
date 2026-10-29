@@ -535,6 +535,23 @@ export function SessionView() {
           <span className="robe-dot" style={{ background: isBuddha ? 'var(--gold)' : robeOfAgent(s.agent) }} aria-hidden />
           <div className="sv-id">
             <h2 id="sv-title">{isBuddha ? 'Bouddha' : s.title}</h2>
+            {/* His note: what he is about, read right under his title. */}
+            {!isBuddha && (
+              <p className={`sv-note ${s.note ? 'has-note' : 'muted small'}`}>
+                {s.note ? (
+                  <>
+                    {s.note}{' '}
+                    <button type="button" className="text-link" onClick={() => set({ dialog: { kind: 'note', id: s.id } })}>
+                      modifier
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className="text-link" onClick={() => set({ dialog: { kind: 'note', id: s.id } })}>
+                    + ajouter une note
+                  </button>
+                )}
+              </p>
+            )}
             <p className="muted small">
               {isBuddha ? (
                 'Demande-lui tout : il lance et suit les prêtres'
@@ -570,22 +587,6 @@ export function SessionView() {
                 </>
               )}
             </p>
-            {!isBuddha && (
-              <p className="muted small sv-note">
-                {s.note ? (
-                  <>
-                    {s.note}{' '}
-                    <button type="button" className="text-link" onClick={() => set({ dialog: { kind: 'note', id: s.id } })}>
-                      modifier
-                    </button>
-                  </>
-                ) : (
-                  <button type="button" className="text-link" onClick={() => set({ dialog: { kind: 'note', id: s.id } })}>
-                    + ajouter une note
-                  </button>
-                )}
-              </p>
-            )}
             <div className="sv-tags">
               <span className={`status status-${s.status}`}>{STATUS_LABEL[s.status]}</span>
               {!isBuddha && !s.external && <ModelPick session={s} />}

@@ -1698,11 +1698,12 @@ select {
 
 /* A handwritten-feeling little note under a priest, in his own courtyard voice. */
 .scene-note {
-  font: italic 500 12px var(--serif);
-  fill: #d8c79bcc;
+  font: 700 14px var(--serif);
+  fill: #f2d590;
   paint-order: stroke;
-  stroke: #0009;
-  stroke-width: 3px;
+  stroke: #000b;
+  stroke-width: 3.5px;
+  letter-spacing: 0.01em;
 }
 
 /* Shown only on hover, in his stead when there is no note yet. */
@@ -1720,7 +1721,12 @@ select {
 }
 
 .sv-note {
-  margin-top: 4px;
+  margin: 2px 0 4px;
+}
+
+.sv-note.has-note {
+  font: 600 16px var(--serif);
+  color: #f2d590;
 }
 
 .text-link {
