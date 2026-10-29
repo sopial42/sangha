@@ -67,6 +67,7 @@ export const api = {
   /** Bring him back to the courtyard, in a fresh session. */
   /** Relaunch his Claude process on the same conversation, so it rereads his agent file, tools and MCP. */
   restart: (id: string) => json<void>(`/api/sessions/${id}/restart`, post()),
+  setEnv: (id: string, env: Record<string, string>, restart: boolean) => json<void>(`/api/sessions/${id}/env`, { method: 'PUT', body: JSON.stringify({ env, restart }) }),
   reincarnate: (id: string) => json<SessionSummary>(`/api/sessions/${id}/reincarnate`, post()),
   /** What every session would have cost at API prices, since monitoring began, broken down by month. */
   costs: () => json<CostReport>('/api/costs'),

@@ -147,7 +147,8 @@ export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-pr
   | { kind: 'costs' }
   | { kind: 'providers' }
   | { kind: 'git' }
-  | { kind: 'shepherd'; id: string } | null
+  | { kind: 'shepherd'; id: string }
+  | { kind: 'env'; id: string } | null
 
 type AppState = {
   profiles: MonkProfile[]

@@ -118,6 +118,10 @@ export class Store {
         text TEXT NOT NULL,
         at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS session_env (
+        session_id TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -406,6 +410,17 @@ export class Store {
   }
 
   /** Standing instructions recalled to priests with each of your messages, by session id. */
+  /** A session's own environment variables (empty when none). */
+  sessionEnv(id: string): Record<string, string> {
+    const r = this.db.prepare('SELECT value FROM session_env WHERE session_id = ?').get(id) as { value: string } | undefined
+    return r ? (JSON.parse(r.value) as Record<string, string>) : {}
+  }
+
+  setSessionEnv(id: string, env: Record<string, string>) {
+    if (Object.keys(env).length) this.db.prepare('INSERT INTO session_env (session_id, value) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET value = excluded.value').run(id, JSON.stringify(env))
+    else this.db.prepare('DELETE FROM session_env WHERE session_id = ?').run(id)
+  }
+
   /** A Sangha-wide setting (JSON), null when never set. */
   setting<T>(key: string): T | null {
     const r = this.db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined

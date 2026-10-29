@@ -254,6 +254,7 @@ export class Observer {
             silenced: false, // decorated by Sessions
             note: null, // decorated by Sessions
             reminder: null,
+            env: {},
             queued: [],
             context: contextTokens(tail),
             renewal: null, // decorated by Sessions

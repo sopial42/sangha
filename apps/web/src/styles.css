@@ -2686,3 +2686,7 @@ a.icon-btn.sv-newtab {
   font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
   resize: vertical;
 }
+
+.env-text {
+  min-height: 180px;
+}

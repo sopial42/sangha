@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { providerEnv, shellExports, type CostReport, type NirvanaEntry, type ProjectSuggestion, type Provider } from '@sangha/shared'
+import { providerEnv, shellExports, type CostReport, type NirvanaEntry, type ProjectSuggestion, type Provider, envText, parseEnvText } from '@sangha/shared'
 import { ApiError, api, openSession } from './api'
 import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
@@ -690,7 +690,84 @@ export function Dialogs() {
   if (dialog.kind === 'providers') return <Providers onClose={close} />
   if (dialog.kind === 'git') return <GitIdentityDialog onClose={close} />
   if (dialog.kind === 'shepherd') return <ShepherdDialog id={dialog.id} onClose={close} />
+  if (dialog.kind === 'env') return <EnvDialog id={dialog.id} onClose={close} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
+}
+
+/**
+ * A session's own environment variables, written like a .env (paste one as is). His process starts with
+ * them: saved alone, they apply at his next start; "and relaunch" applies them now.
+ */
+function EnvDialog({ id, onClose }: { id: string; onClose: () => void }) {
+  const session = useApp((s) => s.sessions[id])
+  const [text, setText] = useState(() => envText(session?.env ?? {}))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  if (!session) return null
+  const { env, errors } = parseEnvText(text)
+  const count = Object.keys(env).length
+
+  const save = async (restart: boolean) => {
+    if (restart && session.status === 'working' && !confirm('Il travaille : relancer interrompt son tour en cours. Relancer quand même ?')) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.setEnv(id, env, restart)
+      onClose()
+    } catch (err) {
+      setError(message(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title="Variables d'environnement" onClose={onClose}>
+      <form
+        className="form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void save(false)
+        }}
+      >
+        <p className="muted">
+          Propres à <b>{session.title}</b> : son process démarre avec, ses commandes et ses novices en héritent. Une par ligne, comme un fichier <code>.env</code>.
+        </p>
+        <textarea
+          autoFocus
+          className="handoff-context env-text"
+          value={text}
+          rows={10}
+          spellCheck={false}
+          placeholder={'OS_CLOUD=poc-axel\nKUBECONFIG=/Users/moi/.kube/poc\n# un commentaire'}
+          onChange={(e) => setText(e.target.value)}
+        />
+        <p className="muted small">
+          {count} variable{count > 1 ? 's' : ''} · gardées dans la base locale de Sangha, et reprises par sa session neuve s'il en change.
+        </p>
+        {errors.map((e) => (
+          <p key={e} className="form-error">
+            {e}
+          </p>
+        ))}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="form-actions">
+          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+            Annuler
+          </button>
+          <button type="submit" className="btn btn-ghost" disabled={busy || errors.length > 0} title="Elles s'appliqueront à son prochain démarrage">
+            Enregistrer
+          </button>
+          <button type="button" className="btn btn-primary" disabled={busy || errors.length > 0} onClick={() => void save(true)} title="Le relance sur la même conversation pour qu'elles s'appliquent tout de suite">
+            Enregistrer et relancer
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
 }
 
 /**

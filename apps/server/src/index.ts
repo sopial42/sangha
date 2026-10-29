@@ -195,6 +195,12 @@ app.post('/api/sessions/:id/note', async (c) => {
   sessions.note(c.req.param('id'), note)
   return c.body(null, 204)
 })
+// His own environment variables; `restart`: relaunch him now so they apply (otherwise at his next start).
+app.put('/api/sessions/:id/env', async (c) => {
+  const { env, restart } = await c.req.json<{ env: unknown; restart?: boolean }>()
+  await sessions.setEnv(c.req.param('id'), env, !!restart)
+  return c.body(null, 204)
+})
 app.post('/api/sessions/:id/restart', async (c) => {
   await sessions.restart(c.req.param('id'))
   return c.body(null, 204)

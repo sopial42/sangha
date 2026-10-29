@@ -2,6 +2,7 @@ import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { query, type McpServerConfig, type McpServerStatus, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { GitIdentitySetting } from './gitIdentity'
+import { checkSessionEnv } from './sessionEnv'
 import {
   BUDDHA_SESSION_ID,
   type BackgroundScript,
@@ -699,6 +700,7 @@ export class Sessions {
       silenced: this.store.silencedIds().has(s.id),
       note: this.store.notes().get(s.id) ?? null,
       reminder: this.store.reminders().get(s.id) ?? null,
+      env: {},
       renewal: this.renewalState(s.id),
       shepherd: this.shepherdState(s.id),
       cost: this.costOf(s.id),
@@ -957,6 +959,8 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     if (this.store.silencedIds().has(s.id)) this.store.setSilenced(row.id, true)
     const carriedNote = this.store.notes().get(s.id)
     if (carriedNote) this.store.setSessionNote(row.id, carriedNote)
+    const carriedEnv = this.store.sessionEnv(s.id)
+    if (Object.keys(carriedEnv).length) this.store.setSessionEnv(row.id, carriedEnv)
     const carriedReminder = this.store.reminders().get(s.id)
     if (carriedReminder) this.store.setReminder(row.id, carriedReminder)
     this.store.setSuccessor(s.id, row.id)
@@ -1279,6 +1283,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       silenced: this.store.silencedIds().has(row.id),
       note: this.store.notes().get(row.id) ?? null,
       reminder: this.store.reminders().get(row.id) ?? null,
+      env: this.store.sessionEnv(row.id),
       queued: this.store.queued(row.id),
       context: row.id === BUDDHA_SESSION_ID ? null : this.contextOf(row),
       renewal: this.renewalState(row.id),
@@ -1297,11 +1302,26 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   }
 
   /** Commits as the identity set in Sangha, and no git at all while there is none. */
-  private withGit(o: Partial<Options>): Partial<Options> {
-    if (!this.git) return o
-    const env = { ...(o.env ?? process.env) } as Record<string, string>
+  private withGit(o: Partial<Options>, sessionId: string): Partial<Options> {
+    // His own variables on top of his engine's environment, under what Sangha must keep (see RESERVED_ENV).
+    const env = { ...(o.env ?? process.env), ...this.store.sessionEnv(sessionId) } as Record<string, string>
     delete env.ANTHROPIC_API_KEY // belt and braces: never bill the API
+    if (!this.git) return { ...o, env }
     return { ...o, env: { ...env, ...this.git.env() }, hooks: { ...o.hooks, PreToolUse: [...(o.hooks?.PreToolUse ?? []), ...this.git.hooks().PreToolUse] } }
+  }
+
+  /** Sets his own environment variables; they take effect when his process starts (now, if `restart`). */
+  async setEnv(id: string, input: unknown, restart: boolean) {
+    this.priestRow(id)
+    let env: Record<string, string>
+    try {
+      env = checkSessionEnv(input)
+    } catch (e) {
+      throw new UserError(e instanceof Error ? e.message : String(e))
+    }
+    this.store.setSessionEnv(id, env)
+    this.broadcastSession(id)
+    if (restart && this.live.get(id)) await this.restart(id)
   }
 
   /** His model and, on a provider, its environment. A provider removed since: back to Claude and his agent's model. */
@@ -1320,7 +1340,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       s = new LiveSession(
         row,
         cwd,
-        this.withGit(isBuddha ? this.buddhaOptions(this) : { ...priestOptions(row.agent), ...this.engineOptions(row), mcpServers: mcp!.extras }),
+        this.withGit(isBuddha ? this.buddhaOptions(this) : { ...priestOptions(row.agent), ...this.engineOptions(row), mcpServers: mcp!.extras }, row.id),
         (ev) => this.emit(row.id, ev),
         () => {
           if (this.live.get(row.id) === s) this.live.delete(row.id)

@@ -175,6 +175,8 @@ export type SessionSummary = SessionInfo & {
   note: string | null
   /** A standing instruction of yours (e.g. "sois concis"), recalled to him with each of your messages. */
   reminder: string | null
+  /** His own environment variables, set by you; his process starts with them. */
+  env: Record<string, string>
   /** Your messages written while he works: not read yet, sent together once his turn ends (editable until then). */
   queued: QueuedMessage[]
   /** Tokens his context weighs, as of his latest reply (null until known). */
@@ -311,3 +313,27 @@ export const splitQuote = (text: string): { quote: Quote | null; body: string } 
 
 /** The name and email every priest commits with, set once for all of Sangha. */
 export type GitIdentity = { name: string; email: string }
+
+/**
+ * A session's own environment variables, written like a .env file: one KEY=value per line, `export`
+ * and quotes accepted, blank lines and # comments skipped. Errors name the line they come from.
+ */
+export function parseEnvText(text: string): { env: Record<string, string>; errors: string[] } {
+  const env: Record<string, string> = {}
+  const errors: string[] = []
+  text.split('\n').forEach((raw, i) => {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) return
+    const m = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line)
+    if (!m) return void errors.push(`ligne ${i + 1} : « ${line.slice(0, 40)} » n'est pas de la forme CLÉ=valeur`)
+    let value = m[2]!
+    if (value.length >= 2 && (value[0] === '"' || value[0] === "'") && value.at(-1) === value[0]) value = value.slice(1, -1)
+    env[m[1]!] = value
+  })
+  return { env, errors }
+}
+
+export const envText = (env: Record<string, string>) =>
+  Object.entries(env)
+    .map(([k, v]) => `${k}=${/[\s#"']/.test(v) ? JSON.stringify(v) : v}`)
+    .join('\n')

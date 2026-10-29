@@ -646,6 +646,15 @@ export function SessionView() {
               )}
               {!isBuddha && !s.external && (
                 <button
+                  className={`btn btn-ghost ${Object.keys(s.env).length ? 'active' : ''}`}
+                  onClick={() => set({ dialog: { kind: 'env', id: s.id } })}
+                  title="Ses variables d'environnement, propres à cette session"
+                >
+                  Env{Object.keys(s.env).length ? ` · ${Object.keys(s.env).length}` : ''}
+                </button>
+              )}
+              {!isBuddha && !s.external && (
+                <button
                   className="btn btn-ghost"
                   onClick={() => {
                     if (s.status === 'working' && !confirm('Il travaille : relancer interrompt son tour en cours. Relancer quand même ?')) return
