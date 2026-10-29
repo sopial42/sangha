@@ -13,7 +13,16 @@ export type Renewal = { bucket: number; state: 'asked' | 'postponed' | 'done'; a
  * the answer to the question sent at `askedAt`; refused: an outright no; done: he moved on.
  * `seenAt`: his words before this are already read. `note`: his last answer.
  */
-export type Shepherd = { state: 'pending' | 'asked' | 'refused' | 'done'; nextAt: number; askedAt: number; seenAt: number; attempts: number; note: string | null }
+export type Shepherd = {
+  state: 'pending' | 'asked' | 'refused' | 'done'
+  nextAt: number
+  askedAt: number
+  seenAt: number
+  attempts: number
+  note: string | null
+  /** Your context for the fresh session, in a file under /tmp it reads first (see writeHandoffContext). */
+  contextFile?: string | null
+}
 
 export type SessionRow = SessionInfo & {
   worktree: string | null

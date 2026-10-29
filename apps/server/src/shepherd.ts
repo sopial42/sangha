@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 // Buddha shepherding a priest to a fresh session: asked only while he is stopped, at the moment that suits
 // him, again and again until he has moved on, unless he refuses outright.
 
@@ -77,4 +80,26 @@ Est-ce un bon moment pour passer la main ? Réponds sur la première ligne par :
 Si tu arrives à un bon moment avant mon retour, n'attends pas ma question : écris « OUI » seul en première ligne, puis le titre « PASSATION » sur sa propre ligne, suivi de la passation.
 
 La fin de la journée n'est pas une raison d'attendre : c'est même le cas où une session neuve est la plus utile, pour reprendre demain l'esprit frais. Avant de répondre OUI, vérifie que ce qui compte pour le projet à long terme est écrit dans les fichiers que le repo prévoit pour ça (README, docs, CLAUDE.md…) ; ajoute seulement ce qui manque vraiment.`
+}
+
+/**
+ * Context you hand over with the priest, too big for a prompt: written to a file under /tmp (the system
+ * clears it, nothing to delete), read first by the fresh session, like a skill.
+ */
+export const HANDOFF_DIR = '/tmp/sangha'
+
+export function writeHandoffContext(sessionId: string, text: string, dir = HANDOFF_DIR): string {
+  mkdirSync(dir, { recursive: true })
+  const file = join(dir, `passation-${sessionId.slice(0, 8)}-${Date.now()}.md`)
+  writeFileSync(file, text)
+  return file
+}
+
+/** The fresh session's first message: the handoff he wrote, and your context file to read before anything. */
+export function renewalMessage(handoff: string, contextFile: string | null): string {
+  const context =
+    contextFile && existsSync(contextFile)
+      ? `\n\nAvant tout, lis en entier le fichier ${contextFile} : l'utilisateur y a mis le contexte de cette passation, trop long pour un message. Traite-le comme un skill : il fait foi, et relis-le chaque fois que tu en as besoin.`
+      : ''
+  return `Tu reprends un travail en cours, dans une session neuve : la précédente avait un contexte trop lourd. Voici la passation qu'elle a écrite pour toi :\n\n${handoff}${context}\n\nRelis-la, puis continue le travail.`
 }

@@ -621,7 +621,10 @@ export function SessionView() {
               {!isBuddha && (!s.external || s.alive) && (
                 <button
                   className="btn btn-ghost"
-                  onClick={() => void api.shepherd(s.id, !s.shepherd || s.shepherd.state === 'refused')}
+                  onClick={() =>
+                    // Confiding opens a window for the context to hand over; taking him back is immediate.
+                    !s.shepherd || s.shepherd.state === 'refused' ? set({ dialog: { kind: 'shepherd', id: s.id } }) : void api.shepherd(s.id, false)
+                  }
                   title={
                     s.shepherd && s.shepherd.state !== 'refused'
                       ? 'Bouddha arrête de le suivre'

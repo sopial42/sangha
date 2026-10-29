@@ -47,7 +47,7 @@ export const api = {
   /** Ask the session now whether to continue in a fresh one. */
   renew: (id: string) => json<void>(`/api/sessions/${id}/renew`, post()),
   /** Hand his move to a fresh session to Buddha (or take it back). */
-  shepherd: (id: string, on: boolean) => json<unknown>(`/api/sessions/${id}/shepherd`, post({ on })),
+  shepherd: (id: string, on: boolean, context?: string) => json<unknown>(`/api/sessions/${id}/shepherd`, post({ on, context })),
   silence: (id: string, silent: boolean) => json<void>(`/api/sessions/${id}/silence`, post({ silent })),
   /** Your own note about him, shown under him in the courtyard (null clears it). */
   note: (id: string, note: string | null) => json<void>(`/api/sessions/${id}/note`, post({ note })),

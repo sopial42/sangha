@@ -35,7 +35,7 @@ import { priestOptions } from './roles'
 import { ScriptSummaries, trackScripts } from './scripts'
 import { contextTokens, parseLine, TranscriptReader } from './transcript'
 import { buildCostReport, CostMeter } from './cost'
-import { isHandoff, nextDelay, parseAnswer, readDecision, shepherdPrompt, type ShepherdAnswer } from './shepherd'
+import { isHandoff, nextDelay, parseAnswer, readDecision, renewalMessage, shepherdPrompt, writeHandoffContext, type ShepherdAnswer } from './shepherd'
 
 type Listener = (env: Envelope) => void
 type GlobalListener = (ev: GlobalEvent) => void
@@ -834,20 +834,27 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   // ——— Buddha seeing a priest through to a fresh session ———
 
   /** Hand (or take back) a priest's move to a fresh session to Buddha. */
-  shepherd(id: string, on: boolean) {
+  /** `context`: what you hand over with him, read first by the fresh session (in a file under /tmp). */
+  shepherd(id: string, on: boolean, context?: string) {
     const s = this.summaryOf(id)
     if (!s || id === BUDDHA_SESSION_ID) throw new UserError('session inconnue')
     if (!on) {
       this.store.setShepherd(id, null)
     } else {
       if (s.external && !s.alive) throw new UserError('son terminal est fermé : il ne peut pas répondre')
+      const contextFile = context?.trim() ? writeHandoffContext(id, context.trim()) : null
       const cur = this.store.shepherd(id)
-      if (cur?.state === 'pending' || cur?.state === 'asked') return this.shepherdState(id)
+      if (cur?.state === 'pending' || cur?.state === 'asked') {
+        // Already confided: a new context replaces the previous one.
+        if (contextFile) this.store.setShepherd(id, { ...cur, contextFile })
+        this.broadcastSession(id)
+        return this.shepherdState(id)
+      }
       const now = Date.now()
       // A fresh-session question already awaits his answer: take it over rather than ask a second one.
       const rec = this.store.renewal(id)
-      if (rec?.state === 'asked') this.store.setShepherd(id, { state: 'asked', nextAt: now, askedAt: rec.askedAt, seenAt: rec.askedAt, attempts: 0, note: null })
-      else this.store.setShepherd(id, { state: 'pending', nextAt: now, askedAt: 0, seenAt: now, attempts: 0, note: null })
+      if (rec?.state === 'asked') this.store.setShepherd(id, { state: 'asked', nextAt: now, askedAt: rec.askedAt, seenAt: rec.askedAt, attempts: 0, note: null, contextFile })
+      else this.store.setShepherd(id, { state: 'pending', nextAt: now, askedAt: 0, seenAt: now, attempts: 0, note: null, contextFile })
     }
     this.broadcastSession(id)
     return this.shepherdState(id)
@@ -969,10 +976,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       }
       this.observer?.hide(s.id, true)
     }
-    this.send(
-      row.id,
-      `Tu reprends un travail en cours, dans une session neuve : la précédente avait un contexte trop lourd. Voici la passation qu'elle a écrite pour toi :\n\n${handoff}\n\nRelis-la, puis continue le travail.`,
-    )
+    this.send(row.id, renewalMessage(handoff, this.store.shepherd(s.id)?.contextFile ?? null))
   }
 
   /** Snuff out (or relight) a priest's incense: silenced, he no longer calls for you. */

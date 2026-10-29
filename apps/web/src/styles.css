@@ -2679,3 +2679,10 @@ a.icon-btn.sv-newtab {
   text-decoration: none;
   font-size: 18px;
 }
+
+/* A long handoff context: room to paste logs and notes. */
+.handoff-context {
+  min-height: 260px;
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}

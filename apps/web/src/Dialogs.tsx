@@ -689,7 +689,69 @@ export function Dialogs() {
   if (dialog.kind === 'costs') return <Costs onClose={close} />
   if (dialog.kind === 'providers') return <Providers onClose={close} />
   if (dialog.kind === 'git') return <GitIdentityDialog onClose={close} />
+  if (dialog.kind === 'shepherd') return <ShepherdDialog id={dialog.id} onClose={close} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
+}
+
+/**
+ * Confiding a priest to Buddha, who will have him move to a fresh session at the right moment. What you
+ * write here (as long as needed) goes to a file under /tmp the fresh session reads first, like a skill.
+ */
+function ShepherdDialog({ id, onClose }: { id: string; onClose: () => void }) {
+  const session = useApp((s) => s.sessions[id])
+  const [context, setContext] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  if (!session) return null
+
+  const confide = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      await api.shepherd(id, true, context.trim() || undefined)
+      onClose()
+    } catch (err) {
+      setError(message(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title="Confier à Bouddha" onClose={onClose}>
+      <form className="form" onSubmit={confide}>
+        <p className="muted">
+          Bouddha fera passer <b>{session.title}</b> dans une session neuve au moment qui lui convient, avec la passation qu'il écrira. Ajoute ici tout le contexte
+          que la nouvelle session doit avoir, même très long : il sera mis dans un fichier temporaire (sous <code>/tmp</code>) qu'elle lira en premier, comme un skill.
+        </p>
+        <label>
+          Contexte pour la session neuve <span className="muted small">(facultatif)</span>
+          <textarea
+            autoFocus
+            className="handoff-context"
+            value={context}
+            rows={14}
+            placeholder={'Objectif, décisions, contraintes, liens, extraits de logs…'}
+            onChange={(e) => setContext(e.target.value)}
+          />
+        </label>
+        {context.length > 0 && <p className="muted small">{context.length.toLocaleString('fr-FR')} caractères</p>}
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="form-actions">
+          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+            Annuler
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            Confier
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
 }
 
 /** Who every priest commits as. Required: until it is set, Sangha refuses them git. */
