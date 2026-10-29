@@ -1308,6 +1308,8 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     const env = { ...(o.env ?? process.env), ...this.store.sessionEnv(sessionId) } as Record<string, string>
     delete env.ANTHROPIC_API_KEY // belt and braces: never bill the API
     if (!this.git) return { ...o, env }
+    // Identity variables (e.g. from a .env) would beat any git config: the one set in Sangha must win.
+    for (const k of ['GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL']) delete env[k]
     return { ...o, env: { ...env, ...this.git.env() }, hooks: { ...o.hooks, PreToolUse: [...(o.hooks?.PreToolUse ?? []), ...this.git.hooks().PreToolUse] } }
   }
 
