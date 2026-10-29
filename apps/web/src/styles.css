@@ -2669,3 +2669,13 @@ button.quote-body:hover .quote-author {
   font-size: 22px;
   line-height: 1;
 }
+
+/* A link dressed as the header's other icon buttons. */
+a.icon-btn.sv-newtab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  text-decoration: none;
+  font-size: 18px;
+}

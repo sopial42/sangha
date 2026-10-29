@@ -659,6 +659,16 @@ export function SessionView() {
             </div>
           </div>
           <div className="sv-nav">
+            <a
+              className="icon-btn big sv-newtab"
+              href={`/?session=${encodeURIComponent(s.id)}`}
+              target="_blank"
+              rel="noopener"
+              aria-label="Ouvrir cette conversation dans un nouvel onglet"
+              title="Ouvrir dans un nouvel onglet"
+            >
+              ↗
+            </a>
             <button className="icon-btn big" onClick={() => goToNeighbour(-1)} aria-label="Moine précédent (←)" title="Moine précédent (←) · les silencieux sont sautés">
               ‹
             </button>
