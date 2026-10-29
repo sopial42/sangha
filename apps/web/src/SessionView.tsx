@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from 'motion/react'
 import { BUDDHA_SESSION_ID, modelKey, type BackgroundScript, type McpServer, type SessionSummary } from '@sangha/shared'
 import { api, ApiError, closeSession, finishClose } from './api'
 import { Chat } from './chat/Chat'
+import { goToNeighbour } from './nav'
 import { Md, MdInline } from './Md'
 import {
   agentTitle,
@@ -656,9 +657,17 @@ export function SessionView() {
               )}
             </div>
           </div>
-          <button className="icon-btn big" onClick={closeSession} aria-label="Fermer (Échap)" title="Fermer (Échap)">
-            ✕
-          </button>
+          <div className="sv-nav">
+            <button className="icon-btn big" onClick={() => goToNeighbour(-1)} aria-label="Moine précédent (←)" title="Moine précédent (←) · les silencieux sont sautés">
+              ‹
+            </button>
+            <button className="icon-btn big" onClick={() => goToNeighbour(1)} aria-label="Moine suivant (→)" title="Moine suivant (→) · les silencieux sont sautés">
+              ›
+            </button>
+            <button className="icon-btn big" onClick={closeSession} aria-label="Fermer (Échap)" title="Fermer (Échap)">
+              ✕
+            </button>
+          </div>
         </header>
 
         <div className={`sv-body ${hasColumn ? (novicesClosed ? 'novices-closed' : '') : 'no-novices'}`}>

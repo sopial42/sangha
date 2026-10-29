@@ -92,3 +92,23 @@ export const priestsOf = (sessions: Record<string, SessionSummary>) =>
   Object.values(sessions)
     .filter((s) => s.id !== BUDDHA_SESSION_ID)
     .sort((a, b) => a.createdAt - b.createdAt)
+
+/** Every priest in the courtyard's own order: pavilion by pavilion, left to right, each one's priests row by row. */
+export function courtyardOrder(sessions: Record<string, SessionSummary>, projects: ProjectInfo[]): SessionSummary[] {
+  const priests = priestsOf(sessions)
+  const names = projects.map((p) => p.name)
+  for (const p of priests) if (!names.includes(p.project)) names.push(p.project)
+  return names.flatMap((n) => priests.filter((s) => s.project === n))
+}
+
+/**
+ * The priest beside `from` in the courtyard (`dir` 1: to his right, -1: to his left), looping at the ends,
+ * silenced ones skipped. From Buddha or nobody: the first (or last) one. Null when nobody else is there.
+ */
+export function neighbourOf(sessions: Record<string, SessionSummary>, projects: ProjectInfo[], from: string | null, dir: 1 | -1): string | null {
+  const order = courtyardOrder(sessions, projects).filter((s) => !s.silenced || s.id === from)
+  const i = order.findIndex((s) => s.id === from)
+  if (i < 0) return (dir === 1 ? order[0] : order.at(-1))?.id ?? null
+  const next = order[(i + dir + order.length) % order.length]!
+  return next.id === from ? null : next.id
+}

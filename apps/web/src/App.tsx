@@ -4,6 +4,7 @@ import { Bell } from './Bell'
 import { CostChip } from './CostChip'
 import { Dialogs } from './Dialogs'
 import { FullscreenButton, useFullscreen } from './Fullscreen'
+import { usePriestNav } from './nav'
 import { keepAudioUnlocked, watchPriests } from './notify'
 import { Quota } from './quota/Quota'
 import { Monastery } from './scene/Monastery'
@@ -18,6 +19,7 @@ export function App() {
   const [offline, setOffline] = useState(false)
   const gitIdentity = useApp((s) => s.gitIdentity)
   const { full, idle } = useFullscreen()
+  usePriestNav()
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)

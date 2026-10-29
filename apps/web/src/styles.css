@@ -2651,3 +2651,15 @@ button.quote-body:hover .quote-author {
 .banner-action .btn {
   padding: 4px 12px;
 }
+
+/* Previous / next priest, then close: together at the header's right end. */
+.sv-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sv-nav .icon-btn:not(:last-child) {
+  font-size: 22px;
+  line-height: 1;
+}
