@@ -1,4 +1,5 @@
 import type { CostReport, Envelope, GitIdentity, ModelChoice, Provider, GlobalEvent, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
+import { yeet } from './notify'
 import { emptyView, useApp } from './store'
 
 export class ApiError extends Error {
@@ -98,6 +99,7 @@ export function openMonastery(onError: () => void) {
         // The moon only glows when a priest actually flew into it: a non-external session leaving
         // the courtyard (an external one just returns to its own terminal, nothing to see here).
         set({ sessions: rest, ...(gone && !gone.external ? { moonArrivals: moonArrivals + 1 } : {}) })
+        if (gone && !gone.external) yeet()
         if (useApp.getState().selectedId === ev.id) closeSession()
         break
       }

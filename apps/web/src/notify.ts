@@ -56,6 +56,51 @@ function strike(fundamental: number, level: number, delay: number, length = 1) {
   }
 }
 
+/** How long a priest's flight to the moon lasts (see Priest's exitToNirvana): the yeet's pop lands with him. */
+const FLIGHT_S = 3
+
+/**
+ * A priest sent to nirvana: a cartoon slide whistle spiralling up (its vibrato speeding up like his
+ * spin), then a pop as he vanishes into the moon. Synthesized, timed so the pop ends his flight.
+ */
+export function yeet() {
+  if (!audio || audio.state !== 'running' || useApp.getState().muted) return
+  const length = 1.1
+  const t = audio.currentTime + FLIGHT_S - length
+
+  const whistle = audio.createOscillator()
+  whistle.type = 'sine'
+  whistle.frequency.setValueAtTime(350, t)
+  whistle.frequency.exponentialRampToValueAtTime(2600, t + length)
+  const vibrato = audio.createOscillator()
+  const depth = audio.createGain()
+  vibrato.frequency.setValueAtTime(5, t)
+  vibrato.frequency.linearRampToValueAtTime(14, t + length)
+  depth.gain.value = 40
+  vibrato.connect(depth).connect(whistle.frequency)
+  const g = audio.createGain()
+  g.gain.setValueAtTime(0.0001, t)
+  g.gain.exponentialRampToValueAtTime(0.25, t + 0.06)
+  g.gain.setValueAtTime(0.25, t + length - 0.05)
+  g.gain.exponentialRampToValueAtTime(0.0001, t + length)
+  whistle.connect(g).connect(audio.destination)
+  for (const osc of [whistle, vibrato]) {
+    osc.start(t)
+    osc.stop(t + length + 0.05)
+  }
+
+  const pop = audio.createOscillator()
+  const pg = audio.createGain()
+  const end = t + length
+  pop.frequency.setValueAtTime(900, end)
+  pop.frequency.exponentialRampToValueAtTime(120, end + 0.08)
+  pg.gain.setValueAtTime(0.5, end)
+  pg.gain.exponentialRampToValueAtTime(0.0001, end + 0.12)
+  pop.connect(pg).connect(audio.destination)
+  pop.start(end)
+  pop.stop(end + 0.15)
+}
+
 /** Every gesture keeps the audio unlocked (browsers allow sound only after one; Safari may suspend it again). */
 export function keepAudioUnlocked() {
   window.addEventListener('pointerdown', unlockAudio)
