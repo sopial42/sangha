@@ -20,12 +20,8 @@ export function App() {
   const setDefaultModel = useApp((s) => s.setDefaultModel)
   const [offline, setOffline] = useState(false)
   const gitIdentity = useApp((s) => s.gitIdentity)
-  const host = useApp((s) => s.host)
   const { full, idle } = useFullscreen()
   usePriestNav()
-  // Suggestions dismissed for this session only (not persisted): reappear if a new id shows up.
-  const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set())
-  const suggestion = host?.suggestions.find((s) => !dismissedSuggestions.has(s.id)) ?? null
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -103,23 +99,6 @@ export function App() {
       {offline && (
         <p className="banner" role="alert">
           Serveur injoignable. Lance <code>make dev</code> ou <code>make up</code>.
-        </p>
-      )}
-      {suggestion && (
-        <p className="banner banner-action" role="alert">
-          {suggestion.title}
-          <button type="button" className="btn btn-primary" onClick={() => set({ dialog: { kind: 'host' } })}>
-            Voir
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Ignorer cette suggestion"
-            title="Ignorer (revient si une nouvelle suggestion apparaît)"
-            onClick={() => setDismissedSuggestions((prev) => new Set(prev).add(suggestion.id))}
-          >
-            ✕
-          </button>
         </p>
       )}
       <main className="stage">

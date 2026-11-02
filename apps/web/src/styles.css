@@ -2872,9 +2872,8 @@ a.icon-btn.sv-newtab {
 /* host panel: the machine's gauges, bottom left of the courtyard */
 .host-panel {
   position: absolute;
-  left: 14px;
-  bottom: 14px;
   width: 300px;
+  z-index: 2;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #1a1421e6;
@@ -2890,31 +2889,43 @@ a.icon-btn.sv-newtab {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
   padding: 8px 12px;
-  border: 0;
-  background: transparent;
   color: var(--ink);
   font: 600 13px var(--sans);
-  cursor: pointer;
-  text-align: left;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.host-panel-head:active {
+  cursor: grabbing;
 }
 
 .host-panel-caret {
   margin-left: auto;
+  border: 0;
+  background: transparent;
   color: var(--muted);
+  cursor: pointer;
 }
 
 .host-panel-body {
   display: grid;
   gap: 8px;
-  width: 100%;
   padding: 4px 12px 12px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  text-align: left;
+}
+
+.host-panel-suggestion {
+  margin: 2px 0 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: #c4413133;
+  color: #f5c6bd;
+  font-size: 12.5px;
+}
+
+.host-panel-see {
+  justify-self: stretch;
 }
 
 .host-panel-row {
