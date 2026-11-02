@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Envelope, ModelChoice, MonkProfile, MonkStatus, ProjectInfo, Quota, SessionSummary, Usage, GitIdentity } from '@sangha/shared'
+import type { Envelope, HostReport, ModelChoice, MonkProfile, MonkStatus, ProjectInfo, Quota, SessionSummary, Usage, GitIdentity } from '@sangha/shared'
 
 export type LogItem = { at: number } & ({ kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string })
 
@@ -148,7 +148,8 @@ export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-pr
   | { kind: 'providers' }
   | { kind: 'git' }
   | { kind: 'shepherd'; id: string }
-  | { kind: 'env'; id: string } | null
+  | { kind: 'env'; id: string }
+  | { kind: 'host' } | null
 
 type AppState = {
   profiles: MonkProfile[]
@@ -166,6 +167,8 @@ type AppState = {
   /** Every priest (and Buddha), kept live by the monastery-wide stream. */
   sessions: Record<string, SessionSummary>
   quota: Quota | null
+  /** The machine Sangha runs on, sampled every few seconds; null until the first sample lands. */
+  host: HostReport | null
   /** Bumped on every `{kind:'nirvana'}` global event: its open dialog refetches (arrivals, summaries, reincarnations). */
   nirvanaTick: number
   /** Bumped only when a non-external priest actually leaves the courtyard (flies into the moon): what the moon's glow watches. */
@@ -271,6 +274,7 @@ export const useApp = create<AppState>((set) => ({
   projects: [],
   sessions: {},
   quota: null,
+  host: null,
   nirvanaTick: 0,
   moonArrivals: 0,
   sessionsVersion: 0,

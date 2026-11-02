@@ -73,6 +73,13 @@ export function formatSince(at: number, now = Date.now()): string {
   return `depuis ${Math.round(h / 24)} j`
 }
 
+/** Bytes in French units: kilo under 1 Mo, mega under 1 Go, giga above (one decimal). */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024 ** 2) return `${Math.round(bytes / 1024)} Ko`
+  if (bytes < 1024 ** 3) return `${Math.round(bytes / 1024 ** 2)} Mo`
+  return `${(bytes / 1024 ** 3).toFixed(1)} Go`
+}
+
 /** A path under the user's home directory, shortened to `~/…` (best guess from common home layouts). */
 export function shortenPath(path: string): string {
   const m = path.match(/^(\/Users\/[^/]+|\/home\/[^/]+)(\/.*)?$/)

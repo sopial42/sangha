@@ -4,9 +4,10 @@ import { ApiError, api, openSession } from './api'
 import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
 import { draftOf, NEW_PRIEST_DRAFT, saveDraft } from './drafts'
+import { HostDialog } from './host/HostDialog'
 
 /** Native modal <dialog>: focus trap, Escape and backdrop come for free. */
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null)
   useEffect(() => {
     ref.current?.showModal()
@@ -691,6 +692,7 @@ export function Dialogs() {
   if (dialog.kind === 'git') return <GitIdentityDialog onClose={close} />
   if (dialog.kind === 'shepherd') return <ShepherdDialog id={dialog.id} onClose={close} />
   if (dialog.kind === 'env') return <EnvDialog id={dialog.id} onClose={close} />
+  if (dialog.kind === 'host') return <HostDialog onClose={close} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
 }
 
@@ -1090,7 +1092,7 @@ function Providers({ onClose }: { onClose: () => void }) {
 }
 
 /** Shell lines to read and copy in one click. */
-function ShellSnippet({ title, text }: { title: string; text: string }) {
+export function ShellSnippet({ title, text }: { title: string; text: string }) {
   const [copied, setCopied] = useState(false)
   const copy = () =>
     navigator.clipboard.writeText(text).then(() => {

@@ -1,4 +1,4 @@
-import type { CostReport, Envelope, GitIdentity, ModelChoice, Provider, GlobalEvent, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
+import type { CostReport, Envelope, GitIdentity, HostReport, ModelChoice, Provider, GlobalEvent, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
 import { yeet } from './notify'
 import { emptyView, useApp } from './store'
 
@@ -72,6 +72,8 @@ export const api = {
   reincarnate: (id: string) => json<SessionSummary>(`/api/sessions/${id}/reincarnate`, post()),
   /** What every session would have cost at API prices, since monitoring began, broken down by month. */
   costs: () => json<CostReport>('/api/costs'),
+  /** The machine Sangha runs on, right now. 503 before the first sample (json<T> then throws). */
+  host: () => json<HostReport>('/api/host'),
   /** His MCP servers: may take a few seconds, it wakes his process to ask. */
   mcpServers: (id: string) => json<McpServer[]>(`/api/sessions/${id}/mcp`),
   /** Switch one of his MCP servers on or off; enabling can take up to ~30s while it connects. */
@@ -113,6 +115,9 @@ export function openMonastery(onError: () => void) {
         break
       case 'projects':
         void api.projects().then((projects) => set({ projects }))
+        break
+      case 'host':
+        set({ host: ev.host })
         break
     }
   }

@@ -186,3 +186,17 @@ export function watchPriests() {
     for (const id of [...pending.keys()]) settle(id)
   }
 }
+
+/**
+ * A host metric just turned actionable (a new suggestion id appears): one soft strike of the bowl. It
+ * isn't tied to a session the way a priest's stop is, so it rings without landing in the bell's list —
+ * the home banner already says what it's about.
+ */
+export function watchHostSuggestions() {
+  let known: Set<string> | null = null
+  return useApp.subscribe((state) => {
+    const ids = new Set(state.host?.suggestions.map((s) => s.id) ?? [])
+    if (known && !state.muted && [...ids].some((id) => !known!.has(id))) bowl()
+    known = ids
+  })
+}

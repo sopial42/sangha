@@ -11,6 +11,7 @@ import { probeModels } from './providers'
 import { Store } from './db'
 import { branches } from './git'
 import { GitIdentitySetting, validIdentity } from './gitIdentity'
+import { HostMonitor } from './host'
 import { profiles } from './monks'
 import { readNewLines, readTailLines } from './files'
 import { EXTERNAL_PREFIX, Observer } from './observer'
@@ -38,6 +39,8 @@ observer.start()
 sessions.startDoingLoop()
 sessions.startRenewalLoop()
 sessions.startPullsLoop()
+const host = new HostMonitor(config.workspacesDir, () => sessions.summaries())
+host.start()
 
 const app = new Hono()
 
@@ -232,6 +235,9 @@ app.get('/api/nirvana', (c) => c.json(sessions.nirvana()))
 // What the monastery has cost at API prices since monitoring began.
 app.get('/api/costs', (c) => c.json(sessions.costReport()))
 
+// The machine Sangha runs on: CPU, memory, swap, disk, Docker, worktrees, and what to do when it stays red.
+app.get('/api/host', (c) => (host.report ? c.json(host.report) : c.json({ error: 'pas encore mesuré' }, 503)))
+
 /** Wait for the next item, sending a keepalive ping every 15 s. */
 async function drain<T>(stream: SSEStreamingApi, queue: T[], send: (item: T) => Promise<void>, onWake: (wake: () => void) => void) {
   while (!stream.aborted) {
@@ -249,13 +255,19 @@ async function drain<T>(stream: SSEStreamingApi, queue: T[], send: (item: T) => 
 app.get('/api/events', (c) =>
   streamSSE(c, async (stream) => {
     const queue: GlobalEvent[] = [{ kind: 'snapshot', sessions: sessions.summaries(), quota: sessions.quota }]
+    if (host.report) queue.push({ kind: 'host', host: host.report })
     let wake: (() => void) | null = null
     const unsubscribe = sessions.subscribeAll((ev) => {
       queue.push(ev)
       wake?.()
     })
+    const unsubscribeHost = host.subscribe((report) => {
+      queue.push({ kind: 'host', host: report })
+      wake?.()
+    })
     stream.onAbort(() => {
       unsubscribe()
+      unsubscribeHost()
       wake?.()
     })
     await drain(stream, queue, (ev) => stream.writeSSE({ data: JSON.stringify(ev) }), (w) => (wake = w))
@@ -337,6 +349,7 @@ const server = serve({ fetch: app.fetch, port: config.port, hostname: process.en
 
 const shutdown = () => {
   observer.stop()
+  host.stop()
   sessions.closeAll()
   server.close()
   process.exit(0)

@@ -274,6 +274,81 @@ export type GlobalEvent =
   | { kind: 'nirvana' }
   /** Projects were added or removed: reload them. */
   | { kind: 'projects' }
+  /** The machine Sangha runs on, sampled every few seconds (see HostReport). */
+  | { kind: 'host'; host: HostReport }
+
+/** ok: fine; warn: getting tight; red: saturated. */
+export type HostLevel = 'ok' | 'warn' | 'red'
+
+export type HostMetricKey = 'cpu' | 'memory' | 'swap' | 'disk'
+
+export type HostMetric = {
+  key: HostMetricKey
+  label: string
+  /** How full, 0..1. */
+  value: number
+  /** In words, e.g. "12.3 / 16 Go". */
+  detail: string
+  level: HostLevel
+  /** Since when it stays red (epoch ms), null when it is not. */
+  redSince: number | null
+}
+
+/** A running Docker container and what it takes. */
+export type HostContainer = { id: string; name: string; image: string; cpu: number; memBytes: number; memPct: number }
+
+/** A process among the heaviest of the machine. `cpu`: percent of one core. */
+export type HostProcess = { pid: number; command: string; cpu: number; rssBytes: number }
+
+/** A git worktree under workspaces/.worktrees, its weight on disk and the priest working in it (if any). */
+export type HostWorktree = {
+  path: string
+  project: string
+  name: string
+  bytes: number
+  sessionId: string | null
+  sessionTitle: string | null
+  status: SessionStatus | null
+}
+
+/**
+ * Something to do because a metric stayed red too long. `command`: to copy and run yourself (Sangha never
+ * runs it). `sessionId`: the priest concerned, e.g. to dismiss him and free his worktree.
+ */
+export type HostSuggestion = {
+  id: string
+  metric: HostMetricKey
+  title: string
+  detail: string
+  command?: string
+  sessionId?: string
+}
+
+/** One point of the recent history, each metric 0..1. */
+export type HostSample = { at: number; cpu: number; memory: number; swap: number; disk: number }
+
+export type HostReport = {
+  at: number
+  hostname: string
+  platform: string
+  cores: number
+  /** Sangha runs inside a container (make up): figures are the container's VM, not your machine's. */
+  inContainer: boolean
+  /** The worst level among metrics. */
+  level: HostLevel
+  metrics: HostMetric[]
+  /** About the last 30 minutes, oldest first. */
+  history: HostSample[]
+  processes: HostProcess[]
+  /** null: Docker is not available. */
+  containers: HostContainer[] | null
+  /** Heaviest first; sized every few minutes. */
+  worktrees: HostWorktree[]
+  worktreesSizedAt: number | null
+  /** How long a metric must stay red before a suggestion shows (ms). */
+  redAfterMs: number
+  suggestions: HostSuggestion[]
+}
 
 /** Visual identity of a novice (subagent), served by the server so web and agent config stay in one place. */
 export type MonkProfile = {
