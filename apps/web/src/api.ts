@@ -1,4 +1,4 @@
-import type { CostReport, Envelope, GitIdentity, HostReport, ModelChoice, Provider, GlobalEvent, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
+import type { CostReport, Envelope, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
 import { yeet } from './notify'
 import { emptyView, useApp } from './store'
 
@@ -74,6 +74,8 @@ export const api = {
   costs: () => json<CostReport>('/api/costs'),
   /** The machine Sangha runs on, right now. 503 before the first sample (json<T> then throws). */
   host: () => json<HostReport>('/api/host'),
+  /** Ask a model about a suggestion, the exchange so far included (the last turn is your question). */
+  askHost: (suggestion: HostSuggestion, chat: HostChatTurn[]) => json<{ answer: string }>('/api/host/ask', post({ suggestion, chat })),
   /** His MCP servers: may take a few seconds, it wakes his process to ask. */
   mcpServers: (id: string) => json<McpServer[]>(`/api/sessions/${id}/mcp`),
   /** Switch one of his MCP servers on or off; enabling can take up to ~30s while it connects. */

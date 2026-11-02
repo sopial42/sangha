@@ -4,6 +4,7 @@ import { Modal, ShellSnippet } from '../Dialogs'
 import { formatAge, formatBytes, formatSince, STATUS_LABEL } from '../priests'
 import { useApp } from '../store'
 import { LEVEL_COLOR } from './level'
+import { SuggestionChat } from './SuggestionChat'
 
 /** A metric's recent history (about 30 min), as a thin inline polyline: no chart lib needed for this. */
 export function Sparkline({ values, tone }: { values: number[]; tone: string }) {
@@ -69,6 +70,7 @@ function Suggestion({ s, onClose }: { s: HostSuggestion; onClose: () => void }) 
           </button>
         </div>
       )}
+      <SuggestionChat suggestion={s} />
     </li>
   )
 }

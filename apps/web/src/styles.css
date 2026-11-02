@@ -2957,3 +2957,50 @@ a.icon-btn.sv-newtab {
     display: none;
   }
 }
+
+/* little chat under a host suggestion */
+.host-chat-open {
+  justify-self: start;
+}
+
+.host-chat {
+  display: grid;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.host-chat-turn {
+  max-width: 92%;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.host-chat-user {
+  justify-self: end;
+  background: #ffffff14;
+}
+
+.host-chat-assistant {
+  justify-self: start;
+  background: #00000033;
+}
+
+.host-chat-error {
+  margin: 0;
+  color: var(--vermilion);
+  font-size: 12.5px;
+}
+
+.host-chat-form {
+  display: flex;
+  gap: 6px;
+}
+
+.host-chat-form input {
+  flex: 1;
+  min-width: 0;
+}

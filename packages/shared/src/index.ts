@@ -324,6 +324,9 @@ export type HostSuggestion = {
   sessionId?: string
 }
 
+/** One exchange of the little chat about a suggestion: your question, or the answer. */
+export type HostChatTurn = { role: 'user' | 'assistant'; text: string }
+
 /** One point of the recent history, each metric 0..1. */
 export type HostSample = { at: number; cpu: number; memory: number; swap: number; disk: number }
 

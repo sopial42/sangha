@@ -4,7 +4,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE, type SSEStreamingApi } from 'hono/streaming'
-import type { Envelope, GitIdentity, GlobalEvent, Provider } from '@sangha/shared'
+import type { Envelope, GitIdentity, GlobalEvent, HostChatTurn, HostSuggestion, Provider } from '@sangha/shared'
 import { buddhaOptions } from './buddha'
 import { assertQuotaOnly, config } from './config'
 import { probeModels } from './providers'
@@ -12,6 +12,7 @@ import { Store } from './db'
 import { branches } from './git'
 import { GitIdentitySetting, validIdentity } from './gitIdentity'
 import { HostMonitor } from './host'
+import { askAboutSuggestion } from './hostChat'
 import { profiles } from './monks'
 import { readNewLines, readTailLines } from './files'
 import { EXTERNAL_PREFIX, Observer } from './observer'
@@ -237,6 +238,12 @@ app.get('/api/costs', (c) => c.json(sessions.costReport()))
 
 // The machine Sangha runs on: CPU, memory, swap, disk, Docker, worktrees, and what to do when it stays red.
 app.get('/api/host', (c) => (host.report ? c.json(host.report) : c.json({ error: 'pas encore mesuré' }, 503)))
+// A little chat about one suggestion: the model sees it, the machine's state and the exchange so far.
+app.post('/api/host/ask', async (c) => {
+  const { suggestion, chat } = await c.req.json<{ suggestion?: HostSuggestion; chat?: HostChatTurn[] }>()
+  if (!suggestion?.title || !chat?.length || chat.at(-1)?.role !== 'user') throw new UserError('Question manquante.')
+  return c.json({ answer: await askAboutSuggestion(suggestion, host.report, chat) })
+})
 
 /** Wait for the next item, sending a keepalive ping every 15 s. */
 async function drain<T>(stream: SSEStreamingApi, queue: T[], send: (item: T) => Promise<void>, onWake: (wake: () => void) => void) {
