@@ -54,7 +54,7 @@ const UNITS: Record<string, number> = { B: 1, K: 1024, M: 1024 ** 2, G: GB, T: 1
 export function parseSwapUsage(out: string): { total: number; used: number } | null {
   const get = (k: string) => {
     const m = new RegExp(`${k} = ([\\d.,]+)([BKMGT])`).exec(out)
-    return m ? Number(m[1].replace(',', '.')) * UNITS[m[2]] : null
+    return m ? Number(m[1]!.replace(',', '.')) * UNITS[m[2]!]! : null
   }
   const total = get('total')
   const used = get('used')
@@ -74,7 +74,7 @@ export function parsePs(out: string, limit = 8): HostProcess[] {
   for (const line of out.split('\n')) {
     const m = /^\s*(\d+)\s+([\d.]+)\s+(\d+)\s+(.+)$/.exec(line)
     if (!m) continue
-    const command = m[4].trim()
+    const command = m[4]!.trim()
     procs.push({ pid: Number(m[1]), cpu: Number(m[2]), rssBytes: Number(m[3]) * 1024, command: command.split('/').pop() || command })
   }
   return procs.sort((a, b) => b.cpu - a.cpu).slice(0, limit)
@@ -83,7 +83,7 @@ export function parsePs(out: string, limit = 8): HostProcess[] {
 /** "50MiB", "1.2GiB", "800kB" → bytes. */
 function sizeOf(s: string): number {
   const m = /([\d.]+)\s*([KMGT]?)i?B/i.exec(s)
-  return m ? Number(m[1]) * (UNITS[m[2].toUpperCase() || 'B'] ?? 1) : 0
+  return m ? Number(m[1]) * (UNITS[m[2]!.toUpperCase() || 'B'] ?? 1) : 0
 }
 
 /** `docker stats --no-stream --format '{{json .}}'` lines, joined with `docker ps` images. Heaviest by CPU. */
@@ -98,9 +98,9 @@ export function parseDockerStats(out: string, images: Map<string, string> = new 
         id,
         name: j.Name ?? id,
         image: images.get(id.slice(0, 12)) ?? '',
-        cpu: parseFloat(j.CPUPerc) || 0,
-        memPct: parseFloat(j.MemPerc) || 0,
-        memBytes: sizeOf((j.MemUsage ?? '').split('/')[0]),
+        cpu: parseFloat(j.CPUPerc ?? '') || 0,
+        memPct: parseFloat(j.MemPerc ?? '') || 0,
+        memBytes: sizeOf((j.MemUsage ?? '').split('/')[0] ?? ''),
       })
     } catch {
       // A line that is not JSON (a warning): skip.
@@ -406,7 +406,7 @@ export class HostMonitor {
       .map(([path, size]) => {
         const s = sessions.find((x) => x.cwd === path)
         const [project, ...rest] = path.slice(root.length + 1).split('/')
-        return { path, project, name: rest.join('/'), bytes: size, sessionId: s?.id ?? null, sessionTitle: s?.title ?? null, status: s?.status ?? null }
+        return { path, project: project ?? '', name: rest.join('/'), bytes: size, sessionId: s?.id ?? null, sessionTitle: s?.title ?? null, status: s?.status ?? null }
       })
       .sort((a, b) => b.bytes - a.bytes)
   }

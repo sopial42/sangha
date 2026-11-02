@@ -87,6 +87,6 @@ describe('suggest', () => {
     ]
     const s = suggest({ ...base, worktrees, metrics: [metric('disk', 0)] })
     expect(s.map((x) => x.id)).toEqual(['disk:worktree:/w/.worktrees/p/done', 'disk:orphan:/w/.worktrees/p/old'])
-    expect(s[0].sessionId).toBe('s2')
+    expect(s[0]?.sessionId).toBe('s2')
   })
 })
