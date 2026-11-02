@@ -6,7 +6,7 @@ import { useApp } from '../store'
 import { LEVEL_COLOR } from './level'
 
 /** A metric's recent history (about 30 min), as a thin inline polyline: no chart lib needed for this. */
-function Sparkline({ values, tone }: { values: number[]; tone: string }) {
+export function Sparkline({ values, tone }: { values: number[]; tone: string }) {
   if (values.length < 2) return null
   const w = 112
   const h = 26
