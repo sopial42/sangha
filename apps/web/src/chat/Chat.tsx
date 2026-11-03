@@ -179,6 +179,10 @@ const SANGHA_TOOLS: Record<string, string> = {
  * Conversation with one priest (or Buddha). `external`: a session running in a terminal; replies are
  * relayed to it (alive) or resume it in Sangha (ended).
  */
+/** What goes with your message when « Dernière capture » is on: the image you talk about is that screenshot. */
+const screenshotContext = (path: string) =>
+  `\n\n[Capture d'écran jointe : l'image, la capture ou ce que « je vois » dont je parle dans ce message, c'est ma dernière capture d'écran, copiée ici : ${path}. Lis-la (outil Read) avant de répondre.]`
+
 export function Chat({ author, external = null }: { author: string; external?: { alive: boolean } | null }) {
   const { view, selectedId: sessionId, profiles, dialog, set } = useApp()
   const queued = useApp((s) => (sessionId ? s.sessions[sessionId]?.queued : undefined)) ?? NO_QUEUED
@@ -189,22 +193,9 @@ export function Chat({ author, external = null }: { author: string; external?: {
   const [note, setNote] = useState<string | null>(null)
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  /** Puts your latest screenshot's path in the message, for him to read it (Claude Code reads images). */
-  const attachScreenshot = async () => {
-    setError(null)
-    try {
-      const shot = await api.latestScreenshot()
-      const ref = `[Capture d'écran jointe, lis-la : ${shot.path}]`
-      setText((t) => {
-        const next = t.trim() ? `${t.trimEnd()}\n${ref}` : `${ref}\n`
-        if (sessionId) saveDraft(sessionId, next)
-        return next
-      })
-      setNote(`Capture de ${new Date(shot.at).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' })} jointe.`)
-      inputRef.current?.focus()
-    } catch (e) {
-      setError((e as Error).message)
-    }
+  // « Dernière capture » switched on: your latest screenshot goes with the next message (then it switches off).
+  const [withShot, setWithShot] = useState(false)
+  useEffect(() => setWithShot(false), [sessionId])
   }
 
   // Opening him (or switching to him while the panel stays open) puts the caret straight in the
@@ -332,10 +323,14 @@ export function Chat({ author, external = null }: { author: string; external?: {
     setNote(external?.alive ? 'Transmission à la session du terminal…' : null)
     const to = sessionId
     try {
-      const r = await api.send(to, quote ? withQuote(quote, text) : text)
+      let body = quote ? withQuote(quote, text) : text
+      // Taken at send time: the screenshot you just made, even if you made it after switching this on.
+      if (withShot) body += screenshotContext((await api.latestScreenshot()).path)
+      const r = await api.send(to, body)
       saveDraft(to, '')
       setText('')
       setQuote(null)
+      setWithShot(false)
       if (r?.via === 'peer') setNote(`Transmis à ${r.to} ; sa réponse apparaîtra ici.`)
       else if (r?.via === 'adopted') {
         setNote(null)
@@ -540,12 +535,17 @@ export function Chat({ author, external = null }: { author: string; external?: {
           )}
           <button
             type="button"
-            className="btn btn-ghost"
+            className={`btn btn-ghost${withShot ? ' active' : ''}`}
             disabled={!sessionId || sending}
-            onClick={() => void attachScreenshot()}
-            title="Joint ta dernière capture d'écran (Bureau, ou le dossier réglé dans Capture d'écran) : son chemin s'ajoute au message, il la lira"
+            onClick={() => setWithShot((on) => !on)}
+            aria-pressed={withShot}
+            title={
+              withShot
+                ? 'Ta dernière capture d\'écran partira avec ce message (prise au moment d\'envoyer). Clique pour annuler.'
+                : 'Joindre ta dernière capture d\'écran au prochain message : il comprendra que l\'image dont tu parles, c\'est elle'
+            }
           >
-            📷 Dernière capture
+            {withShot ? '📷 Capture jointe ✓' : '📷 Dernière capture'}
           </button>
           <button type="submit" className="btn btn-primary" disabled={!sessionId || sending || !text.trim()}>
             Envoyer
