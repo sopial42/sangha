@@ -399,52 +399,12 @@ select {
   font-size: 13px;
 }
 
-/* host chip, top bar: the machine's health in one glance (see HostChip) */
-.host-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font: 500 12.5px var(--sans);
-  color: var(--ink);
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 12px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s, transform 0.16s ease;
-}
-
-.host-chip:hover,
-.host-chip:focus-visible {
-  border-color: var(--muted);
-  background: #ffffff08;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .host-chip:hover,
-  .host-chip:focus-visible {
-    transform: scale(1.04);
-  }
-}
-
+/* health dot (see HostPanel) */
 .host-dot {
   width: 9px;
   height: 9px;
   border-radius: 999px;
   flex: none;
-}
-
-.host-figs {
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.host-chip-badge {
-  color: #1a1420;
-  background: var(--gold);
-  border-color: transparent;
-  font-weight: 700;
 }
 
 /* host dialog (see HostDialog): suggestions, then metrics, then the heaviest of what's running */
@@ -2668,11 +2628,6 @@ select {
     flex-direction: column;
     align-items: flex-start;
     gap: 0;
-  }
-
-  /* Too narrow for the figures too: the dot and badge alone still say whether to look closer. */
-  .host-figs {
-    display: none;
   }
 
   /* Touch targets grow to a comfortable minimum; sizing only, no visual change beyond that. */

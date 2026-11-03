@@ -4,7 +4,6 @@ import { Bell } from './Bell'
 import { CostChip } from './CostChip'
 import { Dialogs } from './Dialogs'
 import { FullscreenButton, useFullscreen } from './Fullscreen'
-import { HostChip } from './host/HostChip'
 import { HostPanel } from './host/HostPanel'
 import { usePriestNav } from './nav'
 import { keepAudioUnlocked, watchHostSuggestions, watchPriests } from './notify'
@@ -84,7 +83,6 @@ export function App() {
           </button>
         </div>
         <Quota />
-        <HostChip onOpen={() => set({ dialog: { kind: 'host' } })} />
         <Bell />
         <FullscreenButton full={full} />
       </header>
