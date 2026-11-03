@@ -196,7 +196,6 @@ export function Chat({ author, external = null }: { author: string; external?: {
   // « Dernière capture » switched on: your latest screenshot goes with the next message (then it switches off).
   const [withShot, setWithShot] = useState(false)
   useEffect(() => setWithShot(false), [sessionId])
-  }
 
   // Opening him (or switching to him while the panel stays open) puts the caret straight in the
   // textarea, at the end of any restored draft — never while a dialog sits on top, and never on a
