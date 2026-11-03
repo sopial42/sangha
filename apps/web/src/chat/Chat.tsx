@@ -189,6 +189,23 @@ export function Chat({ author, external = null }: { author: string; external?: {
   const [note, setNote] = useState<string | null>(null)
   const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  /** Puts your latest screenshot's path in the message, for him to read it (Claude Code reads images). */
+  const attachScreenshot = async () => {
+    setError(null)
+    try {
+      const shot = await api.latestScreenshot()
+      const ref = `[Capture d'écran jointe, lis-la : ${shot.path}]`
+      setText((t) => {
+        const next = t.trim() ? `${t.trimEnd()}\n${ref}` : `${ref}\n`
+        if (sessionId) saveDraft(sessionId, next)
+        return next
+      })
+      setNote(`Capture de ${new Date(shot.at).toLocaleTimeString('fr', { hour: '2-digit', minute: '2-digit' })} jointe.`)
+      inputRef.current?.focus()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
 
   // Opening him (or switching to him while the panel stays open) puts the caret straight in the
   // textarea, at the end of any restored draft — never while a dialog sits on top, and never on a
@@ -521,6 +538,15 @@ export function Chat({ author, external = null }: { author: string; external?: {
               Interrompre
             </button>
           )}
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={!sessionId || sending}
+            onClick={() => void attachScreenshot()}
+            title="Joint ta dernière capture d'écran (Bureau, ou le dossier réglé dans Capture d'écran) : son chemin s'ajoute au message, il la lira"
+          >
+            📷 Dernière capture
+          </button>
           <button type="submit" className="btn btn-primary" disabled={!sessionId || sending || !text.trim()}>
             Envoyer
           </button>

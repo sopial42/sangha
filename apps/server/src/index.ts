@@ -13,6 +13,7 @@ import { branches } from './git'
 import { GitIdentitySetting, validIdentity } from './gitIdentity'
 import { HostMonitor } from './host'
 import { askAboutSuggestion } from './hostChat'
+import { attachLatestScreenshot } from './screenshot'
 import { profiles } from './monks'
 import { readNewLines, readTailLines } from './files'
 import { EXTERNAL_PREFIX, Observer } from './observer'
@@ -238,6 +239,8 @@ app.get('/api/costs', (c) => c.json(sessions.costReport()))
 
 // The machine Sangha runs on: CPU, memory, swap, disk, Docker, worktrees, and what to do when it stays red.
 app.get('/api/host', (c) => (host.report ? c.json(host.report) : c.json({ error: 'pas encore mesuré' }, 503)))
+// Your latest screenshot, copied where a priest can read it: the web puts its path in your message.
+app.post('/api/screenshot/latest', (c) => c.json(attachLatestScreenshot()))
 // A little chat about one suggestion: the model sees it, the machine's state and the exchange so far.
 app.post('/api/host/ask', async (c) => {
   const { suggestion, chat } = await c.req.json<{ suggestion?: HostSuggestion; chat?: HostChatTurn[] }>()

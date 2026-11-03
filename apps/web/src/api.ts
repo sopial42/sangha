@@ -72,6 +72,8 @@ export const api = {
   reincarnate: (id: string) => json<SessionSummary>(`/api/sessions/${id}/reincarnate`, post()),
   /** What every session would have cost at API prices, since monitoring began, broken down by month. */
   costs: () => json<CostReport>('/api/costs'),
+  /** Your latest screenshot, copied where a priest can read it: its path to put in the message. */
+  latestScreenshot: () => json<{ path: string; at: number }>('/api/screenshot/latest', post()),
   /** The machine Sangha runs on, right now. 503 before the first sample (json<T> then throws). */
   host: () => json<HostReport>('/api/host'),
   /** Ask a model about a suggestion, the exchange so far included (the last turn is your question). */
