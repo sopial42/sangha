@@ -1,11 +1,12 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { McpLibrary, withEnv } from '../src/library'
 
 const envFile = (text = '') => {
-  const path = join(mkdtempSync(join(tmpdir(), 'sangha-lib-')), '.env')
+  const path = join(mkdtempSync(join(tmpdir(), 'sangha-lib-')), 'sangha', '.env')
+  mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, text)
   return path
 }
@@ -54,5 +55,13 @@ describe('the MCP library', () => {
 describe('withEnv', () => {
   it('quotes values that need it', () => {
     expect(withEnv('A=1', { B: 'a b#c' })).toBe('A=1\nB="a b#c"\n')
+  })
+})
+
+describe('the credentials file', () => {
+  it('is created with its folder, readable by you only', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'sangha-lib-')), 'config', 'sangha', '.env')
+    new McpLibrary(path).set('bitbucket-stdio', { values: creds })
+    expect(statSync(path).mode & 0o777).toBe(0o600)
   })
 })

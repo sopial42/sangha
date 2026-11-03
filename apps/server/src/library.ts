@@ -1,7 +1,7 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { parseEnv } from 'node:util'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
 import type { LibraryMcp } from '@sangha/shared'
@@ -53,7 +53,7 @@ export function withEnv(text: string, values: Record<string, string>): string {
 
 /**
  * Sangha's own MCP servers. Switched on in memory only (a restart switches them all off); their credentials
- * live in Sangha's `.env`, read again each time so they survive restarts and a server started without it.
+ * live in `~/.config/sangha/.env`, read again each time so they survive restarts and a server started without it.
  */
 export class McpLibrary {
   private readonly active = new Set<string>()
@@ -109,7 +109,8 @@ export class McpLibrary {
     )
     if (Object.keys(given).length) {
       const text = existsSync(this.envFile) ? readFileSync(this.envFile, 'utf8') : ''
-      writeFileSync(this.envFile, withEnv(text, given))
+      mkdirSync(dirname(this.envFile), { recursive: true })
+      writeFileSync(this.envFile, withEnv(text, given), { mode: 0o600 })
     }
     if (active === false) this.active.delete(name)
     if (active) {

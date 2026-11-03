@@ -1,4 +1,5 @@
-import { resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '../../..')
 
@@ -6,8 +7,8 @@ export const config = {
   port: Number(process.env.PORT ?? 8787),
   workspacesDir: resolve(process.env.SANGHA_WORKSPACES ?? `${root}/workspaces`),
   pluginsDir: resolve(process.env.SANGHA_PLUGINS ?? `${root}/vendor/plugins`),
-  /** Sangha's own .env, where the MCP library keeps its credentials. */
-  envFile: resolve(process.env.SANGHA_ENV_FILE ?? `${root}/.env`),
+  /** Where the MCP library keeps its credentials: in the config of whoever runs Sangha, not in the repo. */
+  envFile: resolve(process.env.SANGHA_ENV_FILE ?? join(homedir(), '.config', 'sangha', '.env')),
   dbPath: resolve(process.env.SANGHA_DB ?? `${root}/data/sangha.db`),
   idleCloseMs: Number(process.env.SANGHA_IDLE_CLOSE_MS ?? 20 * 60_000),
   /** How long a priest must stay still before he is said to wait for you (and the bowl rings). */

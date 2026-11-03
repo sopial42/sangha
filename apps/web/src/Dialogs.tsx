@@ -824,7 +824,7 @@ function McpLibraryDialog({ onClose }: { onClose: () => void }) {
               })}
             </ul>
           )}
-          <p className="hint">Activation gardée jusqu’au redémarrage de Sangha ; identifiants enregistrés dans .env.</p>
+          <p className="hint">Activation gardée jusqu’au redémarrage de Sangha ; identifiants enregistrés dans ~/.config/sangha/.env.</p>
         </div>
       ) : (
         <LibraryCredentialsForm

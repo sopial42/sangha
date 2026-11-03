@@ -300,7 +300,7 @@ function ReminderBox({ id, saved }: { id: string; saved: string | null }) {
 function McpRow({ server, busy, onToggle, onLogin }: { server: McpServer; busy: boolean; onToggle: () => void; onLogin: () => void }) {
   const claudeAi = server.name.startsWith('claude.ai ')
   const plugin = /^plugin:[^:]+:(.+)$/.exec(server.name)?.[1]
-  const library = server.scope === 'library'
+  const sangha = server.scope === 'library'
   const name = claudeAi ? server.name.slice('claude.ai '.length) : (plugin ?? server.name)
   const on = !mcpOff(server)
   return (
@@ -309,7 +309,7 @@ function McpRow({ server, busy, onToggle, onLogin }: { server: McpServer; busy: 
         {name}
         {claudeAi && <span className="mcp-tag">claude.ai</span>}
         {plugin && <span className="mcp-tag">plugin</span>}
-        {library && <span className="mcp-tag">bibliothèque</span>}
+        {sangha && <span className="mcp-tag">Sangha</span>}
       </span>
       {server.status === 'needs-auth' ? (
         // Opens your browser on its sign-in page; the row stays busy until you authorized there.
