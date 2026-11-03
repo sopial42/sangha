@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx --env-file-if-exists=../../.env src/index.ts",
-    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/index.js --packages=external --alias:@sangha/shared=../../packages/shared/src/index.ts",
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/index.js --packages=external --alias:@sangha/shared=../../packages/shared/src/index.ts && esbuild ../../packages/mcp-bitbucket/src/index.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/mcp-bitbucket.js",
     "start": "node dist/index.js",
     "test": "vitest run",
     "dev:watch": "tsx watch --env-file-if-exists=../../.env src/index.ts"

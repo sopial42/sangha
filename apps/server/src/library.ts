@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { parseEnv } from 'node:util'
 import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk'
@@ -11,15 +10,13 @@ import type { Catalog } from './mcp'
 type Field = { key: string; label: string; secret?: boolean; optional?: boolean; placeholder?: string }
 type Entry = { name: string; description: string; fields: Field[]; config: (v: Record<string, string>) => McpServerConfig }
 
-const home = (path: string) => path.replace(/^~(?=$|\/)/, homedir())
-
-/** Its compiled binary if built (`bun run compile`), else its sources through tsx, so neither bun nor PATH is needed. */
+/** packages/mcp-bitbucket: bundled next to the built server, else (make dev) its sources through tsx. */
 function bitbucket(v: Record<string, string>): McpServerConfig {
-  const dir = home(v.BITBUCKET_MCP_DIR!)
-  const bin = join(dir, 'bin', 'bitbucket-mcp')
-  const run = existsSync(bin)
-    ? { command: bin, args: [] }
-    : { command: process.execPath, args: [createRequire(import.meta.url).resolve('tsx/cli'), join(dir, 'src', 'index.ts')] }
+  const bundled = join(import.meta.dirname, 'mcp-bitbucket.js')
+  const sources = join(import.meta.dirname, '../../../packages/mcp-bitbucket/src/index.ts')
+  const run = existsSync(bundled)
+    ? { command: process.execPath, args: [bundled] }
+    : { command: process.execPath, args: [createRequire(import.meta.url).resolve('tsx/cli'), sources] }
   const env: Record<string, string> = { MCP_TRANSPORT: 'stdio', BITBUCKET_API_BASE_URL: v.BITBUCKET_MCP_API_BASE_URL!, BITBUCKET_TOKEN: v.BITBUCKET_MCP_TOKEN! }
   if (v.BITBUCKET_MCP_USER_SLUG) env.BITBUCKET_USER_SLUG = v.BITBUCKET_MCP_USER_SLUG
   return { type: 'stdio', ...run, env }
@@ -28,9 +25,8 @@ function bitbucket(v: Record<string, string>): McpServerConfig {
 export const LIBRARY: Entry[] = [
   {
     name: 'bitbucket-stdio',
-    description: 'Pull requests Bitbucket Data Center (fichiers, diff, commentaires, approbation), en local avec ton PAT.',
+    description: 'Pull requests Bitbucket Data Center (fichiers, diff, commentaires, approbation, branches), avec ton PAT.',
     fields: [
-      { key: 'BITBUCKET_MCP_DIR', label: 'Dossier du serveur mcp-bitbucket', placeholder: '~/job/agentic/mcp-bitbucket' },
       { key: 'BITBUCKET_MCP_API_BASE_URL', label: 'URL de Bitbucket', placeholder: 'https://stash.ovhcloud.tools' },
       { key: 'BITBUCKET_MCP_TOKEN', label: 'Token (PAT Bitbucket)', secret: true },
       { key: 'BITBUCKET_MCP_USER_SLUG', label: 'Slug utilisateur (pour approuver / demander des changements)', optional: true, placeholder: 'prenom.nom' },

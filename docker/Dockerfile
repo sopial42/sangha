@@ -4,6 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 WORKDIR /src
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/mcp-bitbucket/package.json packages/mcp-bitbucket/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 RUN npm ci
@@ -19,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ripgrep ca-
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/mcp-bitbucket/package.json packages/mcp-bitbucket/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
 RUN npm ci --omit=dev --workspace @sangha/server && npm cache clean --force

@@ -11,7 +11,7 @@ const envFile = (text = '') => {
   return path
 }
 
-const creds = { BITBUCKET_MCP_DIR: '/opt/mcp-bitbucket', BITBUCKET_MCP_API_BASE_URL: 'https://stash.example', BITBUCKET_MCP_TOKEN: 's3cret' }
+const creds = { BITBUCKET_MCP_API_BASE_URL: 'https://stash.example', BITBUCKET_MCP_TOKEN: 's3cret' }
 
 describe('the MCP library', () => {
   it('starts switched off, and asks for credentials it lacks', () => {
@@ -29,7 +29,7 @@ describe('the MCP library', () => {
     expect(server?.scope).toBe('library')
     expect(server?.config).toMatchObject({ type: 'stdio', env: { MCP_TRANSPORT: 'stdio', BITBUCKET_API_BASE_URL: 'https://stash.example', BITBUCKET_TOKEN: 's3cret' } })
     expect(readFileSync(path, 'utf8')).toBe(
-      'CLAUDE_CODE_OAUTH_TOKEN=abc\nBITBUCKET_MCP_TOKEN=s3cret\nBITBUCKET_MCP_DIR=/opt/mcp-bitbucket\nBITBUCKET_MCP_API_BASE_URL=https://stash.example\n',
+      'CLAUDE_CODE_OAUTH_TOKEN=abc\nBITBUCKET_MCP_TOKEN=s3cret\nBITBUCKET_MCP_API_BASE_URL=https://stash.example\n',
     )
 
     const restarted = new McpLibrary(path)
