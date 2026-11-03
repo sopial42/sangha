@@ -1,4 +1,5 @@
 import { Fragment, type ReactNode } from 'react'
+import { CopyButton } from './CopyButton'
 
 // Minimal, safe markdown for agent messages: paragraphs, bullet/numbered lists, headings, tables,
 // **bold**, `code`, [links](https://…) and bare URLs, and fenced code blocks. Never injects raw HTML.
@@ -24,7 +25,13 @@ function inline(text: string): ReactNode[] {
     const i = m.index
     if (i > last) out.push(<Fragment key={last}>{text.slice(last, i)}</Fragment>)
     const link = LINK.exec(part)
-    if (part.startsWith('`') && part.length > 1) out.push(<code key={i}>{part.slice(1, -1)}</code>)
+    if (part.startsWith('`') && part.length > 1)
+      out.push(
+        <span key={i} className="md-code">
+          <code>{part.slice(1, -1)}</code>
+          <CopyButton text={part.slice(1, -1)} />
+        </span>,
+      )
     else if (link && link[0] === part) out.push(<Link key={i} href={link[2]!}>{inline(link[1]!)}</Link>)
     else if (part.startsWith('**')) out.push(<strong key={i}>{inline(part.slice(2, -2))}</strong>)
     else out.push(<Link key={i} href={part}>{part}</Link>)
@@ -119,7 +126,12 @@ export function Md({ text }: { text: string }) {
       flushList()
       const code: string[] = []
       while (++i < lines.length && !lines[i]!.trim().startsWith('```')) code.push(lines[i]!)
-      blocks.push(<pre key={blocks.length}>{code.join('\n')}</pre>)
+      blocks.push(
+        <div key={blocks.length} className="md-pre">
+          <pre>{code.join('\n')}</pre>
+          <CopyButton text={code.join('\n')} />
+        </div>,
+      )
       continue
     }
     // A table: a header row, a |---| separator, then rows.

@@ -22,6 +22,7 @@ import {
 } from './priests'
 import { profileFor, toolIcon } from './profiles'
 import { useApp, type LogItem, type MonkInstance } from './store'
+import { useBackdropClose } from './backdrop'
 
 type Progress = { goal: string; state: string; next: string }
 
@@ -458,6 +459,7 @@ export function SessionView() {
   // already captured in `closing.target`. Falls back to a plain shrink-and-fade in place.
   const panelRef = useRef<HTMLDivElement>(null)
   const reducedMotion = useReducedMotion()
+  const backdrop = useBackdropClose(closeSession)
   const [exit, setExit] = useState<{ x: number; y: number; scale: number } | null>(null)
   useLayoutEffect(() => {
     if (!closing) return
@@ -519,7 +521,7 @@ export function SessionView() {
   return (
     <motion.div
       className="overlay"
-      onClick={(e) => e.target === e.currentTarget && closeSession()}
+      {...backdrop}
       initial={false}
       animate={{ opacity: closing ? 0 : 1 }}
       transition={{ duration: closing ? closeDuration : 0.15, ease: closing ? 'easeIn' : 'easeOut' }}

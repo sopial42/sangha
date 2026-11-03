@@ -3004,3 +3004,68 @@ a.icon-btn.sv-newtab {
   flex: 1;
   min-width: 0;
 }
+
+/* copy icons on `code` and ```blocks``` */
+.copy-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.45;
+  vertical-align: middle;
+  transition: opacity 0.15s;
+}
+
+.copy-btn:hover,
+.copy-btn:focus-visible,
+.copy-btn.is-copied {
+  opacity: 1;
+  color: var(--ink);
+  border-color: var(--line);
+  background: #0004;
+}
+
+.copy-btn.is-copied {
+  color: var(--jade);
+}
+
+.md-code {
+  white-space: nowrap;
+}
+
+.md-code code {
+  white-space: normal;
+}
+
+.md-code .copy-btn {
+  margin-left: 1px;
+}
+
+.md-code:hover .copy-btn {
+  opacity: 0.9;
+}
+
+.md-pre {
+  position: relative;
+}
+
+.md-pre .copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  opacity: 0.6;
+}
+
+.md-pre:hover .copy-btn {
+  opacity: 1;
+}

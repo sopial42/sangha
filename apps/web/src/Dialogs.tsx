@@ -3,17 +3,19 @@ import { providerEnv, shellExports, type CostReport, type NirvanaEntry, type Pro
 import { ApiError, api, openSession } from './api'
 import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
+import { useBackdropClose } from './backdrop'
 import { draftOf, NEW_PRIEST_DRAFT, saveDraft } from './drafts'
 import { HostDialog } from './host/HostDialog'
 
 /** Native modal <dialog>: focus trap, Escape and backdrop come for free. */
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null)
+  const backdrop = useBackdropClose(onClose)
   useEffect(() => {
     ref.current?.showModal()
   }, [])
   return (
-    <dialog ref={ref} className="modal" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()} aria-labelledby="modal-title">
+    <dialog ref={ref} className="modal" onClose={onClose} {...backdrop} aria-labelledby="modal-title">
       <div className="modal-body">
         <header className="modal-head">
           <h2 id="modal-title">{title}</h2>
