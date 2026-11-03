@@ -24,7 +24,8 @@ import type { SessionRow, Shepherd, Store } from './db'
 import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState, type WorktreeState } from './git'
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
-import { enabledExtras, mcpList, mcpLogin, mcpReady, mcpSettle, readCatalog } from './mcp'
+import { library } from './library'
+import { enabledExtras, mcpList, mcpLogin, mcpReady, mcpSettle, readCatalog, type Catalog } from './mcp'
 import { readTailLines } from './files'
 import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
@@ -1031,7 +1032,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   /** A priest's MCP servers, waking his process to ask it. */
   async mcp(id: string): Promise<McpServer[]> {
     const row = this.priestRow(id)
-    return mcpList(await this.ensureLive(row).mcpStatus(), readCatalog(this.projects.dir(row.project)))
+    return mcpList(await this.ensureLive(row).mcpStatus(), this.catalog(row))
   }
 
   /** Switch a server for this priest and every live priest of his project; the next ones start with it. */
@@ -1039,7 +1040,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     const row = this.priestRow(id)
     this.store.setMcpPref(row.project, name, enabled)
     const { extras } = this.mcpPlan(row)
-    const fromCatalog = name in readCatalog(this.projects.dir(row.project))
+    const fromCatalog = name in this.catalog(row)
     const apply = (s: LiveSession) => (fromCatalog ? s.setExtraMcp(extras) : s.toggleMcp(name, enabled))
     const own = this.ensureLive(row)
     for (const [otherId, s] of this.live) {
@@ -1077,9 +1078,27 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     return row
   }
 
+  private catalog(row: SessionRow): Catalog {
+    return { ...readCatalog(this.projects.dir(row.project)), ...library.catalog() }
+  }
+
+  /** Switch a library server on or off for every priest: live ones load or drop it if their project wants it. */
+  setLibraryMcp(name: string, change: { active?: boolean; values?: Record<string, string> }) {
+    try {
+      library.set(name, change)
+    } catch (e) {
+      throw new UserError(`${name} : ${e instanceof Error ? e.message : String(e)}`)
+    }
+    for (const [id, s] of this.live) {
+      const row = this.store.getSession(id)
+      if (row && id !== BUDDHA_SESSION_ID) void s.setExtraMcp(this.mcpPlan(row).extras).catch(() => undefined)
+    }
+    return library.list()
+  }
+
   /** At launch: servers to add from your Claude config, and switches to replay on the ones he loads himself. */
   private mcpPlan(row: SessionRow): { extras: Record<string, McpServerConfig>; toggles: Record<string, boolean> } {
-    const catalog = readCatalog(this.projects.dir(row.project))
+    const catalog = this.catalog(row)
     const prefs = this.store.mcpPrefs(row.project)
     return { extras: enabledExtras(catalog, prefs), toggles: Object.fromEntries(Object.entries(prefs).filter(([name]) => !(name in catalog))) }
   }

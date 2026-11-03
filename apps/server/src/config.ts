@@ -6,6 +6,8 @@ export const config = {
   port: Number(process.env.PORT ?? 8787),
   workspacesDir: resolve(process.env.SANGHA_WORKSPACES ?? `${root}/workspaces`),
   pluginsDir: resolve(process.env.SANGHA_PLUGINS ?? `${root}/vendor/plugins`),
+  /** Sangha's own .env, where the MCP library keeps its credentials. */
+  envFile: resolve(process.env.SANGHA_ENV_FILE ?? `${root}/.env`),
   dbPath: resolve(process.env.SANGHA_DB ?? `${root}/data/sangha.db`),
   idleCloseMs: Number(process.env.SANGHA_IDLE_CLOSE_MS ?? 20 * 60_000),
   /** How long a priest must stay still before he is said to wait for you (and the bowl rings). */

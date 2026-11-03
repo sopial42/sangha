@@ -203,6 +203,12 @@ export type McpServer = {
   error?: string
 }
 
+/** A value a library server needs: secrets are never sent back, only whether they are set. */
+export type LibraryField = { key: string; label: string; secret: boolean; optional: boolean; placeholder?: string; set: boolean; value?: string }
+
+/** A server of Sangha's own MCP library: once active (until the server restarts), it joins every priest's catalog. */
+export type LibraryMcp = { name: string; description: string; fields: LibraryField[]; active: boolean; missing: boolean }
+
 /** A script a priest runs in the background, and often waits on. */
 export type BackgroundScript = {
   id: string

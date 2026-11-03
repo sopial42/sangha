@@ -300,6 +300,7 @@ function ReminderBox({ id, saved }: { id: string; saved: string | null }) {
 function McpRow({ server, busy, onToggle, onLogin }: { server: McpServer; busy: boolean; onToggle: () => void; onLogin: () => void }) {
   const claudeAi = server.name.startsWith('claude.ai ')
   const plugin = /^plugin:[^:]+:(.+)$/.exec(server.name)?.[1]
+  const library = server.scope === 'library'
   const name = claudeAi ? server.name.slice('claude.ai '.length) : (plugin ?? server.name)
   const on = !mcpOff(server)
   return (
@@ -308,6 +309,7 @@ function McpRow({ server, busy, onToggle, onLogin }: { server: McpServer; busy: 
         {name}
         {claudeAi && <span className="mcp-tag">claude.ai</span>}
         {plugin && <span className="mcp-tag">plugin</span>}
+        {library && <span className="mcp-tag">bibliothèque</span>}
       </span>
       {server.status === 'needs-auth' ? (
         // Opens your browser on its sign-in page; the row stays busy until you authorized there.
@@ -347,6 +349,8 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null) // name of the server mid-toggle, if any
   const wrapRef = useRef<HTMLDivElement>(null)
+  const dialog = useApp((st) => st.dialog)
+  const set = useApp((st) => st.set)
 
   // A different priest: forget what we knew, fetch fresh next time the popover opens.
   useEffect(() => {
@@ -369,6 +373,22 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
     if (open && servers === null && !loading) load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sessionId])
+
+  // The library dialog can add or remove an entry from this priest's catalog: once it closes, refetch.
+  const libraryOpenRef = useRef(false)
+  useEffect(() => {
+    if (dialog?.kind === 'mcp-library') libraryOpenRef.current = true
+    else if (libraryOpenRef.current) {
+      libraryOpenRef.current = false
+      load()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialog])
+
+  const openLibrary = () => {
+    onClose() // one overlay at a time: the dialog covers the popover anyway
+    set({ dialog: { kind: 'mcp-library' } })
+  }
 
   // A click outside the button or the popover closes it, same as any other dropdown.
   useEffect(() => {
@@ -416,9 +436,14 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
         <div className="mcp-popover" role="menu" aria-label="Serveurs MCP">
           <header className="mcp-popover-head">
             <h4>Serveurs MCP</h4>
-            <button type="button" className="text-link" onClick={load} disabled={loading}>
-              {loading ? 'Rafraîchissement…' : 'Rafraîchir'}
-            </button>
+            <div className="mcp-popover-actions">
+              <button type="button" className="text-link" onClick={openLibrary}>
+                📚 Bibliothèque
+              </button>
+              <button type="button" className="text-link" onClick={load} disabled={loading}>
+                {loading ? 'Rafraîchissement…' : 'Rafraîchir'}
+              </button>
+            </div>
           </header>
           {loading && !sorted && <p className="muted small">Je réveille le prêtre…</p>}
           {error && <p className="mcp-error">{error}</p>}

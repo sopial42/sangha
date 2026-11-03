@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { providerEnv, shellExports, type CostReport, type NirvanaEntry, type ProjectSuggestion, type Provider, envText, parseEnvText } from '@sangha/shared'
+import { providerEnv, shellExports, type CostReport, type LibraryMcp, type NirvanaEntry, type ProjectSuggestion, type Provider, envText, parseEnvText } from '@sangha/shared'
 import { ApiError, api, openSession } from './api'
 import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
@@ -679,6 +679,168 @@ function Costs({ onClose }: { onClose: () => void }) {
   )
 }
 
+const LIBRARY_STATUS = (m: LibraryMcp): { label: string; tone: 'on' | 'off' | 'missing' } =>
+  m.active ? { label: 'activé', tone: 'on' } : m.missing ? { label: 'identifiants manquants', tone: 'missing' } : { label: 'désactivé', tone: 'off' }
+
+/**
+ * A server's credentials, pre-filled from what is already saved (secret fields stay empty, with a
+ * placeholder saying so). `activateOnSave`: this form was opened to activate him, so saving also turns
+ * him on (the server refuses if a required field is still missing).
+ */
+function LibraryCredentialsForm({
+  mcp,
+  activateOnSave,
+  onCancel,
+  onSaved,
+}: {
+  mcp: LibraryMcp
+  activateOnSave: boolean
+  onCancel: () => void
+  onSaved: (list: LibraryMcp[]) => void
+}) {
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(mcp.fields.map((f) => [f.key, f.secret ? '' : (f.value ?? '')])))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      onSaved(await api.setLibraryMcp(mcp.name, { values, ...(activateOnSave ? { active: true } : {}) }))
+    } catch (err) {
+      setError(message(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <form className="form" onSubmit={submit}>
+      <p className="muted">
+        Identifiants de <b>{mcp.name}</b>
+        {activateOnSave && ', pour l’activer'}.
+      </p>
+      {mcp.fields.map((f) => (
+        <label key={f.key}>
+          {f.label} {f.optional && <span className="muted small">(facultatif)</span>}
+          <input
+            type={f.secret ? 'password' : 'text'}
+            value={values[f.key] ?? ''}
+            onChange={(e) => setValues((v) => ({ ...v, [f.key]: e.target.value }))}
+            placeholder={f.secret ? (f.set ? 'enregistré — laisser vide pour garder' : f.placeholder) : f.placeholder}
+            autoComplete="off"
+          />
+        </label>
+      ))}
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="form-actions">
+        <button type="button" className="btn btn-ghost" onClick={onCancel} disabled={busy}>
+          Annuler
+        </button>
+        <button type="submit" className="btn btn-primary" disabled={busy}>
+          {busy ? '…' : activateOnSave ? 'Enregistrer et activer' : 'Enregistrer'}
+        </button>
+      </div>
+    </form>
+  )
+}
+
+/**
+ * Sangha's own MCP servers, known but switched off until you activate one (in memory only: a restart of
+ * the server turns them all off again). Once active, a server joins every priest's 🔌 catalog.
+ */
+function McpLibraryDialog({ onClose }: { onClose: () => void }) {
+  const [list, setList] = useState<LibraryMcp[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null) // name mid-request, list view only
+  const [editing, setEditing] = useState<{ mcp: LibraryMcp; activateOnSave: boolean } | null>(null)
+
+  const reload = () => api.mcpLibrary().then(setList, (e) => setError(message(e)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => void reload(), [])
+
+  const activate = (m: LibraryMcp) => {
+    if (m.missing) return setEditing({ mcp: m, activateOnSave: true })
+    setBusy(m.name)
+    setError(null)
+    api
+      .setLibraryMcp(m.name, { active: true })
+      .then(setList, (e) => setError(message(e)))
+      .finally(() => setBusy(null))
+  }
+
+  const deactivate = (m: LibraryMcp) => {
+    setBusy(m.name)
+    setError(null)
+    api
+      .setLibraryMcp(m.name, { active: false })
+      .then(setList, (e) => setError(message(e)))
+      .finally(() => setBusy(null))
+  }
+
+  return (
+    <Modal title="Bibliothèque de MCP" onClose={onClose}>
+      {!editing ? (
+        <div className="form">
+          <p className="hint">Des serveurs MCP connus de Sangha, à activer pour qu’ils rejoignent le catalogue de chaque prêtre.</p>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          {list === null && !error && <p className="muted small">Chargement…</p>}
+          {list?.length === 0 && <p className="muted small">La bibliothèque est vide pour l’instant.</p>}
+          {list && list.length > 0 && (
+            <ul className="library-list">
+              {list.map((m) => {
+                const status = LIBRARY_STATUS(m)
+                return (
+                  <li key={m.name} className="library-row">
+                    <div className="library-row-head">
+                      <b>{m.name}</b>
+                      <span className={`library-status library-status-${status.tone}`}>{status.label}</span>
+                    </div>
+                    <p className="muted small library-desc">{m.description}</p>
+                    <div className="library-row-actions">
+                      <button type="button" className="text-link" disabled={busy === m.name} onClick={() => setEditing({ mcp: m, activateOnSave: false })}>
+                        Identifiants
+                      </button>
+                      {m.active ? (
+                        <button type="button" className="btn btn-ghost" disabled={busy === m.name} onClick={() => deactivate(m)}>
+                          {busy === m.name ? '…' : 'Désactiver'}
+                        </button>
+                      ) : (
+                        <button type="button" className="btn btn-primary" disabled={busy === m.name} onClick={() => activate(m)}>
+                          {busy === m.name ? '…' : 'Activer'}
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          <p className="hint">Activation gardée jusqu’au redémarrage de Sangha ; identifiants enregistrés dans .env.</p>
+        </div>
+      ) : (
+        <LibraryCredentialsForm
+          mcp={editing.mcp}
+          activateOnSave={editing.activateOnSave}
+          onCancel={() => setEditing(null)}
+          onSaved={(l) => {
+            setList(l)
+            setEditing(null)
+          }}
+        />
+      )}
+    </Modal>
+  )
+}
+
 export function Dialogs() {
   const { dialog, set } = useApp()
   const close = () => set({ dialog: null })
@@ -695,6 +857,7 @@ export function Dialogs() {
   if (dialog.kind === 'shepherd') return <ShepherdDialog id={dialog.id} onClose={close} />
   if (dialog.kind === 'env') return <EnvDialog id={dialog.id} onClose={close} />
   if (dialog.kind === 'host') return <HostDialog onClose={close} />
+  if (dialog.kind === 'mcp-library') return <McpLibraryDialog onClose={close} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
 }
 

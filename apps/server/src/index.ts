@@ -12,6 +12,7 @@ import { Store } from './db'
 import { branches } from './git'
 import { GitIdentitySetting, validIdentity } from './gitIdentity'
 import { HostMonitor } from './host'
+import { library } from './library'
 import { askAboutSuggestion } from './hostChat'
 import { attachLatestScreenshot } from './screenshot'
 import { profiles } from './monks'
@@ -219,6 +220,12 @@ app.get('/api/sessions/:id/mcp', async (c) => c.json(await sessions.mcp(c.req.pa
 app.post('/api/sessions/:id/mcp', async (c) => {
   const { name, enabled } = await c.req.json<{ name: string; enabled: boolean }>()
   return c.json(await sessions.toggleMcp(c.req.param('id'), name, !!enabled))
+})
+// Sangha's own MCP servers: on until the server restarts, their credentials kept in .env.
+app.get('/api/mcp-library', (c) => c.json(library.list()))
+app.post('/api/mcp-library/:name', async (c) => {
+  const change = await c.req.json<{ active?: boolean; values?: Record<string, string> }>()
+  return c.json(sessions.setLibraryMcp(c.req.param('name'), change))
 })
 app.post('/api/sessions/:id/seen', (c) => {
   sessions.seen(c.req.param('id'))

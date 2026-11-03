@@ -1,4 +1,4 @@
-import type { CostReport, Envelope, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
+import type { CostReport, Envelope, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, LibraryMcp, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
 import { yeet } from './notify'
 import { emptyView, useApp } from './store'
 
@@ -84,6 +84,9 @@ export const api = {
   /** Sign in to one of his servers: opens your browser, answers once you authorized (up to a few minutes). */
   loginMcpServer: (id: string, name: string) => json<McpServer[]>(`/api/sessions/${id}/mcp/login`, post({ name })),
   setMcpServer: (id: string, name: string, enabled: boolean) => json<McpServer[]>(`/api/sessions/${id}/mcp`, post({ name, enabled })),
+  mcpLibrary: () => json<LibraryMcp[]>('/api/mcp-library'),
+  /** `values`: credentials to save in .env (an empty one keeps what is saved); `active`: switch it on or off. */
+  setLibraryMcp: (name: string, change: { active?: boolean; values?: Record<string, string> }) => json<LibraryMcp[]>(`/api/mcp-library/${encodeURIComponent(name)}`, post(change)),
 }
 
 /** Follow the whole monastery: every session's status, novices and the plan quota. */

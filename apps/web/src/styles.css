@@ -807,6 +807,12 @@ select {
   font: 700 15px var(--serif);
 }
 
+.mcp-popover-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .mcp-error {
   margin: 0;
   color: #f5a89b;
@@ -1559,6 +1565,71 @@ select {
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+}
+
+/* MCP library dialog (McpLibraryDialog): Sangha's own servers, off until activated */
+.library-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  max-height: min(55vh, 460px);
+  overflow-y: auto;
+}
+
+.library-row {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.library-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.library-row-head b {
+  font: 700 15px var(--serif);
+}
+
+.library-status {
+  flex: none;
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.library-status-on {
+  color: var(--jade);
+  border-color: #2f5b42;
+}
+
+.library-status-off {
+  color: var(--muted);
+}
+
+.library-status-missing {
+  color: var(--gold);
+  border-color: #6b5325;
+}
+
+.library-desc {
+  margin: 0;
+}
+
+.library-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
 }
 
 .shell-snippet {

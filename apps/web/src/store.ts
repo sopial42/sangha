@@ -149,7 +149,8 @@ export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-pr
   | { kind: 'git' }
   | { kind: 'shepherd'; id: string }
   | { kind: 'env'; id: string }
-  | { kind: 'host' } | null
+  | { kind: 'host' }
+  | { kind: 'mcp-library' } | null
 
 type AppState = {
   profiles: MonkProfile[]

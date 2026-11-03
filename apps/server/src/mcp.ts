@@ -10,7 +10,7 @@ import type { McpServer } from '@sangha/shared'
  * project's settings, so your user-scope servers (your enabled plugins' included) and the ones you added for this project (local scope,
  * keyed by its folder, which a worktree does not share) stay out unless you switch them on.
  */
-export type Catalog = Record<string, { scope: 'user' | 'local'; config: McpServerConfig }>
+export type Catalog = Record<string, { scope: 'user' | 'local' | 'library'; config: McpServerConfig }>
 
 type ClaudeJson = { mcpServers?: Record<string, McpServerConfig>; projects?: Record<string, { mcpServers?: Record<string, McpServerConfig> }> }
 
