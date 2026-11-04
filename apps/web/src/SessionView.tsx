@@ -296,13 +296,33 @@ function ReminderBox({ id, saved }: { id: string; saved: string | null }) {
   )
 }
 
-/** One MCP server row: name (claude.ai and plugin ones get their own small tag), status, and its on/off switch. */
-function McpRow({ server, busy, onToggle, onLogin }: { server: McpServer; busy: boolean; onToggle: () => void; onLogin: () => void }) {
+type McpLevel = 'sangha' | 'session'
+
+/**
+ * One MCP server row: name (claude.ai and plugin ones get their own small tag), status, and its switch: the one of
+ * all of Sangha, or this priest's own (marked, with a way back to the one of Sangha, when it differs).
+ */
+function McpRow({
+  server,
+  level,
+  busy,
+  onToggle,
+  onReset,
+  onLogin,
+}: {
+  server: McpServer
+  level: McpLevel
+  busy: boolean
+  onToggle: () => void
+  onReset: () => void
+  onLogin: () => void
+}) {
   const claudeAi = server.name.startsWith('claude.ai ')
   const plugin = /^plugin:[^:]+:(.+)$/.exec(server.name)?.[1]
   const sangha = server.scope === 'library'
   const name = claudeAi ? server.name.slice('claude.ai '.length) : (plugin ?? server.name)
-  const on = !mcpOff(server)
+  const on = level === 'sangha' ? server.global : (server.session ?? server.global)
+  const own = level === 'session' && server.session !== undefined
   return (
     <li className="mcp-row">
       <span className="mcp-name" title={`Portée : ${server.scope}`}>
@@ -310,6 +330,11 @@ function McpRow({ server, busy, onToggle, onLogin }: { server: McpServer; busy: 
         {claudeAi && <span className="mcp-tag">claude.ai</span>}
         {plugin && <span className="mcp-tag">plugin</span>}
         {sangha && <span className="mcp-tag">Sangha</span>}
+        {own && (
+          <button type="button" className="mcp-tag mcp-own" onClick={onReset} disabled={busy} title="Revenir au réglage de tout Sangha">
+            ce prêtre ↺
+          </button>
+        )}
       </span>
       {server.status === 'needs-auth' ? (
         // Opens your browser on its sign-in page; the row stays busy until you authorized there.
@@ -348,6 +373,7 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null) // name of the server mid-toggle, if any
+  const [level, setLevel] = useState<McpLevel>('sangha')
   const wrapRef = useRef<HTMLDivElement>(null)
   const dialog = useApp((st) => st.dialog)
   const set = useApp((st) => st.set)
@@ -400,11 +426,11 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
     return () => document.removeEventListener('mousedown', onDown)
   }, [open, onClose])
 
-  const toggle = (server: McpServer) => {
+  const toggle = (server: McpServer, enabled: boolean | null) => {
     setBusy(server.name)
     setError(null)
     api
-      .setMcpServer(sessionId, server.name, mcpOff(server))
+      .setMcpServer(sessionId, server.name, enabled, level)
       .then(setServers)
       .catch((e) => setError(e instanceof ApiError ? e.message : `Impossible de changer ${server.name}.`))
       .finally(() => setBusy(null))
@@ -445,17 +471,36 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
               </button>
             </div>
           </header>
+          <div className="mcp-level" role="radiogroup" aria-label="Réglage">
+            {(['sangha', 'session'] as const).map((l) => (
+              <button key={l} type="button" role="radio" aria-checked={level === l} className={level === l ? 'active' : ''} onClick={() => setLevel(l)}>
+                {l === 'sangha' ? 'Tout Sangha' : 'Ce prêtre'}
+              </button>
+            ))}
+          </div>
           {loading && !sorted && <p className="muted small">Je réveille le prêtre…</p>}
           {error && <p className="mcp-error">{error}</p>}
           {sorted && sorted.length === 0 && <p className="muted small">Aucun serveur MCP.</p>}
           {sorted && sorted.length > 0 && (
             <ul className="mcp-list">
               {sorted.map((server) => (
-                <McpRow key={server.name} server={server} busy={busy === server.name} onToggle={() => toggle(server)} onLogin={() => login(server)} />
+                <McpRow
+                  key={server.name}
+                  server={server}
+                  level={level}
+                  busy={busy === server.name}
+                  onToggle={() => toggle(server, level === 'sangha' ? !server.global : !(server.session ?? server.global))}
+                  onReset={() => toggle(server, null)}
+                  onLogin={() => login(server)}
+                />
               ))}
             </ul>
           )}
-          <p className="muted small mcp-footnote">Réglage gardé pour les prochains prêtres de ce projet.</p>
+          <p className="muted small mcp-footnote">
+            {level === 'sangha'
+              ? 'Pour tous les prêtres, sauf ceux qui ont leur propre réglage.'
+              : 'Pour ce prêtre seulement, par-dessus le réglage de tout Sangha.'}
+          </p>
         </div>
       )}
     </div>

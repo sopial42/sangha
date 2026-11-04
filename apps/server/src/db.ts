@@ -136,6 +136,16 @@ export class Store {
         enabled INTEGER NOT NULL,
         PRIMARY KEY (project, name)
       );
+      CREATE TABLE IF NOT EXISTS mcp_global (
+        name TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS session_mcp (
+        session_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        PRIMARY KEY (session_id, name)
+      );
       CREATE TABLE IF NOT EXISTS ignored_projects (
         path TEXT PRIMARY KEY
       );
@@ -152,6 +162,10 @@ export class Store {
     const have = new Set((this.db.prepare('PRAGMA table_info(sessions)').all() as { name: string }[]).map((c) => c.name))
     for (const [col, def] of Object.entries(SESSION_COLUMNS)) {
       if (!have.has(col)) this.db.exec(`ALTER TABLE sessions ADD COLUMN ${col} ${def}`)
+    }
+    // MCP switches used to be kept per project: the first time, one switched on in any project is on for all.
+    if (!this.db.prepare('SELECT 1 FROM mcp_global LIMIT 1').get()) {
+      this.db.exec('INSERT INTO mcp_global (name, enabled) SELECT name, MAX(enabled) FROM project_mcp GROUP BY name')
     }
   }
 
@@ -440,16 +454,29 @@ export class Store {
     else this.db.prepare('DELETE FROM reminders WHERE session_id = ?').run(id)
   }
 
-  /** MCP servers you switched on or off for a project's priests, by name. */
-  mcpPrefs(project: string): Record<string, boolean> {
-    const rows = this.db.prepare('SELECT name, enabled FROM project_mcp WHERE project = ?').all(project) as { name: string; enabled: number }[]
+  /** MCP servers you switched on or off for all of Sangha, by name. */
+  mcpPrefs(): Record<string, boolean> {
+    const rows = this.db.prepare('SELECT name, enabled FROM mcp_global').all() as { name: string; enabled: number }[]
     return Object.fromEntries(rows.map((r) => [r.name, !!r.enabled]))
   }
 
-  setMcpPref(project: string, name: string, enabled: boolean) {
-    this.db
-      .prepare('INSERT INTO project_mcp (project, name, enabled) VALUES (?, ?, ?) ON CONFLICT(project, name) DO UPDATE SET enabled = excluded.enabled')
-      .run(project, name, enabled ? 1 : 0)
+  setMcpPref(name: string, enabled: boolean) {
+    this.db.prepare('INSERT INTO mcp_global (name, enabled) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled').run(name, enabled ? 1 : 0)
+  }
+
+  /** A priest's own MCP switches, over the ones of all of Sangha. */
+  sessionMcpPrefs(id: string): Record<string, boolean> {
+    const rows = this.db.prepare('SELECT name, enabled FROM session_mcp WHERE session_id = ?').all(id) as { name: string; enabled: number }[]
+    return Object.fromEntries(rows.map((r) => [r.name, !!r.enabled]))
+  }
+
+  /** null: back to the switch of all of Sangha. */
+  setSessionMcpPref(id: string, name: string, enabled: boolean | null) {
+    if (enabled === null) this.db.prepare('DELETE FROM session_mcp WHERE session_id = ? AND name = ?').run(id, name)
+    else
+      this.db
+        .prepare('INSERT INTO session_mcp (session_id, name, enabled) VALUES (?, ?, ?) ON CONFLICT(session_id, name) DO UPDATE SET enabled = excluded.enabled')
+        .run(id, name, enabled ? 1 : 0)
   }
 
   /** Folders you took out of the monastery: auto-detection must not bring them back. */

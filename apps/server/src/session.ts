@@ -28,7 +28,7 @@ import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState,
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
 import { library } from './library'
-import { enabledExtras, mcpList, mcpLogin, mcpReady, mcpSettle, readCatalog, type Catalog } from './mcp'
+import { enabledExtras, globalSwitch, mcpList, mcpLogin, mcpReady, mcpSettle, readCatalog, type Catalog } from './mcp'
 import { readTailLines } from './files'
 import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
@@ -1104,24 +1104,37 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   /** A priest's MCP servers, waking his process to ask it. */
   async mcp(id: string): Promise<McpServer[]> {
     const row = this.priestRow(id)
-    return mcpList(await this.ensureLive(row).mcpStatus(), this.catalog(row))
+    return mcpList(await this.ensureLive(row).mcpStatus(), this.catalog(row), this.store.mcpPrefs(), this.store.sessionMcpPrefs(id))
   }
 
-  /** Switch a server for this priest and every live priest of his project; the next ones start with it. */
-  async toggleMcp(id: string, name: string, enabled: boolean): Promise<McpServer[]> {
+  /**
+   * Switch a server for all of Sangha (every live priest that does not override it, and the next ones), or for
+   * this priest only (`enabled` null: back to the switch of all of Sangha).
+   */
+  async toggleMcp(id: string, name: string, enabled: boolean | null, level: 'sangha' | 'session'): Promise<McpServer[]> {
     const row = this.priestRow(id)
-    this.store.setMcpPref(row.project, name, enabled)
-    const { extras } = this.mcpPlan(row)
-    const fromCatalog = name in this.catalog(row)
-    const apply = (s: LiveSession) => (fromCatalog ? s.setExtraMcp(extras) : s.toggleMcp(name, enabled))
+    if (level === 'sangha') this.store.setMcpPref(name, !!enabled)
+    else this.store.setSessionMcpPref(id, name, enabled)
     const own = this.ensureLive(row)
     for (const [otherId, s] of this.live) {
-      if (s !== own && this.store.getSession(otherId)?.project === row.project) void apply(s).catch(() => undefined)
+      const other = s === own ? row : this.store.getSession(otherId)
+      if (!other || otherId === BUDDHA_SESSION_ID || otherId.startsWith(EXTERNAL_PREFIX)) continue
+      if (s !== own && (level === 'session' || name in this.store.sessionMcpPrefs(otherId))) continue
+      const applied = this.applyMcp(other, s, name)
+      if (s === own)
+        await applied.catch((e) => {
+          throw new UserError(`MCP ${name} : ${e instanceof Error ? e.message : String(e)}`)
+        })
+      else void applied.catch(() => undefined)
     }
-    await apply(own).catch((e) => {
-      throw new UserError(`MCP ${name} : ${e instanceof Error ? e.message : String(e)}`)
-    })
     return this.mcp(id)
+  }
+
+  /** Brings a live priest in line with his switches: a catalog server is added or dropped, another one switched. */
+  private applyMcp(row: SessionRow, s: LiveSession, name: string): Promise<void> {
+    const catalog = this.catalog(row)
+    if (name in catalog) return s.setExtraMcp(this.mcpPlan(row).extras)
+    return s.toggleMcp(name, this.store.sessionMcpPrefs(row.id)[name] ?? globalSwitch(name, catalog, this.store.mcpPrefs()))
   }
 
   /** Sign in to a server that needs it (your browser opens), then reconnect it for the project's live priests. */
@@ -1171,7 +1184,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   /** At launch: servers to add from your Claude config, and switches to replay on the ones he loads himself. */
   private mcpPlan(row: SessionRow): { extras: Record<string, McpServerConfig>; toggles: Record<string, boolean> } {
     const catalog = this.catalog(row)
-    const prefs = this.store.mcpPrefs(row.project)
+    const prefs = { ...this.store.mcpPrefs(), ...this.store.sessionMcpPrefs(row.id) }
     return { extras: enabledExtras(catalog, prefs), toggles: Object.fromEntries(Object.entries(prefs).filter(([name]) => !(name in catalog))) }
   }
 

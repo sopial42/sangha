@@ -211,6 +211,10 @@ export type McpServer = {
   status: 'connected' | 'failed' | 'needs-auth' | 'pending' | 'disabled' | 'off'
   scope: string
   error?: string
+  /** Its switch for all of Sangha. */
+  global: boolean
+  /** This priest's own switch, when he overrides the one of all of Sangha. */
+  session?: boolean
 }
 
 /** A value a library server needs: secrets are never sent back, only whether they are set. */

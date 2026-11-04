@@ -30,21 +30,27 @@ describe('MCP servers a priest does not load himself', () => {
         { name: 'playwright', status: 'failed', scope: 'dynamic', error: 'boom' },
       ],
       catalogFrom(json, '/p/Robia'),
+      { 'claude.ai Gmail': false, playwright: true },
+      { playwright: false },
     )
     expect(list).toEqual([
-      { name: 'claude.ai Gmail', status: 'disabled', scope: 'claudeai' },
-      { name: 'playwright', status: 'failed', scope: 'local', error: 'boom' },
-      { name: 'atlassian', status: 'off', scope: 'user' },
+      { name: 'claude.ai Gmail', status: 'disabled', scope: 'claudeai', global: false },
+      { name: 'playwright', status: 'failed', scope: 'local', error: 'boom', global: true, session: false },
+      { name: 'atlassian', status: 'off', scope: 'user', global: false },
     ])
   })
 
-  it('switches are kept per project', () => {
+  it('switches are kept for all of Sangha, and a priest can override them', () => {
     const store = new Store(':memory:')
-    store.setMcpPref('Robia', 'playwright', true)
-    store.setMcpPref('Robia', 'claude.ai Gmail', false)
-    store.setMcpPref('Robia', 'playwright', false)
-    expect(store.mcpPrefs('Robia')).toEqual({ playwright: false, 'claude.ai Gmail': false })
-    expect(store.mcpPrefs('kiat')).toEqual({})
+    store.setMcpPref('playwright', true)
+    store.setMcpPref('claude.ai Gmail', false)
+    store.setMcpPref('playwright', false)
+    expect(store.mcpPrefs()).toEqual({ playwright: false, 'claude.ai Gmail': false })
+    store.setSessionMcpPref('s1', 'playwright', true)
+    expect(store.sessionMcpPrefs('s1')).toEqual({ playwright: true })
+    expect(store.sessionMcpPrefs('s2')).toEqual({})
+    store.setSessionMcpPref('s1', 'playwright', null)
+    expect(store.sessionMcpPrefs('s1')).toEqual({})
   })
 })
 

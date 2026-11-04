@@ -227,8 +227,8 @@ app.post('/api/sessions/:id/mcp/login', async (c) => {
 })
 app.get('/api/sessions/:id/mcp', async (c) => c.json(await sessions.mcp(c.req.param('id'))))
 app.post('/api/sessions/:id/mcp', async (c) => {
-  const { name, enabled } = await c.req.json<{ name: string; enabled: boolean }>()
-  return c.json(await sessions.toggleMcp(c.req.param('id'), name, !!enabled))
+  const { name, enabled, level } = await c.req.json<{ name: string; enabled: boolean | null; level?: 'sangha' | 'session' }>()
+  return c.json(await sessions.toggleMcp(c.req.param('id'), name, enabled === null ? null : !!enabled, level === 'session' ? 'session' : 'sangha'))
 })
 // Sangha's own MCP servers: on until the server restarts, their credentials kept in .env.
 app.get('/api/mcp-library', (c) => c.json(library.list()))
