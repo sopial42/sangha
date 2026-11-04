@@ -567,7 +567,7 @@ export function SessionView() {
 
   // Keeps "depuis Xmin" under running scripts fresh, without a tick running when there is nothing to age.
   const [now, setNow] = useState(() => Date.now())
-  const scriptCount = s?.scripts.length ?? 0
+  const scriptCount = s?.scripts?.length ?? 0
   useEffect(() => {
     if (!scriptCount) return
     const t = setInterval(() => setNow(Date.now()), 30_000)
@@ -578,7 +578,8 @@ export function SessionView() {
   const isBuddha = s.id === BUDDHA_SESSION_ID
   const title = agentTitle(s, projects)
   const novices = view.monkOrder.map((id) => view.monks[id]!).filter(Boolean)
-  const scripts = s.scripts
+  const scripts = s.scripts ?? [] // a server older than the web sends none
+  const envCount = Object.keys(s.env ?? {}).length // same: an older server sends no env
   const hasColumn = scripts.length > 0 || novices.length > 0
   const columnLabel =
     scripts.length > 0 && novices.length > 0
@@ -724,11 +725,11 @@ export function SessionView() {
               )}
               {!isBuddha && !s.external && (
                 <button
-                  className={`btn btn-ghost ${Object.keys(s.env).length ? 'active' : ''}`}
+                  className={`btn btn-ghost ${envCount ? 'active' : ''}`}
                   onClick={() => set({ dialog: { kind: 'env', id: s.id } })}
                   title="Ses variables d'environnement, propres à cette session"
                 >
-                  Env{Object.keys(s.env).length ? ` · ${Object.keys(s.env).length}` : ''}
+                  Env{envCount ? ` · ${envCount}` : ''}
                 </button>
               )}
               {!isBuddha && !s.external && (
