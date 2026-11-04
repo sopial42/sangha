@@ -181,6 +181,8 @@ export type SessionSummary = SessionInfo & {
   alive: boolean
   /** Incense snuffed out: he stays quiet (no glow, sound or notification) even when he waits for you. */
   silenced: boolean
+  /** Set aside in the lotus pond (the courtyard's waiting room): he sits stacked there instead of before his pavilion. */
+  lotus: boolean
   /** Your own note about him, shown under him in the courtyard (null when there is none). */
   note: string | null
   /** A standing instruction of yours (e.g. "sois concis"), recalled to him with each of your messages. */

@@ -803,6 +803,7 @@ export class Sessions {
       ...s,
       doing: s.status === 'working' ? (this.doingOf(s.id)?.text ?? null) : null,
       silenced: this.store.silencedIds().has(s.id),
+      lotus: this.store.lotusIds().has(s.id),
       note: this.store.notes().get(s.id) ?? null,
       reminder: this.store.reminders().get(s.id) ?? null,
       env: {},
@@ -1063,6 +1064,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     // The bill follows the work: the fresh session starts from what the old one had cost.
     this.store.setCarriedCost(row.id, this.costOf(s.id) ?? 0)
     if (this.store.silencedIds().has(s.id)) this.store.setSilenced(row.id, true)
+    if (this.store.lotusIds().has(s.id)) this.store.setLotus(row.id, true)
     const carriedNote = this.store.notes().get(s.id)
     if (carriedNote) this.store.setSessionNote(row.id, carriedNote)
     const carriedEnv = this.store.sessionEnv(s.id)
@@ -1093,6 +1095,13 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   silence(id: string, silent: boolean) {
     if (!this.summaryOf(id)) throw new UserError('session inconnue')
     this.store.setSilenced(id, silent)
+    this.broadcastSession(id)
+  }
+
+  /** Set a priest aside in the lotus pond, the courtyard's waiting room (or take him back out). */
+  lotus(id: string, lotus: boolean) {
+    if (!this.summaryOf(id)) throw new UserError('session inconnue')
+    this.store.setLotus(id, lotus)
     this.broadcastSession(id)
   }
 
@@ -1429,6 +1438,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       external: false,
       alive: false,
       silenced: this.store.silencedIds().has(row.id),
+      lotus: this.store.lotusIds().has(row.id),
       note: this.store.notes().get(row.id) ?? null,
       reminder: this.store.reminders().get(row.id) ?? null,
       goal: this.store.lastGoal(row.id),

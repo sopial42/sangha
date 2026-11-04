@@ -245,6 +245,8 @@ export function Priest({
   compact = false,
   moon,
   ackToken,
+  onDragStart,
+  beingDragged = false,
 }: {
   x: number
   y: number
@@ -269,6 +271,12 @@ export function Priest({
   /** Set right after you've closed his conversation: a brief acknowledgement glow. A fresh value
    *  (even the same priest closed twice in a row) always retriggers it. */
   ackToken?: number
+  /** Pointer-down on his body (not his incense, novices or note): Monastery decides whether it grows
+   *  into a drag toward the lotus pond, or stays a plain click. */
+  onDragStart?: (e: React.PointerEvent) => void
+  /** He's being dragged right now: a ghost carries him elsewhere, so he fades in place and stops
+   *  reacting to the pointer until the drag ends. */
+  beingDragged?: boolean
 }) {
   const { status } = session
   const working = status === 'working'
@@ -338,6 +346,9 @@ export function Priest({
           },
         }
       : { x: away, opacity: 0, transition: { duration: 2, ease: 'easeIn' as const } }
+  // Set aside in the lotus pond: no flight, no spin — the drag ghost already carried him there, so he
+  // just melts away from his seat, barely visible (he was already dimmed, mid-drag).
+  const exitToLotus = { opacity: 0, scale: 0.85, transition: { duration: 0.3 } }
 
   return (
     // Slides to his new seat when the rows reflow.
@@ -345,8 +356,9 @@ export function Priest({
       <g transform={`scale(${scale})`}>
       <motion.g
         initial={{ opacity: 0, scale: 0.7 }}
-        animate={{ opacity: status === 'interrupted' ? 0.55 : 1, scale: 1, x: 0 }}
-        exit={exitToNirvana}
+        animate={{ opacity: beingDragged ? 0.15 : status === 'interrupted' ? 0.55 : 1, scale: 1, x: 0 }}
+        exit={beingDragged ? exitToLotus : exitToNirvana}
+        style={beingDragged ? { pointerEvents: 'none' } : undefined}
       >
         <motion.g
           className="priest clickable"
@@ -357,6 +369,7 @@ export function Priest({
           aria-pressed={selected}
           onClick={onSelect}
           onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSelect()}
+          onPointerDown={onDragStart}
           onMouseEnter={() => setPeek(true)}
           onMouseLeave={() => setPeek(false)}
           onFocus={() => setPeek(true)}
@@ -458,8 +471,11 @@ export function Priest({
               </motion.g>
             )}
           </AnimatePresence>
-          {/* His own exit takes a few seconds; these leave fast so nothing lags behind, still sliding. */}
-          <motion.g exit={{ opacity: 0, transition: { duration: 0.4 } }}>
+          {/* His own exit takes a few seconds; these leave fast so nothing lags behind, still sliding.
+              `animate` spells out where it comes back to, not just where it leaves to: without it, a
+              priest pulled back from the lotus pond before his exit finished (a failed drop, reverted)
+              could get stuck invisible — present again, but frozen at the exit's opacity. */}
+          <motion.g animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.4 } }}>
             <text y="30" textAnchor="middle" className="scene-name">
               {title}
             </text>

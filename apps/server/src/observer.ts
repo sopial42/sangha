@@ -252,6 +252,7 @@ export class Observer {
             external: true,
             alive: !!proc,
             silenced: false, // decorated by Sessions
+            lotus: false, // decorated by Sessions
             note: null, // decorated by Sessions
             reminder: null,
             // Not tracked for an outside session: his `/goal` would go straight to his own terminal, never through

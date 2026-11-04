@@ -185,3 +185,58 @@ describe('Sessions goal and interrupt', () => {
     expect(sent.length).toBe(before)
   })
 })
+
+describe('Sessions lotus', () => {
+  let store: Store
+  let sessions: Sessions
+  let row: SessionRow
+
+  beforeEach(async () => {
+    mockQuery([])
+    store = new Store(':memory:')
+    sessions = new Sessions(store, fakeProjects, () => ({}), new QuotaReserveSetting(() => null, () => undefined))
+    row = {
+      id: 'p1',
+      project: 'proj',
+      agent: 'claude',
+      title: 't',
+      createdAt: Date.now(),
+      claudeSessionId: null,
+      branch: null,
+      worktree: '/tmp/sangha-test-worktree',
+      baseSha: null,
+      archivedAt: null,
+      lastSeenSeq: 0,
+    }
+    store.createSession(row)
+    sessions.send(row.id, 'hello')
+    await tick()
+  })
+
+  afterEach(() => {
+    sessions.closeAll()
+    vi.clearAllMocks()
+  })
+
+  it('starts out of the lotus pond', () => {
+    expect(sessions.summaryOf(row.id)?.lotus).toBe(false)
+  })
+
+  it('sets a priest aside in the lotus pond and tells every open tab', () => {
+    const events: unknown[] = []
+    sessions.subscribeAll((e) => events.push(e))
+    sessions.lotus(row.id, true)
+    expect(sessions.summaryOf(row.id)?.lotus).toBe(true)
+    expect(events).toContainEqual({ kind: 'session', session: expect.objectContaining({ id: row.id, lotus: true }) })
+  })
+
+  it('takes him back out of the lotus pond', () => {
+    sessions.lotus(row.id, true)
+    sessions.lotus(row.id, false)
+    expect(sessions.summaryOf(row.id)?.lotus).toBe(false)
+  })
+
+  it('refuses to set aside an unknown session', () => {
+    expect(() => sessions.lotus('nope', true)).toThrow(UserError)
+  })
+})

@@ -743,6 +743,19 @@ export function SessionView() {
                     {s.shepherd && s.shepherd.state !== 'refused' ? 'Reprendre à Bouddha' : 'Confier à Bouddha'}
                   </button>
                 )}
+                {!isBuddha && (
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => void api.lotus(s.id, !s.lotus)}
+                    title={
+                      s.lotus
+                        ? 'Le faire ressortir du bassin aux lotus : il reprend sa place devant son pavillon'
+                        : 'Le mettre de côté dans le bassin aux lotus, au calme, hors de son pavillon'
+                    }
+                  >
+                    {s.lotus ? 'Sortir du lotus' : 'Mettre au lotus'}
+                  </button>
+                )}
                 {s.status === 'interrupted' && (
                   <button className="btn btn-primary" onClick={() => void api.resume(s.id)}>
                     Reprendre

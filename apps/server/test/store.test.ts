@@ -80,6 +80,15 @@ describe('Store', () => {
     expect(s.notes().get('a')).toBeUndefined()
   })
 
+  it('keeps who is set aside in the lotus pond, cleared by taking him out', () => {
+    const s = new Store(':memory:')
+    expect(s.lotusIds().has('a')).toBe(false)
+    s.setLotus('a', true)
+    expect(s.lotusIds().has('a')).toBe(true)
+    s.setLotus('a', false)
+    expect(s.lotusIds().has('a')).toBe(false)
+  })
+
   it('finds novices that never reported back', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))

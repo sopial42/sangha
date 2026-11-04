@@ -104,6 +104,9 @@ export class Store {
       CREATE TABLE IF NOT EXISTS silenced (
         session_id TEXT PRIMARY KEY
       );
+      CREATE TABLE IF NOT EXISTS lotus (
+        session_id TEXT PRIMARY KEY
+      );
       CREATE TABLE IF NOT EXISTS notes (
         session_id TEXT PRIMARY KEY,
         note TEXT NOT NULL
@@ -405,6 +408,16 @@ export class Store {
   setSilenced(id: string, silent: boolean) {
     if (silent) this.db.prepare('INSERT OR IGNORE INTO silenced (session_id) VALUES (?)').run(id)
     else this.db.prepare('DELETE FROM silenced WHERE session_id = ?').run(id)
+  }
+
+  /** Priests set aside in the lotus pond, the courtyard's waiting room (Sangha priests and outside sessions alike). */
+  lotusIds(): Set<string> {
+    return new Set((this.db.prepare('SELECT session_id AS id FROM lotus').all() as { id: string }[]).map((r) => r.id))
+  }
+
+  setLotus(id: string, lotus: boolean) {
+    if (lotus) this.db.prepare('INSERT OR IGNORE INTO lotus (session_id) VALUES (?)').run(id)
+    else this.db.prepare('DELETE FROM lotus WHERE session_id = ?').run(id)
   }
 
   /** Free-text notes left on priests, by session id, in a single query for the whole courtyard. */

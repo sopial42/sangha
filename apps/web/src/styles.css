@@ -739,6 +739,9 @@ input[type='range']:disabled::-moz-range-thumb {
   background: var(--panel);
   overflow: hidden;
   box-shadow: 0 20px 60px #0008;
+  /* The header lays out by the panel's own width (see @container sv at the end), not the window's:
+     the panel can be narrow on a wide screen too. */
+  container: sv / inline-size;
 }
 
 .sv-head {
@@ -1979,6 +1982,63 @@ input[type='range']:disabled::-moz-range-thumb {
   fill: #f3e9d8;
 }
 
+/* The lotus pond, the courtyard's waiting room: a calm cluster of priests set aside. */
+.lotus-pond.clickable,
+.lotus-row.clickable,
+.lotus-sortir.clickable {
+  cursor: pointer;
+  outline: none;
+}
+
+.lotus-extra {
+  font: 700 13px var(--sans);
+  fill: #e8dccb;
+  paint-order: stroke;
+  stroke: #0009;
+  stroke-width: 3px;
+}
+
+.lotus-panel-title {
+  font: 700 17px var(--serif);
+  fill: var(--ink);
+  letter-spacing: 0.02em;
+}
+
+.lotus-row-name {
+  font: 700 14px var(--serif);
+  fill: var(--ink);
+}
+
+.lotus-row-meta {
+  font: 500 11.5px var(--sans);
+  fill: var(--muted);
+}
+
+.lotus-row.clickable:hover rect,
+.lotus-row.clickable:focus-visible rect {
+  fill: #2a2135aa;
+}
+
+.lotus-row.clickable:hover .lotus-row-name,
+.lotus-row.clickable:focus-visible .lotus-row-name {
+  fill: var(--gold);
+}
+
+.lotus-sortir-text {
+  font: 600 11px var(--sans);
+  fill: #e0b25add;
+}
+
+.lotus-sortir.clickable:hover rect,
+.lotus-sortir.clickable:focus-visible rect {
+  stroke: var(--gold);
+}
+
+.lotus-sortir.clickable:hover .lotus-sortir-text,
+.lotus-sortir.clickable:focus-visible .lotus-sortir-text {
+  fill: var(--gold);
+}
+
 .add-project {
   cursor: pointer;
   outline: none;
@@ -2148,6 +2208,12 @@ input[type='range']:disabled::-moz-range-thumb {
 
 .goal-chip {
   color: var(--jade);
+  /* One line, however long the goal: its full text is in the title. Block-level so the ellipsis works. */
+  display: inline-block;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Cleared (e.g. by Interrompre) but still shown so it can be relaunched: there, quietly, not running. */
@@ -2188,6 +2254,7 @@ input[type='range']:disabled::-moz-range-thumb {
   .priest.clickable,
   .pavilion.clickable,
   .add-project.clickable,
+  .lotus-pond.clickable,
   .buddha.clickable .hover-grow,
   .novice.clickable .hover-grow,
   .pr-chip.clickable .hover-grow {
@@ -2202,6 +2269,8 @@ input[type='range']:disabled::-moz-range-thumb {
   .pavilion.clickable:focus-visible,
   .add-project.clickable:hover,
   .add-project.clickable:focus-visible,
+  .lotus-pond.clickable:hover,
+  .lotus-pond.clickable:focus-visible,
   .buddha.clickable:hover .hover-grow,
   .buddha.clickable:focus-visible .hover-grow,
   .novice.clickable:hover .hover-grow,
@@ -3326,4 +3395,83 @@ a.icon-btn.sv-newtab {
 
 .md-pre:hover .copy-btn {
   opacity: 1;
+}
+
+/* A panel too narrow for his details and the actions side by side: the actions drop to their own
+   full-width line under his details (which keep the whole width), the header gets tighter, so the
+   conversation keeps most of the height. Last in the file: it overrides the narrow-window rules. */
+@container sv (max-width: 1150px) {
+  .sv-head {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    row-gap: 8px;
+    padding: 10px 16px;
+  }
+
+  .sv-nav {
+    grid-row: 1;
+    grid-column: 3;
+    align-self: start;
+  }
+
+  .sv-act-col {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+
+  .sv-reminder {
+    flex: 1 1 220px;
+  }
+
+  .sv-actions,
+  .sv-act-group {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+  }
+
+  .sv-act-settings {
+    padding: 0 0 0 10px;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+
+  .sv-act-danger {
+    margin-left: 0;
+    padding-top: 0;
+  }
+
+  .sv-id h2 {
+    font-size: 20px;
+  }
+
+  .sv-tags {
+    margin-top: 4px;
+  }
+}
+
+/* Phone-wide panel: his tags and the action buttons each hold to one line that scrolls sideways,
+   instead of stacking rows of buttons above the conversation. */
+@container sv (max-width: 640px) {
+  .sv-tags,
+  .sv-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .sv-tags > *,
+  .sv-act-group {
+    flex: none;
+  }
+
+  .sv-act-group {
+    flex-wrap: nowrap;
+  }
+
+  .sv-actions .btn {
+    white-space: nowrap;
+  }
 }

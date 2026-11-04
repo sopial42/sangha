@@ -182,6 +182,12 @@ app.post('/api/sessions/:id/silence', async (c) => {
   sessions.silence(c.req.param('id'), !!silent)
   return c.body(null, 204)
 })
+// Set a priest aside in the courtyard's lotus pond, or take him back out.
+app.post('/api/sessions/:id/lotus', async (c) => {
+  const { lotus } = await c.req.json<{ lotus: boolean }>()
+  sessions.lotus(c.req.param('id'), !!lotus)
+  return c.body(null, 204)
+})
 app.post('/api/sessions/:id/queued/:mid', async (c) => {
   const { text } = await c.req.json<{ text: string }>()
   sessions.editQueued(c.req.param('id'), c.req.param('mid'), text ?? '')

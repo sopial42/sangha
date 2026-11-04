@@ -55,6 +55,8 @@ export const api = {
   /** His `/goal`: he keeps going, turn after turn, until it is met (null clears it, immediately). */
   goal: (id: string, text: string | null) => json<void>(`/api/sessions/${id}/goal`, post({ text })),
   silence: (id: string, silent: boolean) => json<void>(`/api/sessions/${id}/silence`, post({ silent })),
+  /** Set him aside in the lotus pond (the courtyard's waiting room), or bring him back out. */
+  lotus: (id: string, lotus: boolean) => json<void>(`/api/sessions/${id}/lotus`, post({ lotus })),
   /** Your own note about him, shown under him in the courtyard (null clears it). */
   note: (id: string, note: string | null) => json<void>(`/api/sessions/${id}/note`, post({ note })),
   /** Your messages still waiting for his turn to end: change one, take it back, or send it right away. */
