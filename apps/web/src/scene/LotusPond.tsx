@@ -134,8 +134,10 @@ export function PondClosed({
       ? 'Bassin aux lotus : vide pour l’instant. Glisse-y un prêtre, ou ouvre-le pour voir'
       : `Bassin aux lotus : ${count} prêtre${count > 1 ? 's' : ''} de côté${needsAttention ? ', dont un t’attend' : ''}. Ouvrir`
   return (
+    // Placed by an outer group: the hover grow (CSS `transform: scale`) on the clickable one would
+    // otherwise replace its translate, throwing the pond to the scene's origin, off the pointer, back…
+    <g transform={`translate(${x} ${y})`}>
     <g
-      transform={`translate(${x} ${y})`}
       className="lotus-pond clickable"
       role="button"
       tabIndex={0}
@@ -198,6 +200,7 @@ export function PondClosed({
         </text>
       )}
       {needsAttention && <circle cx="66" cy={POND_CENTER_Y - 48} r="6" fill="#ffb347" stroke="#2a2019" strokeWidth="1.5" />}
+    </g>
     </g>
   )
 }
