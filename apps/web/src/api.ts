@@ -1,4 +1,4 @@
-import type { CostReport, Envelope, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, LibraryMcp, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, SessionSummary } from '@sangha/shared'
+import type { CostReport, Envelope, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, LibraryMcp, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, QuotaReserve, QuotaReserveState, SessionSummary } from '@sangha/shared'
 import { yeet } from './notify'
 import { emptyView, useApp } from './store'
 
@@ -28,6 +28,9 @@ export const api = {
   /** Who priests commit as (null: not set yet, and git stays closed to them). */
   gitIdentity: () => json<GitIdentity | null>('/api/git-identity'),
   saveGitIdentity: (v: GitIdentity) => json<GitIdentity>('/api/git-identity', { method: 'PUT', body: JSON.stringify(v) }),
+  /** The share of the plan quota kept untouched, and whether it currently bites. */
+  quotaReserve: () => json<QuotaReserveState>('/api/quota-reserve'),
+  saveQuotaReserve: (v: Partial<QuotaReserve>) => json<QuotaReserveState>('/api/quota-reserve', { method: 'PUT', body: JSON.stringify(v) }),
   monks: () => json<MonkProfile[]>('/api/monks'),
   models: () => json<ModelChoice[]>('/api/models'),
   /** Endpoints other than Claude (address and credentials set once) and the models they offer. */
@@ -97,7 +100,7 @@ export function openMonastery(onError: () => void) {
     const { set, sessions, nirvanaTick, moonArrivals, sessionsVersion } = useApp.getState()
     switch (ev.kind) {
       case 'snapshot':
-        set({ sessions: Object.fromEntries(ev.sessions.map((s) => [s.id, s])), ...(ev.quota ? { quota: ev.quota } : {}) })
+        set({ sessions: Object.fromEntries(ev.sessions.map((s) => [s.id, s])), ...(ev.quota ? { quota: ev.quota } : {}), reserve: ev.reserve })
         break
       case 'session':
         // Also what the cost chip watches (throttled) to keep its total roughly current.
@@ -114,6 +117,9 @@ export function openMonastery(onError: () => void) {
       }
       case 'quota':
         set({ quota: ev.quota })
+        break
+      case 'reserve':
+        set({ reserve: ev.reserve })
         break
       case 'nirvana':
         // The moon's history changed (arrival, summary written, reincarnation): bump a counter the

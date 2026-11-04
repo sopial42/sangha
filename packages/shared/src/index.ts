@@ -16,6 +16,16 @@ export type Quota = {
   sevenDay: QuotaWindow | null
 }
 
+/**
+ * The share of the plan quota Sangha keeps untouched: once either window (5 h, week) passes 100 - pct %,
+ * priests are held (running turns interrupted, messages queued, tools refused) until it starts afresh,
+ * the reserve is lowered, or switched off.
+ */
+export type QuotaReserve = { enabled: boolean; pct: number }
+
+/** The reserve as set, plus whether it bites right now and which window makes it bite. */
+export type QuotaReserveState = QuotaReserve & { reached: boolean; window: 'fiveHour' | 'sevenDay' | null }
+
 export type MonkStatus = 'working' | 'completed' | 'failed' | 'stopped'
 
 /**
@@ -272,10 +282,12 @@ export type NirvanaEntry = {
 
 /** Monastery-wide stream: every session's state, plus the plan quota. */
 export type GlobalEvent =
-  | { kind: 'snapshot'; sessions: SessionSummary[]; quota: Quota | null }
+  | { kind: 'snapshot'; sessions: SessionSummary[]; quota: Quota | null; reserve: QuotaReserveState }
   | { kind: 'session'; session: SessionSummary }
   | { kind: 'removed'; id: string }
   | { kind: 'quota'; quota: Quota }
+  /** The quota reserve changed (set by you, or reached / released as the quota moves). */
+  | { kind: 'reserve'; reserve: QuotaReserveState }
   /** The moon's history changed (a priest arrived, a summary was written, one was reincarnated): reload it. */
   | { kind: 'nirvana' }
   /** Projects were added or removed: reload them. */

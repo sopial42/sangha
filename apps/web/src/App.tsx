@@ -32,6 +32,7 @@ export function App() {
       .catch(() => setOffline(true))
     api.models().then((models) => set({ models }), () => undefined)
     api.gitIdentity().then((gitIdentity) => set({ gitIdentity }), () => undefined)
+    api.quotaReserve().then((reserve) => set({ reserve }), () => undefined)
     // Warms the chip up before the stream's first 'host' event lands; 503 (no sample yet) is ignored.
     api.host().then((host) => set({ host }), () => undefined)
     const close = openMonastery(() => setOffline(true))

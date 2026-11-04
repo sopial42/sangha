@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Envelope, HostReport, ModelChoice, MonkProfile, MonkStatus, ProjectInfo, Quota, SessionSummary, Usage, GitIdentity } from '@sangha/shared'
+import type { Envelope, HostReport, ModelChoice, MonkProfile, MonkStatus, ProjectInfo, Quota, QuotaReserveState, SessionSummary, Usage, GitIdentity } from '@sangha/shared'
 
 export type LogItem = { at: number } & ({ kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string })
 
@@ -168,6 +168,8 @@ type AppState = {
   /** Every priest (and Buddha), kept live by the monastery-wide stream. */
   sessions: Record<string, SessionSummary>
   quota: Quota | null
+  /** The share of the plan quota kept untouched, fed by the snapshot and every `reserve` event; null until the first lands. */
+  reserve: QuotaReserveState | null
   /** The machine Sangha runs on, sampled every few seconds; null until the first sample lands. */
   host: HostReport | null
   /** Bumped on every `{kind:'nirvana'}` global event: its open dialog refetches (arrivals, summaries, reincarnations). */
@@ -275,6 +277,7 @@ export const useApp = create<AppState>((set) => ({
   projects: [],
   sessions: {},
   quota: null,
+  reserve: null,
   host: null,
   nirvanaTick: 0,
   moonArrivals: 0,

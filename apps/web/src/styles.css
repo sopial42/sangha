@@ -335,9 +335,29 @@ select {
 /* quota */
 .quota {
   margin-left: auto;
+  position: relative;
+}
+
+/* The whole widget is the button that opens the reserve panel: flex layout moved here from .quota,
+   button chrome reset so it still reads as plain gauges until hovered. */
+.quota-trigger {
   display: flex;
   align-items: center;
   gap: 20px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.quota-trigger:hover,
+.quota-trigger:focus-visible,
+.quota-trigger.active {
+  border-color: var(--line);
+  background: #ffffff08;
 }
 
 .quota-gauge {
@@ -374,6 +394,7 @@ select {
 }
 
 .quota-bar {
+  position: relative;
   height: 7px;
   border-radius: 4px;
   background: #3b2b22;
@@ -387,6 +408,28 @@ select {
   transition: width 0.6s ease;
 }
 
+/* The top slice of the bar held back by the reserve: a faint diagonal hatch over whatever sits under it,
+   filled or not, so eating into it reads as "into the reserve" rather than just "more used". */
+.quota-reserve-zone {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(135deg, #00000000 0 3px, #00000055 3px 6px);
+  pointer-events: none;
+}
+
+.quota-reserve-line {
+  position: absolute;
+  top: -1px;
+  bottom: -1px;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 .quota-reset {
   font-size: 11.5px;
   color: var(--muted);
@@ -397,6 +440,96 @@ select {
   color: var(--vermilion);
   font-weight: 600;
   font-size: 13px;
+}
+
+/* A softer, self-imposed cap hit ahead of the plan's own: same weight as .quota-stop, gold instead of
+   vermilion so the two are never mistaken for one another. */
+.quota-reserve-stop {
+  color: var(--gold);
+}
+
+/* Reserve panel: toggle, slider and the line it explains, opened by clicking the gauges. */
+.quota-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px #0008;
+}
+
+.quota-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.quota-popover-head h4 {
+  margin: 0;
+}
+
+.quota-popover-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quota-popover-slider input[type='range'] {
+  flex: 1;
+}
+
+.quota-popover-pct {
+  margin: 0;
+  font: 600 15px var(--sans);
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: #3b2b22;
+  outline-offset: 4px;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--gold);
+  cursor: pointer;
+  border: 2px solid var(--panel-2);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--gold);
+  cursor: pointer;
+  border: 0;
+}
+
+input[type='range']:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input[type='range']:disabled::-webkit-slider-thumb,
+input[type='range']:disabled::-moz-range-thumb {
+  cursor: not-allowed;
 }
 
 /* health dot (see HostPanel) */
@@ -2616,7 +2749,14 @@ select {
 
   .quota {
     margin-left: auto;
+  }
+
+  .quota-trigger {
     gap: 10px;
+  }
+
+  .quota-popover {
+    width: min(300px, calc(100vw - 24px));
   }
 
   .quota-gauge {

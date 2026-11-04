@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { query, type McpServerConfig, type McpServerStatus, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
+import { query, type HookCallback, type McpServerConfig, type McpServerStatus, type Options, type Query, type SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { GitIdentitySetting } from './gitIdentity'
+import { reserveMessage, reserveState, type QuotaReserveSetting } from './quotaReserve'
 import { checkSessionEnv } from './sessionEnv'
 import {
   BUDDHA_SESSION_ID,
@@ -14,6 +15,8 @@ import {
   type NirvanaEntry,
   type NoviceSummary,
   type Quota,
+  type QuotaReserve,
+  type QuotaReserveState,
   type SessionRecap,
   type SessionStatus,
   type SessionSummary,
@@ -41,6 +44,9 @@ import { isHandoff, nextDelay, parseAnswer, readDecision, renewalMessage, shephe
 
 type Listener = (env: Envelope) => void
 type GlobalListener = (ev: GlobalEvent) => void
+
+/** Now, in epoch seconds (quota windows' `resetsAt` is seconds, everything else here is ms). */
+const nowSec = () => Math.floor(Date.now() / 1000)
 
 /** Local plugins (superpowers, ui-ux-pro-max, frontend-design) fetched by `make plugins`. */
 function localPlugins() {
@@ -300,6 +306,10 @@ export class Sessions {
   private meter = new CostMeter()
   private renewing = false
   quota: Quota | null = null
+  /** Whether the quota reserve bites right now, and which window does (see `quotaReserve.ts`). */
+  reserve: QuotaReserveState
+  // Fires at the binding window's resetsAt (+ a few seconds): no quota event arrives while priests stay idle.
+  private reserveTimer: NodeJS.Timeout | null = null
   /** Endpoints other than Claude a priest can think with, and the models they offer. */
   readonly providers: Providers
   // Pull requests of each session's folder, cached and refreshed in the background (see startPullsLoop).
@@ -314,10 +324,13 @@ export class Sessions {
     private store: Store,
     private projects: Projects,
     private buddhaOptions: (sessions: Sessions) => Partial<Options>,
+    private quotaReserveSetting: QuotaReserveSetting,
     private git?: GitIdentitySetting,
   ) {
     this.providers = new Providers(store)
     this.quota = store.latestQuota()
+    this.reserve = reserveState(this.quotaReserveSetting.get(), this.quota, nowSec())
+    this.scheduleReserveTimer()
     // No session process survives a server restart: novices still marked as working died with it.
     for (const row of store.listSessions()) {
       for (const monkId of store.danglingNovices(row.id)) {
@@ -409,6 +422,8 @@ export class Sessions {
     if (!s) throw new UserError('session introuvable')
     const proc = this.observer?.procOf(id)
     if (proc) {
+      // Queuing is Sangha's own priests' business; an outside session has no such queue, so he is simply refused.
+      if (this.blocked()) throw new UserError(reserveMessage(this.reserve, this.quota))
       const r = await relayToPeer({ cwd: proc.cwd, startedAt: s.createdAt }, this.withReminder(id, text))
       if (!r.ok) throw new UserError(`message non transmis : ${r.error}`)
       return { via: 'peer', to: r.to }
@@ -437,8 +452,8 @@ export class Sessions {
     if (id.startsWith(EXTERNAL_PREFIX)) throw new UserError('utilise reply() pour une session externe')
     const row = this.store.getSession(id)
     if (!row || row.archivedAt) throw new UserError('session inconnue')
-    // He is in the middle of a turn: the message waits, editable, and leaves once the turn ends.
-    if (this.live.get(id)?.turning) {
+    // He is in the middle of a turn, or the quota reserve holds him: the message waits, editable.
+    if (this.reserve.reached || this.live.get(id)?.turning) {
       this.store.addQueued(id, { id: crypto.randomUUID(), text, at: Date.now() })
       this.broadcastSession(id)
       return
@@ -451,10 +466,10 @@ export class Sessions {
     this.ensureLive(row).send(this.withReminder(row.id, text))
   }
 
-  /** His turn ended (or his process did): what you wrote meanwhile leaves, as one message. */
+  /** His turn ended (or his process did): what you wrote meanwhile leaves, as one message. Held while the reserve bites. */
   private flushQueued(id: string) {
     const row = this.store.getSession(id)
-    if (!row || row.archivedAt || this.live.get(id)?.turning) return
+    if (!row || row.archivedAt || this.reserve.reached || this.live.get(id)?.turning) return
     const queued = this.store.takeQueued(id)
     if (queued.length) this.deliver(row, queued.map((m) => m.text).join('\n\n'))
   }
@@ -470,8 +485,9 @@ export class Sessions {
     this.broadcastSession(id)
   }
 
-  /** Sends a waiting message right away: he reads it in the middle of his turn. */
+  /** Sends a waiting message right away: he reads it in the middle of his turn. Refused while the reserve bites. */
   sendQueuedNow(id: string, messageId: string) {
+    if (this.reserve.reached) throw new UserError(reserveMessage(this.reserve, this.quota))
     const row = this.store.getSession(id)
     const [m] = this.store.takeQueued(id, [messageId])
     if (!row || !m) throw new UserError('déjà parti : il l’a reçu')
@@ -485,6 +501,61 @@ export class Sessions {
 
   async interrupt(id: string) {
     await this.live.get(id)?.interrupt()
+  }
+
+  // ——— Quota reserve: holding every priest once the plan quota approaches the share you asked to keep untouched ———
+
+  /** Whether the reserve holds every priest right now: the single check every quota-consuming entry point makes. */
+  blocked(): boolean {
+    return this.reserve.reached
+  }
+
+  /** Your change to the reserve: validated, persisted, and re-evaluated right away. */
+  setReserve(patch: Partial<QuotaReserve>): QuotaReserveState {
+    try {
+      this.quotaReserveSetting.set(patch)
+    } catch (e) {
+      throw new UserError(e instanceof Error ? e.message : String(e))
+    }
+    this.reevaluateReserve()
+    return this.reserve
+  }
+
+  /** Re-checks the reserve against the latest setting and quota; reacts and broadcasts on any change. */
+  private reevaluateReserve() {
+    const next = reserveState(this.quotaReserveSetting.get(), this.quota, nowSec())
+    const wasReached = this.reserve.reached
+    const changed = next.reached !== this.reserve.reached || next.window !== this.reserve.window || next.enabled !== this.reserve.enabled || next.pct !== this.reserve.pct
+    this.reserve = next
+    if (changed) for (const fn of this.globalListeners) fn({ kind: 'reserve', reserve: next })
+    if (next.reached && !wasReached) this.onReserveReached()
+    else if (!next.reached && wasReached) this.onReserveReleased()
+    this.scheduleReserveTimer()
+  }
+
+  /** The transition into the reserve: every busy priest is interrupted once, with a clear word in his own session. */
+  private onReserveReached() {
+    const message = reserveMessage(this.reserve, this.quota)
+    for (const [id, live] of this.live) {
+      if (!live.busy) continue
+      void live.interrupt()
+      this.emit(id, { t: 'error', message })
+    }
+  }
+
+  /** Leaving the reserve: your messages held meanwhile (queued by `send`, or stuck in `flushQueued`) finally go out. */
+  private onReserveReleased() {
+    for (const row of this.store.listSessions()) this.flushQueued(row.id)
+  }
+
+  /** No quota event arrives while priests stay idle: a timer re-checks right after the binding window should reset. */
+  private scheduleReserveTimer() {
+    if (this.reserveTimer) clearTimeout(this.reserveTimer)
+    this.reserveTimer = null
+    const resetsAt = this.reserve.window ? (this.quota?.[this.reserve.window]?.resetsAt ?? null) : null
+    if (!resetsAt) return
+    const ms = resetsAt * 1000 - Date.now() + 5_000
+    if (ms > 0) this.reserveTimer = setTimeout(() => this.reevaluateReserve(), ms)
   }
 
   seen(id: string) {
@@ -789,7 +860,8 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   }
 
   private async tickRenewals() {
-    if (this.renewing) return
+    // Renewal and shepherd questions both cost quota: none of that while the reserve holds everyone.
+    if (this.renewing || this.blocked()) return
     this.renewing = true
     try {
       for (const s of this.summaries()) {
@@ -1152,7 +1224,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   }
 
   private async refreshDoings(every: number) {
-    if (this.doingBusy) return
+    if (this.doingBusy || this.blocked()) return
     this.doingBusy = true
     try {
       for (const s of this.summaries()) {
@@ -1205,6 +1277,8 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     const key = file ? String(statSync(file).mtimeMs) : `idle:${this.store.lastIdleSeq(id)}`
     const stored = this.store.note<Progress>(id, 'progress')
     if (!fresh && stored && (stored.key === key || (summary?.status === 'working' && Date.now() - stored.at < 10 * 60_000))) return Promise.resolve(stored.value)
+    // The reserve holds everyone: no fresh call, just what was already known.
+    if (this.blocked()) return Promise.resolve(stored?.value ?? null)
     const inflight = this.progressCache.get(id)
     if (inflight && (inflight.key === key || fresh)) return inflight.value
     const events = this.history(id)
@@ -1341,6 +1415,15 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     return { ...o, env: { ...env, ...this.git.env() }, hooks: { ...o.hooks, PreToolUse: [...(o.hooks?.PreToolUse ?? []), ...this.git.hooks().PreToolUse] } }
   }
 
+  /** Refuses every tool (his own and his novices') while the quota reserve holds him. */
+  private withReserve(o: Partial<Options>): Partial<Options> {
+    const deny: HookCallback = async () => {
+      if (!this.reserve.reached) return {}
+      return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reserveMessage(this.reserve, this.quota) } }
+    }
+    return { ...o, hooks: { ...o.hooks, PreToolUse: [...(o.hooks?.PreToolUse ?? []), { hooks: [deny] }] } }
+  }
+
   /** Sets his own environment variables; they take effect when his process starts (now, if `restart`). */
   async setEnv(id: string, input: unknown, restart: boolean) {
     this.priestRow(id)
@@ -1371,7 +1454,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       s = new LiveSession(
         row,
         cwd,
-        this.withGit(isBuddha ? this.buddhaOptions(this) : { ...priestOptions(row.agent), ...this.engineOptions(row), mcpServers: mcp!.extras }, row.id),
+        this.withReserve(this.withGit(isBuddha ? this.buddhaOptions(this) : { ...priestOptions(row.agent), ...this.engineOptions(row), mcpServers: mcp!.extras }, row.id)),
         (ev) => this.emit(row.id, ev),
         () => {
           if (this.live.get(row.id) === s) this.live.delete(row.id)
@@ -1393,6 +1476,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     if (ev.t === 'quota') {
       this.quota = ev.quota
       for (const fn of this.globalListeners) fn({ kind: 'quota', quota: ev.quota })
+      this.reevaluateReserve()
     }
     if (SUMMARY_EVENTS.has(ev.t)) this.broadcastSession(id)
     if (ev.t === 'turn.done') this.flushQueued(id)
@@ -1412,6 +1496,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
 
   /** When a priest stops, a small model writes what he did and what is left. Dropped if he resumed meanwhile. */
   private async writeRecap(id: string, idleSeq: number) {
+    if (this.blocked()) return
     const events = this.store.events(id).map((e) => e.ev)
     const lines = recentWindow(events).flatMap((ev) => {
       if (ev.t === 'user.message') return [`UTILISATEUR : ${ev.text.slice(0, 1500)}`]

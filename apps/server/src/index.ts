@@ -4,7 +4,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE, type SSEStreamingApi } from 'hono/streaming'
-import type { Envelope, GitIdentity, GlobalEvent, HostChatTurn, HostSuggestion, Provider } from '@sangha/shared'
+import type { Envelope, GitIdentity, GlobalEvent, HostChatTurn, HostSuggestion, Provider, QuotaReserve } from '@sangha/shared'
 import { buddhaOptions } from './buddha'
 import { assertQuotaOnly, config } from './config'
 import { probeModels } from './providers'
@@ -14,6 +14,7 @@ import { GitIdentitySetting, validIdentity } from './gitIdentity'
 import { HostMonitor } from './host'
 import { library } from './library'
 import { askAboutSuggestion } from './hostChat'
+import { QuotaReserveSetting } from './quotaReserve'
 import { attachLatestScreenshot } from './screenshot'
 import { profiles } from './monks'
 import { readNewLines, readTailLines } from './files'
@@ -28,7 +29,9 @@ const store = new Store(config.dbPath)
 const projects = new Projects(store)
 // Next to the database: the git config priests commit with (see gitIdentity).
 const gitIdentity = new GitIdentitySetting(dirname(config.dbPath), () => store.setting<GitIdentity>('gitIdentity'), (v) => store.setSetting('gitIdentity', v))
-const sessions = new Sessions(store, projects, (s) => buddhaOptions(s, projects), gitIdentity)
+// The share of the plan quota you ask Sangha to always keep unused (see quotaReserve).
+const quotaReserve = new QuotaReserveSetting(() => store.setting<QuotaReserve>('quotaReserve'), (v) => store.setSetting('quotaReserve', v))
+const sessions = new Sessions(store, projects, (s) => buddhaOptions(s, projects), quotaReserve, gitIdentity)
 const observer = new Observer(
   store,
   projects,
@@ -135,6 +138,12 @@ app.put('/api/git-identity', async (c) => {
   if (!validIdentity(body)) throw new UserError('nom et email valides requis')
   gitIdentity.set(body)
   return c.json(gitIdentity.get())
+})
+// The reserve of plan quota you ask Sangha to always keep unused, and whether it currently holds every priest.
+app.get('/api/quota-reserve', (c) => c.json(sessions.reserve))
+app.put('/api/quota-reserve', async (c) => {
+  const body = await c.req.json<Partial<QuotaReserve>>()
+  return c.json(sessions.setReserve(body))
 })
 app.post('/api/sessions/:id/messages', async (c) => {
   const { text } = await c.req.json<{ text: string }>()
@@ -252,6 +261,7 @@ app.post('/api/screenshot/latest', (c) => c.json(attachLatestScreenshot()))
 app.post('/api/host/ask', async (c) => {
   const { suggestion, chat } = await c.req.json<{ suggestion?: HostSuggestion; chat?: HostChatTurn[] }>()
   if (!suggestion?.title || !chat?.length || chat.at(-1)?.role !== 'user') throw new UserError('Question manquante.')
+  if (sessions.blocked()) throw new UserError('Réserve de quota atteinte : réessaie une fois qu’elle s’est libérée.')
   return c.json({ answer: await askAboutSuggestion(suggestion, host.report, chat) })
 })
 
@@ -271,7 +281,7 @@ async function drain<T>(stream: SSEStreamingApi, queue: T[], send: (item: T) => 
 // Monastery-wide stream: a snapshot of every session, then their changes.
 app.get('/api/events', (c) =>
   streamSSE(c, async (stream) => {
-    const queue: GlobalEvent[] = [{ kind: 'snapshot', sessions: sessions.summaries(), quota: sessions.quota }]
+    const queue: GlobalEvent[] = [{ kind: 'snapshot', sessions: sessions.summaries(), quota: sessions.quota, reserve: sessions.reserve }]
     if (host.report) queue.push({ kind: 'host', host: host.report })
     let wake: (() => void) | null = null
     const unsubscribe = sessions.subscribeAll((ev) => {
