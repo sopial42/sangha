@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Store, type SessionRow } from '../src/db'
+import { LOOP_STOP_MESSAGE, Store, type SessionRow } from '../src/db'
+
+const DONE = { t: 'turn.done' as const, ok: true, costUsdEquiv: 0, durationMs: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }
 
 const row = (id: string): SessionRow => ({
   id,
@@ -141,63 +143,174 @@ describe('Store', () => {
     expect(s.allSessions().map((r) => r.id)).toEqual(['a', 'b'])
   })
 
-  describe('lastGoal', () => {
-    it('is null when he never got a /goal', () => {
+  describe('lastAutonomy', () => {
+    it('is null when he never got a /goal or /loop', () => {
       const s = new Store(':memory:')
       s.createSession(row('a'))
       s.append('a', { t: 'user.message', text: 'fais X' })
-      expect(s.lastGoal('a')).toBeNull()
+      expect(s.lastAutonomy('a')).toBeNull()
     })
 
-    it('is active with the text right after /goal <text>', () => {
-      const s = new Store(':memory:')
-      s.createSession(row('a'))
-      s.append('a', { t: 'user.message', text: '/goal on continue jusqu’à la prod' })
-      expect(s.lastGoal('a')).toEqual({ text: 'on continue jusqu’à la prod', active: true })
+    describe('goal (unchanged behaviour, under the new shape)', () => {
+      it('is active with the text right after /goal <text>', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/goal on continue jusqu’à la prod' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'on continue jusqu’à la prod', active: true })
+      })
+
+      it('goes inactive on /goal clear, keeping the text of the last real goal', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/goal on continue jusqu’à la prod' })
+        s.append('a', { t: 'user.message', text: '/goal clear' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'on continue jusqu’à la prod', active: false })
+      })
+
+      it('accepts stop|off|cancel and a bare /goal as clearing it too, case-insensitively', () => {
+        for (const clear of ['/goal stop', '/goal OFF', '/goal Cancel', '/goal']) {
+          const s = new Store(':memory:')
+          s.createSession(row('a'))
+          s.append('a', { t: 'user.message', text: '/goal un objectif' })
+          s.append('a', { t: 'user.message', text: clear })
+          expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'un objectif', active: false })
+        }
+      })
+
+      it('a fresh /goal reactivates with its own text, replacing the old one', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/goal premier objectif' })
+        s.append('a', { t: 'user.message', text: '/goal clear' })
+        s.append('a', { t: 'user.message', text: '/goal second objectif' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'second objectif', active: true })
+      })
+
+      it('ignores a message that merely starts with /goal, like /goalkeeper', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/goalkeeper save the day' })
+        expect(s.lastAutonomy('a')).toBeNull()
+      })
+
+      it('does not mix up autonomy between sessions', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.createSession(row('b'))
+        s.append('a', { t: 'user.message', text: '/goal objectif de a' })
+        s.append('b', { t: 'user.message', text: 'rien à voir' })
+        expect(s.lastAutonomy('b')).toBeNull()
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'objectif de a', active: true })
+      })
     })
 
-    it('goes inactive on /goal clear, keeping the text of the last real goal', () => {
-      const s = new Store(':memory:')
-      s.createSession(row('a'))
-      s.append('a', { t: 'user.message', text: '/goal on continue jusqu’à la prod' })
-      s.append('a', { t: 'user.message', text: '/goal clear' })
-      expect(s.lastGoal('a')).toEqual({ text: 'on continue jusqu’à la prod', active: false })
+    describe('loop', () => {
+      it('is active right after /loop <text>, self-paced (no interval) and no nextAt before a wake-up', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop surveille le déploiement' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille le déploiement', interval: null, nextAt: null, active: true })
+      })
+
+      it('parses a leading interval token, keeping the rest as the text', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop 5m vérifie le déploiement' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'vérifie le déploiement', interval: '5m', nextAt: null, active: true })
+      })
+
+      it('ignores a token that merely looks like an interval, like 5mb, keeping it as part of the text', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop 5mb de logs à surveiller' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: '5mb de logs à surveiller', interval: null, nextAt: null, active: true })
+      })
+
+      it('stays active before any turn completes, even with no loop.wake yet', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        s.append('a', { t: 'busy', busy: true }) // still on his first turn
+        expect(s.lastAutonomy('a')?.active).toBe(true)
+      })
+
+      it('picks up nextAt from the latest loop.wake, once he reschedules himself', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        s.append('a', { t: 'loop.wake', nextAt: 123456, stop: false })
+        s.append('a', DONE)
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: 123456, active: true })
+      })
+
+      it('ScheduleWakeup stop:true ends a self-paced loop', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        s.append('a', { t: 'loop.wake', nextAt: 123456, stop: false })
+        s.append('a', DONE)
+        s.append('a', { t: 'loop.wake', nextAt: null, stop: true })
+        s.append('a', DONE)
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: false })
+      })
+
+      it('a turn ending without rescheduling silently ends a self-paced loop', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        s.append('a', { t: 'loop.wake', nextAt: 123456, stop: false })
+        s.append('a', DONE) // woke up, rescheduled: fine
+        s.append('a', DONE) // woke up again but this time did not reschedule: the loop dies here
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: false })
+      })
+
+      it('a fixed-interval loop (CronCreate) stays active across turns without rescheduling itself', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop 5m surveille' })
+        s.append('a', { t: 'loop.wake', nextAt: 999, stop: false }) // CronCreate, once
+        s.append('a', DONE) // a fire of the cron, no rescheduling needed
+        s.append('a', DONE) // another fire
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: '5m', nextAt: 999, active: true })
+      })
+
+      it('CronDelete ends a fixed-interval loop', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop 5m surveille' })
+        s.append('a', { t: 'loop.wake', nextAt: 999, stop: false })
+        s.append('a', { t: 'loop.wake', nextAt: null, stop: true })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: '5m', nextAt: null, active: false })
+      })
+
+      it('the Sangha stop marker ends a loop even without a stop-flagged loop.wake', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        s.append('a', { t: 'loop.wake', nextAt: 123456, stop: false })
+        s.append('a', { t: 'user.message', text: LOOP_STOP_MESSAGE })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: false })
+      })
     })
 
-    it('accepts stop|off|cancel and a bare /goal as clearing it too, case-insensitively', () => {
-      for (const clear of ['/goal stop', '/goal OFF', '/goal Cancel', '/goal']) {
+    describe('switching mode: never both at once', () => {
+      it('a /loop after a cleared goal replaces it: only the loop shows', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
         s.append('a', { t: 'user.message', text: '/goal un objectif' })
-        s.append('a', { t: 'user.message', text: clear })
-        expect(s.lastGoal('a')).toEqual({ text: 'un objectif', active: false })
-      }
-    })
+        s.append('a', { t: 'user.message', text: '/goal clear' })
+        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: true })
+      })
 
-    it('a fresh /goal reactivates with its own text, replacing the old one', () => {
-      const s = new Store(':memory:')
-      s.createSession(row('a'))
-      s.append('a', { t: 'user.message', text: '/goal premier objectif' })
-      s.append('a', { t: 'user.message', text: '/goal clear' })
-      s.append('a', { t: 'user.message', text: '/goal second objectif' })
-      expect(s.lastGoal('a')).toEqual({ text: 'second objectif', active: true })
-    })
-
-    it('ignores a message that merely starts with /goal, like /goalkeeper', () => {
-      const s = new Store(':memory:')
-      s.createSession(row('a'))
-      s.append('a', { t: 'user.message', text: '/goalkeeper save the day' })
-      expect(s.lastGoal('a')).toBeNull()
-    })
-
-    it('does not mix up goals between sessions', () => {
-      const s = new Store(':memory:')
-      s.createSession(row('a'))
-      s.createSession(row('b'))
-      s.append('a', { t: 'user.message', text: '/goal objectif de a' })
-      s.append('b', { t: 'user.message', text: 'rien à voir' })
-      expect(s.lastGoal('b')).toBeNull()
-      expect(s.lastGoal('a')).toEqual({ text: 'objectif de a', active: true })
+      it('a /goal after a stopped loop replaces it: only the goal shows', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        s.append('a', { t: 'user.message', text: LOOP_STOP_MESSAGE })
+        s.append('a', { t: 'user.message', text: '/goal un objectif' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'un objectif', active: true })
+      })
     })
   })
 })

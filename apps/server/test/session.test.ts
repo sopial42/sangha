@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { BUDDHA_SESSION_ID } from '@sangha/shared'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import { Store, type SessionRow } from '../src/db'
+import { LOOP_STOP_MESSAGE, Store, type SessionRow } from '../src/db'
 import { QuotaReserveSetting } from '../src/quotaReserve'
 import { Sessions, UserError } from '../src/session'
 import type { Projects } from '../src/projects'
@@ -52,7 +52,7 @@ const tick = () => new Promise((r) => setImmediate(r))
 
 const fakeProjects = { dir: () => '/tmp/sangha-test-project', exists: () => true, agentsOf: () => [] } as unknown as Projects
 
-describe('Sessions goal and interrupt', () => {
+describe('Sessions autonomy and interrupt', () => {
   let store: Store
   let sessions: Sessions
   let sent: string[]
@@ -86,41 +86,91 @@ describe('Sessions goal and interrupt', () => {
     vi.clearAllMocks()
   })
 
-  it('derives no goal before he ever gets a /goal', () => {
-    expect(sessions.summaryOf(row.id)?.goal).toBeNull()
+  it('derives no autonomy before he ever gets a /goal or /loop', () => {
+    expect(sessions.summaryOf(row.id)?.autonomy).toBeNull()
   })
 
   it('sends /goal <text> as a bare slash command, without the standing-instruction reminder', async () => {
     sessions.reminder(row.id, 'sois concis')
-    sessions.goal(row.id, 'continue jusqu’à la prod')
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'continue jusqu’à la prod' })
     await tick()
     expect(sent.at(-1)).toBe('/goal continue jusqu’à la prod')
-    expect(sessions.summaryOf(row.id)?.goal).toEqual({ text: 'continue jusqu’à la prod', active: true })
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'continue jusqu’à la prod', active: true })
   })
 
   it('goes out right away even mid-turn, rather than waiting in the editable queue', async () => {
     // Still mid-turn here: no turn.done was ever emitted since `beforeEach`'s send().
-    sessions.goal(row.id, 'ship it')
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'ship it' })
     await tick()
     expect(sent.at(-1)).toBe('/goal ship it')
     expect(store.queued(row.id)).toEqual([])
   })
 
-  it('sends /goal clear for a null text', async () => {
-    sessions.goal(row.id, 'un objectif')
+  it('stops an active goal outright for a null patch', async () => {
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'un objectif' })
     await tick()
-    sessions.goal(row.id, null)
+    await sessions.autonomy(row.id, null)
     await tick()
     expect(sent.at(-1)).toBe('/goal clear')
-    expect(sessions.summaryOf(row.id)?.goal).toEqual({ text: 'un objectif', active: false })
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'un objectif', active: false })
   })
 
-  it('refuses a goal for Buddha', () => {
-    expect(() => sessions.goal(BUDDHA_SESSION_ID, 'x')).toThrow(UserError)
+  it('does nothing for a null patch when he never had an autonomy', async () => {
+    const before = sent.length
+    await sessions.autonomy(row.id, null)
+    await tick()
+    expect(sent.length).toBe(before)
   })
 
-  it('refuses a goal for an unknown session', () => {
-    expect(() => sessions.goal('nope', 'x')).toThrow(UserError)
+  it('refuses an autonomy for Buddha', async () => {
+    await expect(sessions.autonomy(BUDDHA_SESSION_ID, { mode: 'goal', text: 'x' })).rejects.toThrow(UserError)
+  })
+
+  it('refuses an autonomy for an unknown session', async () => {
+    await expect(sessions.autonomy('nope', { mode: 'goal', text: 'x' })).rejects.toThrow(UserError)
+  })
+
+  it('sends /loop <text> for a self-paced loop (no interval)', async () => {
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille le déploiement' })
+    await tick()
+    expect(sent.at(-1)).toBe('/loop surveille le déploiement')
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'surveille le déploiement', interval: null, nextAt: null, active: true })
+  })
+
+  it('sends /loop <interval> <text> for a fixed-interval loop', async () => {
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'vérifie le déploiement', interval: '5m' })
+    await tick()
+    expect(sent.at(-1)).toBe('/loop 5m vérifie le déploiement')
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'vérifie le déploiement', interval: '5m', nextAt: null, active: true })
+  })
+
+  it('stops an active loop outright for a null patch: interrupts his turn, then sends the stop text', async () => {
+    const q = vi.mocked(query).mock.results[0]!.value
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille' })
+    await tick()
+    await sessions.autonomy(row.id, null)
+    await tick()
+    expect(q.interrupt).toHaveBeenCalledOnce()
+    expect(sent.at(-1)).toBe(LOOP_STOP_MESSAGE)
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: false })
+  })
+
+  it('switching from an active goal to a loop stops the goal first, never leaving both active', async () => {
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'un objectif' })
+    await tick()
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille' })
+    await tick()
+    expect(sent.slice(-2)).toEqual(['/goal clear', '/loop surveille'])
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: true })
+  })
+
+  it('switching from an active loop to a goal sends the stop text first, never leaving both active', async () => {
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille' })
+    await tick()
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'un objectif' })
+    await tick()
+    expect(sent.slice(-2)).toEqual([LOOP_STOP_MESSAGE, '/goal un objectif'])
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'un objectif', active: true })
   })
 
   it('interrupt stops his background scripts and his live novices, not only his current turn', async () => {
@@ -169,13 +219,23 @@ describe('Sessions goal and interrupt', () => {
   })
 
   it('clears an active /goal on interrupt, so it does not relaunch him', async () => {
-    sessions.goal(row.id, 'continue jusqu’à la prod')
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'continue jusqu’à la prod' })
     await tick()
-    expect(sessions.summaryOf(row.id)?.goal?.active).toBe(true)
+    expect(sessions.summaryOf(row.id)?.autonomy?.active).toBe(true)
     await sessions.interrupt(row.id)
     await tick()
     expect(sent.at(-1)).toBe('/goal clear')
-    expect(sessions.summaryOf(row.id)?.goal).toEqual({ text: 'continue jusqu’à la prod', active: false })
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'continue jusqu’à la prod', active: false })
+  })
+
+  it('stops an active loop on interrupt, by sending its stop text (his turn is already being stopped)', async () => {
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille' })
+    await tick()
+    expect(sessions.summaryOf(row.id)?.autonomy?.active).toBe(true)
+    await sessions.interrupt(row.id)
+    await tick()
+    expect(sent.at(-1)).toBe(LOOP_STOP_MESSAGE)
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: false })
   })
 
   it('leaves an already-inactive goal alone on interrupt (no needless /goal clear)', async () => {

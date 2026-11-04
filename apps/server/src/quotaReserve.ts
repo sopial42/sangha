@@ -7,20 +7,14 @@ export const DEFAULT_RESERVE: QuotaReserve = { enabled: true, pct: 10 }
 const counts = (w: QuotaWindow | null | undefined, nowSec: number): w is QuotaWindow => !!w && (w.resetsAt == null || w.resetsAt > nowSec)
 
 /**
- * Whether the reserve bites right now, and because of which window (5 h or week). A window only counts
- * if it exists and its `resetsAt` is null or still ahead: one just passed means the SDK is about to report
- * a fresh window, so holding priests on that stale number would be wrong. Reached: the reserve is on and a
- * counted window's usage reaches 100 - pct %; `window` names the one that does (the costlier, when both do).
+ * Whether the reserve bites right now, on the week (the only window the plan still reports). It only
+ * counts if it exists and its `resetsAt` is null or still ahead: one just passed means the SDK is about
+ * to report a fresh window, so holding priests on that stale number would be wrong. Reached: the reserve
+ * is on and the week's usage reaches 100 - pct %.
  */
 export function reserveState(reserve: QuotaReserve, quota: Quota | null, nowSec: number): QuotaReserveState {
-  const windows: { name: 'fiveHour' | 'sevenDay'; utilization: number }[] = []
-  if (counts(quota?.fiveHour, nowSec)) windows.push({ name: 'fiveHour', utilization: quota!.fiveHour!.utilization })
-  if (counts(quota?.sevenDay, nowSec)) windows.push({ name: 'sevenDay', utilization: quota!.sevenDay!.utilization })
-  const threshold = 100 - reserve.pct
-  const over = windows.filter((w) => w.utilization * 100 >= threshold).sort((a, b) => b.utilization - a.utilization)
-  const binding = over[0] ?? null
-  const reached = reserve.enabled && binding !== null
-  return { ...reserve, reached, window: reached ? binding!.name : null }
+  const reached = reserve.enabled && counts(quota?.sevenDay, nowSec) && quota!.sevenDay!.utilization * 100 >= 100 - reserve.pct
+  return { ...reserve, reached, window: reached ? 'sevenDay' : null }
 }
 
 /** Merges a patch onto a reserve and checks it is sound; throws a plain Error (turned into a UserError by callers) otherwise. */

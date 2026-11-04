@@ -211,10 +211,10 @@ app.post('/api/sessions/:id/reminder', async (c) => {
   sessions.reminder(c.req.param('id'), text)
   return c.body(null, 204)
 })
-// His Claude Code `/goal`: he keeps going, turn after turn, until it is met (null sends `/goal clear`).
-app.post('/api/sessions/:id/goal', async (c) => {
-  const { text } = await c.req.json<{ text: string | null }>()
-  sessions.goal(c.req.param('id'), text)
+// His autonomy, Claude Code `/goal` or `/loop` (never both): null stops whatever is active.
+app.post('/api/sessions/:id/autonomy', async (c) => {
+  const patch = await c.req.json<{ mode: 'goal' | 'loop'; text: string; interval?: string | null } | null>()
+  await sessions.autonomy(c.req.param('id'), patch)
   return c.body(null, 204)
 })
 app.post('/api/sessions/:id/note', async (c) => {

@@ -114,10 +114,88 @@ export class Normalizer {
         if (!parent && SUMMON_TOOLS.has(block.name)) continue
         const summary = summarizeInput(block.input)
         out.push(parent ? { t: 'monk.tool', monkId: parent, tool: block.name, summary } : { t: 'buddha.tool', tool: block.name, summary })
+        // His own /loop machinery (never a novice's: subagents do not drive his autonomy) — Store.lastAutonomy
+        // reads these to know whether a loop keeps rescheduling itself or died.
+        if (!parent && LOOP_TOOLS.has(block.name)) {
+          const wake = loopWakeEvent(block.name, block.input)
+          if (wake) out.push(wake)
+        }
       }
     }
     return out
   }
+}
+
+// Tools Claude Code's bundled /loop skill drives itself with: ScheduleWakeup each turn when self-paced,
+// CronCreate/CronDelete for a fixed interval (see sdk-tools.d.ts for their input shapes).
+const LOOP_TOOLS = new Set(['ScheduleWakeup', 'CronCreate', 'CronDelete'])
+
+function loopWakeEvent(tool: string, input: unknown): Extract<MonasteryEvent, { t: 'loop.wake' }> | null {
+  const rec = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
+  const now = Date.now()
+  if (tool === 'ScheduleWakeup') {
+    if (rec.stop === true) return { t: 'loop.wake', nextAt: null, stop: true }
+    const delaySeconds = typeof rec.delaySeconds === 'number' ? rec.delaySeconds : null
+    return { t: 'loop.wake', nextAt: delaySeconds != null ? now + delaySeconds * 1000 : null, stop: false }
+  }
+  if (tool === 'CronCreate') {
+    const cron = typeof rec.cron === 'string' ? rec.cron : null
+    return { t: 'loop.wake', nextAt: cron ? nextCronFire(cron, now) : null, stop: false }
+  }
+  // CronDelete: removing the recurring job ends that loop (no more fires are coming).
+  return { t: 'loop.wake', nextAt: null, stop: true }
+}
+
+/**
+ * The next time a standard 5-field cron expression ("M H DoM Mon DoW", local time) fires strictly after
+ * `from`. Brute-forced minute by minute — cheap for the short, regular intervals `/loop` actually uses
+ * (e.g. "* / 5 * * * *") — and capped so an expression that rarely matches (e.g. pinned to Feb 29) gives up
+ * rather than scanning for years: null rather than an expensive or unbounded search.
+ */
+export function nextCronFire(cron: string, from: number, maxMinutes = 100_000): number | null {
+  const fields = cron.trim().split(/\s+/)
+  if (fields.length !== 5) return null
+  const [minuteField, hourField, domField, monthField, dowField] = fields as [string, string, string, string, string]
+  const minutes = parseCronField(minuteField, 0, 59)
+  const hours = parseCronField(hourField, 0, 23)
+  const doms = parseCronField(domField, 1, 31)
+  const months = parseCronField(monthField, 1, 12)
+  const dows = parseCronField(dowField, 0, 6)
+  if (!minutes || !hours || !doms || !months || !dows) return null
+  const domWild = domField === '*'
+  const dowWild = dowField === '*'
+
+  const t = new Date(from)
+  t.setSeconds(0, 0)
+  t.setMinutes(t.getMinutes() + 1)
+  for (let i = 0; i < maxMinutes; i++) {
+    const dayMatches = domWild && dowWild ? true : domWild ? dows.has(t.getDay()) : dowWild ? doms.has(t.getDate()) : doms.has(t.getDate()) || dows.has(t.getDay())
+    if (minutes.has(t.getMinutes()) && hours.has(t.getHours()) && months.has(t.getMonth() + 1) && dayMatches) return t.getTime()
+    t.setMinutes(t.getMinutes() + 1)
+  }
+  return null
+}
+
+/** One field of a cron expression ("*", "N", "N,N", "N-N", "* /N", "N-N/N") as the set of values it allows. */
+function parseCronField(field: string, min: number, max: number): Set<number> | null {
+  const out = new Set<number>()
+  for (const part of field.split(',')) {
+    const m = /^(\*|\d+-\d+|\d+)(?:\/(\d+))?$/.exec(part)
+    if (!m) return null
+    const range = m[1]!
+    const step = m[2] ? parseInt(m[2], 10) : 1
+    let lo = min
+    let hi = max
+    if (range !== '*') {
+      const rangeMatch = /^(\d+)-(\d+)$/.exec(range)
+      if (rangeMatch) {
+        lo = parseInt(rangeMatch[1]!, 10)
+        hi = parseInt(rangeMatch[2]!, 10)
+      } else lo = hi = parseInt(range, 10)
+    }
+    for (let v = lo; v <= hi; v += step) out.add(v)
+  }
+  return out
 }
 
 const ERROR_HINTS: Partial<Record<string, string>> = {

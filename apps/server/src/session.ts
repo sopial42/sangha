@@ -23,7 +23,7 @@ import {
 } from '@sangha/shared'
 import { config } from './config'
 import { Providers } from './providers'
-import type { SessionRow, Shepherd, Store } from './db'
+import { LOOP_STOP_MESSAGE, type SessionRow, type Shepherd, type Store } from './db'
 import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState, type WorktreeState } from './git'
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
@@ -84,7 +84,7 @@ class Inbox {
 }
 
 // Events that change what the monastery overview shows.
-const SUMMARY_EVENTS = new Set<MonasteryEvent['t']>(['busy', 'background', 'monk.summoned', 'monk.tool', 'monk.done', 'buddha.tool', 'turn.done', 'error', 'user.message', 'recap'])
+const SUMMARY_EVENTS = new Set<MonasteryEvent['t']>(['busy', 'background', 'monk.summoned', 'monk.tool', 'monk.done', 'buddha.tool', 'loop.wake', 'turn.done', 'error', 'user.message', 'recap'])
 
 /**
  * One priest (or Buddha) = one long-lived Claude Code process in streaming-input mode.
@@ -511,26 +511,54 @@ export class Sessions {
 
   /**
    * Really stop him: his current turn, and the background work he was still waiting on (scripts, novices) —
-   * none of that stays alive to keep him "working" after you pressed Interrompre. If his `/goal` was still
-   * running, it is cleared too: left alone, it would relaunch him turn after turn right past the interruption
-   * (his text stays in the summary, inactive, so you can relaunch it on purpose).
+   * none of that stays alive to keep him "working" after you pressed Interrompre. If an autonomy (`/goal`
+   * or `/loop`) was still active, it is stopped too: left alone, a goal would relaunch him turn after turn
+   * right past the interruption, and a loop would just wake itself up again (his text stays in the summary,
+   * inactive, so you can relaunch the same one on purpose).
    */
   async interrupt(id: string) {
     await this.live.get(id)?.interrupt()
     if (id === BUDDHA_SESSION_ID || id.startsWith(EXTERNAL_PREFIX)) return // Buddha has none; an outside session's lives in its own terminal
-    if (this.store.lastGoal(id)?.active) this.goal(id, null)
+    const current = this.store.lastAutonomy(id)
+    if (current?.active) this.stopAutonomy(id, current.mode)
+  }
+
+  /** Sends `/goal clear` or a loop's stop text straight to him. Whether his turn needs interrupting first
+   * (a loop, left alone, would just schedule its next wake-up) is for the caller to decide. */
+  private stopAutonomy(id: string, mode: 'goal' | 'loop') {
+    const row = this.priestRow(id)
+    const cmd = mode === 'goal' ? '/goal clear' : LOOP_STOP_MESSAGE
+    this.emit(id, { t: 'user.message', text: cmd })
+    this.ensureLive(row).send(cmd)
   }
 
   /**
-   * His Claude Code `/goal`: he keeps going, turn after turn, until it is met (see `Store.lastGoal`). Sent
-   * as the bare slash command — never through `withReminder`, which would append your standing instruction
-   * and break the command — and right away rather than through the usual turn-end queue: steering him is
-   * not a message to discuss, so it should reach him now, mid-turn or not, not sit unread until he stops.
-   * `text` null sends `/goal clear`.
+   * His autonomy: Claude Code `/goal` or `/loop`, never both at once (see `Store.lastAutonomy`). Sent as a
+   * bare slash command (or Sangha's own stop text for a loop) — never through `withReminder`, which would
+   * append your standing instruction and break the command — and right away rather than through the usual
+   * turn-end queue: steering him is not a message to discuss, so it should reach him now, mid-turn or not.
+   *
+   * Starting one mode first stops whichever ran under the other, so the two are never both active: a
+   * `/goal clear` ahead of a `/loop`, or the loop's stop text ahead of a `/goal`. `patch` null stops
+   * whatever is active outright: for a loop that also means interrupting his current turn first — nothing
+   * else is about to tell him to stop rescheduling himself.
    */
-  goal(id: string, text: string | null) {
+  async autonomy(id: string, patch: { mode: 'goal' | 'loop'; text: string; interval?: string | null } | null) {
     const row = this.priestRow(id)
-    const cmd = text?.trim() ? `/goal ${text.trim()}` : '/goal clear'
+    const current = this.store.lastAutonomy(id)
+
+    if (!patch) {
+      if (!current) return
+      if (current.mode === 'loop') await this.live.get(id)?.interrupt()
+      this.stopAutonomy(id, current.mode)
+      return
+    }
+
+    if (current && current.mode !== patch.mode) this.stopAutonomy(id, current.mode)
+
+    const text = patch.text.trim()
+    const interval = patch.mode === 'loop' ? patch.interval?.trim() : null
+    const cmd = patch.mode === 'goal' ? `/goal ${text}` : `/loop ${interval ? `${interval} ` : ''}${text}`
     this.emit(id, { t: 'user.message', text: cmd })
     this.ensureLive(row).send(cmd)
   }
@@ -1441,7 +1469,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       lotus: this.store.lotusIds().has(row.id),
       note: this.store.notes().get(row.id) ?? null,
       reminder: this.store.reminders().get(row.id) ?? null,
-      goal: this.store.lastGoal(row.id),
+      autonomy: this.store.lastAutonomy(row.id),
       env: this.store.sessionEnv(row.id),
       queued: this.store.queued(row.id),
       context: row.id === BUDDHA_SESSION_ID ? null : this.contextOf(row),

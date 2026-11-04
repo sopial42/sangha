@@ -17,14 +17,14 @@ export type Quota = {
 }
 
 /**
- * The share of the plan quota Sangha keeps untouched: once either window (5 h, week) passes 100 - pct %,
+ * The share of the plan quota Sangha keeps untouched: once the week's usage passes 100 - pct %,
  * priests are held (running turns interrupted, messages queued, tools refused) until it starts afresh,
  * the reserve is lowered, or switched off.
  */
 export type QuotaReserve = { enabled: boolean; pct: number }
 
-/** The reserve as set, plus whether it bites right now and which window makes it bite. */
-export type QuotaReserveState = QuotaReserve & { reached: boolean; window: 'fiveHour' | 'sevenDay' | null }
+/** The reserve as set, plus whether it bites right now (always on the week: the only window left). */
+export type QuotaReserveState = QuotaReserve & { reached: boolean; window: 'sevenDay' | null }
 
 export type MonkStatus = 'working' | 'completed' | 'failed' | 'stopped'
 
@@ -42,6 +42,8 @@ export type MonasteryEvent =
   | { t: 'buddha.delta'; text: string }
   | { t: 'buddha.text'; text: string }
   | { t: 'buddha.tool'; tool: string; summary: string }
+  /** His own `/loop` machinery firing or ending (ScheduleWakeup, CronCreate, CronDelete): what `SessionSummary.autonomy`'s loop derivation reads. `nextAt`: his next scheduled wake-up, epoch ms, when known. */
+  | { t: 'loop.wake'; nextAt: number | null; stop: boolean }
   | { t: 'monk.summoned'; monkId: string; agentType: string; description: string; prompt: string; depth: number }
   | { t: 'monk.tool'; monkId: string; tool: string; summary: string }
   | { t: 'monk.text'; monkId: string; text: string }
@@ -166,6 +168,11 @@ export type SessionStatus = 'working' | 'waiting' | 'idle' | 'error' | 'interrup
 
 export type NoviceSummary = { monkId: string; agentType: string; description: string; lastTool: { tool: string; summary: string } | null }
 
+/** See `SessionSummary.autonomy`. */
+export type AutonomyState =
+  | { mode: 'goal'; text: string; active: boolean }
+  | { mode: 'loop'; text: string; interval: string | null; nextAt: number | null; active: boolean }
+
 export type SessionSummary = SessionInfo & {
   status: SessionStatus
   /** The priest's own current tool, if any. */
@@ -188,11 +195,14 @@ export type SessionSummary = SessionInfo & {
   /** A standing instruction of yours (e.g. "sois concis"), recalled to him with each of your messages. */
   reminder: string | null
   /**
-   * His Claude Code `/goal` (he keeps going, turn after turn, until it is met): its text, and whether
-   * it still runs (`active: false` once cleared, e.g. by an interruption, so it can be relaunched).
-   * Null when he never had one.
+   * His autonomy, the one engine that keeps him going on his own (never both at once):
+   * - `goal`: Claude Code `/goal <text>`, turn after turn until it is met;
+   * - `loop`: Claude Code `/loop [interval] <text>`, waking himself up again and again
+   *   (`interval` as typed, e.g. "5m", null when he paces himself; `nextAt`: his next scheduled wake-up, epoch ms, if known).
+   * `active: false` once stopped (by you, an interruption, or a loop he no longer reschedules): kept so it
+   * can be relaunched or edited. Null when he never had one.
    */
-  goal: { text: string; active: boolean } | null
+  autonomy: AutonomyState | null
   /** His own environment variables, set by you; his process starts with them. */
   env: Record<string, string>
   /** Your messages written while he works: not read yet, sent together once his turn ends (editable until then). */

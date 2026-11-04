@@ -187,16 +187,24 @@ export function watchPriests() {
   }
 }
 
+/** At most one host strike in this long: a strained machine stays strained for a while. */
+const HOST_RING_GAP_MS = 15 * 60_000
+
 /**
- * A host metric just turned actionable (a new suggestion id appears): one soft strike of the bowl. It
- * isn't tied to a session the way a priest's stop is, so it rings without landing in the bell's list —
- * the home banner already says what it's about.
+ * The machine just became strained (from no suggestion to some): one soft strike of the bowl. Not on
+ * every new suggestion id: ids name the top process (`cpu:process:claude`…), which flips each time a
+ * priest starts answering, and rang the bowl with nearly every reply. It isn't tied to a session the way
+ * a priest's stop is, so it rings without landing in the bell's list — the home banner says what it's about.
  */
 export function watchHostSuggestions() {
-  let known: Set<string> | null = null
+  let strained: boolean | null = null
+  let rangAt = 0
   return useApp.subscribe((state) => {
-    const ids = new Set(state.host?.suggestions.map((s) => s.id) ?? [])
-    if (known && !state.muted && [...ids].some((id) => !known!.has(id))) bowl()
-    known = ids
+    const now = (state.host?.suggestions.length ?? 0) > 0
+    if (strained === false && now && !state.muted && Date.now() - rangAt > HOST_RING_GAP_MS) {
+      rangAt = Date.now()
+      bowl()
+    }
+    strained = now
   })
 }

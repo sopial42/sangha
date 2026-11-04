@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
 import { BUDDHA_SESSION_ID, type ProjectInfo, type SessionSummary } from '@sangha/shared'
-import { api, openSession } from '../api'
+import { api, ApiError, openSession } from '../api'
 import { agentTitle, priestsOf, robeOfAgent } from '../priests'
 import { useApp } from '../store'
 import { Backdrop, FLOOR_Y, HALL_SCALE, hallTransform } from './Backdrop'
@@ -230,6 +230,21 @@ export function Monastery() {
   const seated = priests.filter((p) => !isLotus(p))
   const lotusPriests = priests.filter(isLotus)
 
+  // A lotus drag's optimistic move gets reverted above on a failed save; this says why, in a small
+  // transient word near the pond, until it's dismissed or fades on its own.
+  const [lotusNotice, setLotusNotice] = useState<string | null>(null)
+  const lotusNoticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => void (lotusNoticeTimer.current && clearTimeout(lotusNoticeTimer.current)), [])
+  const noticeLotusFailure = (e: unknown) => {
+    if (lotusNoticeTimer.current) clearTimeout(lotusNoticeTimer.current)
+    setLotusNotice(
+      e instanceof ApiError && e.status === 404
+        ? 'Ton serveur Sangha ne connaît pas encore le lotus : relance-le (make dev).'
+        : `Le lotus n'a pas pu être enregistré : ${e instanceof Error ? e.message : String(e)}.`,
+    )
+    lotusNoticeTimer.current = setTimeout(() => setLotusNotice(null), 8_000)
+  }
+
   const pavilions = [...projects]
   for (const p of seated) if (!pavilions.some((x) => x.name === p.project)) pavilions.push(orphanProject(p.project))
 
@@ -350,7 +365,10 @@ export function Monastery() {
       if (d.overTarget) {
         setOptimisticLotus((s) => new Set(s).add(id))
         updateDrag({ phase: 'settling-in', x: pondRef.current.x, y: pondRef.current.y })
-        api.lotus(id, true).catch(() => setOptimisticLotus((s) => (s.has(id) ? new Set([...s].filter((x) => x !== id)) : s)))
+        api.lotus(id, true).catch((e: unknown) => {
+          setOptimisticLotus((s) => (s.has(id) ? new Set([...s].filter((x) => x !== id)) : s))
+          noticeLotusFailure(e)
+        })
         settleTimer(id, 480)
       } else {
         updateDrag({ phase: 'returning', x: d.origin.x, y: d.origin.y })
@@ -361,7 +379,10 @@ export function Monastery() {
         // Dragged out of the panel: back onto the courtyard.
         setOptimisticUnlotus((s) => new Set(s).add(id))
         updateDrag({ phase: 'settling-out' })
-        api.lotus(id, false).catch(() => setOptimisticUnlotus((s) => (s.has(id) ? new Set([...s].filter((x) => x !== id)) : s)))
+        api.lotus(id, false).catch((e: unknown) => {
+          setOptimisticUnlotus((s) => (s.has(id) ? new Set([...s].filter((x) => x !== id)) : s))
+          noticeLotusFailure(e)
+        })
         settleTimer(id, 420)
       } else {
         updateDrag({ phase: 'returning', x: d.origin.x, y: d.origin.y })
@@ -446,6 +467,7 @@ export function Monastery() {
   const effectiveHeight = openSize ? Math.max(height, pond.y + openSize.h / 2 + 60) : height
 
   return (
+    <>
     <svg ref={svgRef} className="scene" viewBox={`0 ${top} ${width} ${effectiveHeight - top}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label="Le monastère">
       <IncenseDefs />
       <PondDefs />
@@ -571,5 +593,14 @@ export function Monastery() {
         />
       )}
     </svg>
+    {lotusNotice && (
+      <div className="lotus-notice" role="alert">
+        <p>{lotusNotice}</p>
+        <button type="button" aria-label="Fermer ce message" onClick={() => setLotusNotice(null)}>
+          ×
+        </button>
+      </div>
+    )}
+    </>
   )
 }

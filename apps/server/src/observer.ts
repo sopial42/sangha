@@ -255,9 +255,9 @@ export class Observer {
             lotus: false, // decorated by Sessions
             note: null, // decorated by Sessions
             reminder: null,
-            // Not tracked for an outside session: his `/goal` would go straight to his own terminal, never through
-            // Sangha's event log `lastGoal` reads from.
-            goal: null,
+            // Not tracked for an outside session: his `/goal` or `/loop` would go straight to his own terminal,
+            // never through Sangha's event log `lastAutonomy` reads from.
+            autonomy: null,
             env: {},
             queued: [],
             context: contextTokens(tail),

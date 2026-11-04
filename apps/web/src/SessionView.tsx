@@ -26,7 +26,7 @@ import { useBackdropClose } from './backdrop'
 
 type Progress = { goal: string; state: string; next: string }
 
-const GOAL_CHIP_MAX = 48
+const AUTONOMY_CHIP_MAX = 48
 const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text)
 
 /**
@@ -558,6 +558,10 @@ export function SessionView() {
   const [mcpOpen, setMcpOpen] = useState(false)
   useEffect(() => setMcpOpen(false), [s?.id])
 
+  // "Mettre au lotus" / "Sortir du lotus" failed to save: why, until the next try or a switch of session.
+  const [lotusError, setLotusError] = useState<string | null>(null)
+  useEffect(() => setLotusError(null), [s?.id])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
@@ -695,10 +699,12 @@ export function SessionView() {
                         : 'Bouddha lui demandera dès qu’il s’arrête'}
                 </span>
               )}
-              {s.goal && (
-                <span className={`context-chip goal-chip ${s.goal.active ? '' : 'paused'}`} title={s.goal.text}>
-                  ◎ Objectif : {truncate(s.goal.text, GOAL_CHIP_MAX)}
-                  {!s.goal.active && ' · en pause'}
+              {s.autonomy && (
+                <span className={`context-chip autonomy-chip ${s.autonomy.active ? '' : 'paused'}`} title={s.autonomy.text}>
+                  {s.autonomy.mode === 'goal'
+                    ? `◎ Objectif : ${truncate(s.autonomy.text, AUTONOMY_CHIP_MAX)}`
+                    : `↻ Boucle : ${truncate(s.autonomy.text, AUTONOMY_CHIP_MAX)}${s.autonomy.nextAt ? ` · réveil ${formatTime(s.autonomy.nextAt)}` : ''}`}
+                  {!s.autonomy.active && ' · arrêtée'}
                 </span>
               )}
             </div>
@@ -710,21 +716,24 @@ export function SessionView() {
               <div className="sv-act-group sv-act-work">
                 {!isBuddha && !s.external && (
                   <button
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      if (!s.goal) return set({ dialog: { kind: 'goal', id: s.id } })
-                      if (s.goal.active) return void api.goal(s.id, null)
-                      set({ dialog: { kind: 'goal', id: s.id } })
-                    }}
+                    className={`btn btn-ghost sv-autonomy-btn ${s.autonomy?.active ? 'sv-autonomy-active' : ''}`}
+                    onClick={() => set({ dialog: { kind: 'autonomy', id: s.id } })}
                     title={
-                      !s.goal
-                        ? 'Lui donne un but : il enchaîne les tours tout seul jusqu’à ce que ce soit atteint'
-                        : s.goal.active
-                          ? 'Il arrête d’enchaîner les tours vers cet objectif'
-                          : 'Relance ce même objectif : il enchaîne les tours jusqu’à ce que ce soit atteint'
+                      s.autonomy?.active
+                        ? s.autonomy.mode === 'goal'
+                          ? 'Il enchaîne les tours tout seul vers cet objectif'
+                          : 'Il se réveille de lui-même pour recommencer, jusqu’à ce que tu l’arrêtes'
+                        : 'Lui donne un objectif ou une boucle : il continue tout seul, jusqu’à ce que ce soit atteint ou que tu l’arrêtes'
                     }
                   >
-                    {!s.goal ? 'Objectif' : s.goal.active ? "Arrêter l'objectif" : "Relancer l'objectif"}
+                    {s.autonomy?.active && <span className="autonomy-dot" aria-hidden />}
+                    {!s.autonomy?.active
+                      ? 'Autonomie'
+                      : s.autonomy.mode === 'goal'
+                        ? '◎ Objectif en cours'
+                        : s.autonomy.nextAt
+                          ? `↻ Boucle · réveil ${formatTime(s.autonomy.nextAt)}`
+                          : '↻ Boucle en cours'}
                   </button>
                 )}
                 {!isBuddha && (!s.external || s.alive) && (
@@ -746,7 +755,16 @@ export function SessionView() {
                 {!isBuddha && (
                   <button
                     className="btn btn-ghost"
-                    onClick={() => void api.lotus(s.id, !s.lotus)}
+                    onClick={() => {
+                      setLotusError(null)
+                      api.lotus(s.id, !s.lotus).catch((e: unknown) =>
+                        setLotusError(
+                          e instanceof ApiError && e.status === 404
+                            ? 'Ton serveur Sangha ne connaît pas encore le lotus : relance-le (make dev).'
+                            : `Le lotus n'a pas pu être enregistré : ${e instanceof Error ? e.message : String(e)}.`,
+                        ),
+                      )
+                    }}
                     title={
                       s.lotus
                         ? 'Le faire ressortir du bassin aux lotus : il reprend sa place devant son pavillon'
@@ -794,6 +812,11 @@ export function SessionView() {
                 </div>
               )}
             </div>
+            {lotusError && (
+              <p className="form-error" role="alert">
+                {lotusError}
+              </p>
+            )}
           </div>
           <div className="sv-nav">
             <a

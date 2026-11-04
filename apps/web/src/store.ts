@@ -133,6 +133,9 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
       return { ...s, busy: ev.busy }
     case 'recap':
     case 'background':
+    // His autonomy (`SessionSummary.autonomy`) is derived server-side from this and reflected in the
+    // sessions list, not in this per-session chat view: nothing to patch here.
+    case 'loop.wake':
       return s
     case 'error':
       return { ...s, chat: [...s.chat, { kind: 'error', text: ev.message, at }] }
@@ -149,7 +152,7 @@ export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-pr
   | { kind: 'git' }
   | { kind: 'shepherd'; id: string }
   | { kind: 'env'; id: string }
-  | { kind: 'goal'; id: string }
+  | { kind: 'autonomy'; id: string }
   | { kind: 'host' }
   | { kind: 'mcp-library' } | null
 

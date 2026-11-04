@@ -4,18 +4,19 @@ import { DEFAULT_RESERVE, QuotaReserveSetting, reserveState } from '../src/quota
 
 const NOW = 1_000_000 // epoch seconds, arbitrary but fixed
 
-const quota = (fiveHour: number | null, fiveHourResetsAt: number | null = null, sevenDay: number | null = null, sevenDayResetsAt: number | null = null): Quota => ({
+// fiveHour stays null: the SDK reports it but the reserve ignores it (weekly only).
+const quota = (sevenDay: number | null, sevenDayResetsAt: number | null = null): Quota => ({
   status: 'allowed',
-  fiveHour: fiveHour === null ? null : { utilization: fiveHour, resetsAt: fiveHourResetsAt },
+  fiveHour: null,
   sevenDay: sevenDay === null ? null : { utilization: sevenDay, resetsAt: sevenDayResetsAt },
 })
 
 describe('reserveState', () => {
-  it('is reached once a counted window crosses 100 - pct %', () => {
+  it('is reached once the week crosses 100 - pct %', () => {
     const reserve: QuotaReserve = { enabled: true, pct: 10 }
     expect(reserveState(reserve, quota(0.89), NOW).reached).toBe(false)
     expect(reserveState(reserve, quota(0.9), NOW).reached).toBe(true)
-    expect(reserveState(reserve, quota(0.9), NOW).window).toBe('fiveHour')
+    expect(reserveState(reserve, quota(0.9), NOW).window).toBe('sevenDay')
   })
 
   it('never bites while disabled, whatever the usage', () => {
@@ -25,30 +26,23 @@ describe('reserveState', () => {
     expect(state.window).toBeNull()
   })
 
-  it('ignores a window whose resetsAt has already passed (it just started afresh)', () => {
+  it('ignores the week once its resetsAt has already passed (it just started afresh)', () => {
     const reserve: QuotaReserve = { enabled: true, pct: 10 }
-    // Five-hour window reports 95% but its reset time is behind us: a fresh window is about to replace it.
+    // 95% but the reset time is behind us: a fresh window is about to replace it.
     const state = reserveState(reserve, quota(0.95, NOW - 10), NOW)
     expect(state.reached).toBe(false)
     expect(state.window).toBeNull()
   })
 
-  it('still counts a window whose resetsAt is null or still ahead', () => {
+  it('still counts the week whose resetsAt is null or still ahead', () => {
     const reserve: QuotaReserve = { enabled: true, pct: 10 }
     expect(reserveState(reserve, quota(0.95, null), NOW).reached).toBe(true)
     expect(reserveState(reserve, quota(0.95, NOW + 10), NOW).reached).toBe(true)
   })
 
-  it('names the costlier window as binding when both cross the threshold', () => {
-    const reserve: QuotaReserve = { enabled: true, pct: 10 }
-    const state = reserveState(reserve, quota(0.92, NOW + 1000, 0.97, NOW + 1000), NOW)
-    expect(state.reached).toBe(true)
-    expect(state.window).toBe('sevenDay')
-  })
-
   it('leaves window null when nothing is reached', () => {
     const reserve: QuotaReserve = { enabled: true, pct: 10 }
-    const state = reserveState(reserve, quota(0.5, null, 0.4, null), NOW)
+    const state = reserveState(reserve, quota(0.4, null), NOW)
     expect(state.reached).toBe(false)
     expect(state.window).toBeNull()
   })

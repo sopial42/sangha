@@ -52,8 +52,12 @@ export const api = {
   renew: (id: string) => json<void>(`/api/sessions/${id}/renew`, post()),
   /** Hand his move to a fresh session to Buddha (or take it back). */
   shepherd: (id: string, on: boolean, context?: string) => json<unknown>(`/api/sessions/${id}/shepherd`, post({ on, context })),
-  /** His `/goal`: he keeps going, turn after turn, until it is met (null clears it, immediately). */
-  goal: (id: string, text: string | null) => json<void>(`/api/sessions/${id}/goal`, post({ text })),
+  /**
+   * His autonomy: starts a `/goal` or a `/loop` (the server stops the other one first); `null` stops
+   * whichever runs, immediately.
+   */
+  autonomy: (id: string, body: { mode: 'goal' | 'loop'; text: string; interval?: string | null } | null) =>
+    json<void>(`/api/sessions/${id}/autonomy`, post(body)),
   silence: (id: string, silent: boolean) => json<void>(`/api/sessions/${id}/silence`, post({ silent })),
   /** Set him aside in the lotus pond (the courtyard's waiting room), or bring him back out. */
   lotus: (id: string, lotus: boolean) => json<void>(`/api/sessions/${id}/lotus`, post({ lotus })),

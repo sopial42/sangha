@@ -332,6 +332,32 @@ select {
   background: #3a2a1c;
 }
 
+/* The « Autonomie » button while a goal or loop actually runs: jade (not gold, reserved for settings),
+   so it reads as "something of his is moving" rather than "a toggle is on". */
+.sv-autonomy-btn.sv-autonomy-active {
+  border-color: var(--jade);
+  color: var(--jade);
+  background: #1b2b22;
+}
+
+.sv-autonomy-btn.sv-autonomy-active:hover:not(:disabled),
+.sv-autonomy-btn.sv-autonomy-active:focus-visible {
+  border-color: var(--jade);
+}
+
+/* A softly breathing dot: reuses `pulse` (opacity-only), so reduced motion mutes it automatically
+   along with every other animation (see the `prefers-reduced-motion: reduce` rule below). */
+.autonomy-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
 /* quota */
 .quota {
   margin-left: auto;
@@ -1697,6 +1723,33 @@ input[type='range']:disabled::-moz-range-thumb {
   color: var(--ink);
 }
 
+/* What's already running, at the top of the Autonomie dialog, with the one way out of it. */
+.autonomy-current {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid #3f6b52;
+  border-radius: 10px;
+  background: #16231b;
+}
+
+.autonomy-current p {
+  margin: 0;
+  color: var(--jade);
+  overflow-wrap: anywhere;
+}
+
+/* The free-rhythm radio grows an input right after its label, on the same line. */
+.autonomy-rhythm-free {
+  flex-wrap: wrap;
+}
+
+.autonomy-rhythm-input {
+  width: 90px;
+}
+
 .provider-probe {
   display: flex;
   align-items: center;
@@ -2206,22 +2259,6 @@ input[type='range']:disabled::-moz-range-thumb {
   color: var(--gold);
 }
 
-.goal-chip {
-  color: var(--jade);
-  /* One line, however long the goal: its full text is in the title. Block-level so the ellipsis works. */
-  display: inline-block;
-  max-width: 320px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Cleared (e.g. by Interrompre) but still shown so it can be relaunched: there, quietly, not running. */
-.goal-chip.paused {
-  color: var(--muted);
-  border-style: dashed;
-}
-
 .context-chip {
   display: inline-flex;
   align-items: center;
@@ -2230,6 +2267,23 @@ input[type='range']:disabled::-moz-range-thumb {
   border-radius: 999px;
   border: 1px solid currentColor;
   font-size: 13px;
+}
+
+/* After `.context-chip` so its own `display` wins: block-level is what makes the ellipsis below work. */
+.autonomy-chip {
+  color: var(--jade);
+  /* One line, however long the text: its full version is in the title. */
+  display: inline-block;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Stopped (e.g. by Interrompre) but still shown so it can be relaunched: there, quietly, not running. */
+.autonomy-chip.paused {
+  color: var(--muted);
+  border-style: dashed;
 }
 
 .scene-hint {
@@ -2327,6 +2381,56 @@ input[type='range']:disabled::-moz-range-thumb {
   margin: 0;
   font: 600 18px var(--serif);
   color: var(--muted);
+}
+
+/* A lotus drag (or the "Mettre au lotus" button) failed to save: why, in a small transient card over
+   the scene, dismissible, fading on its own after a while. */
+.lotus-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: min(420px, calc(100% - 32px));
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #1a1421e6;
+  box-shadow: 0 6px 24px #0006;
+  color: var(--ink);
+  font: 500 14px var(--sans);
+  line-height: 1.4;
+}
+
+.lotus-notice p {
+  margin: 0;
+  flex: 1;
+}
+
+.lotus-notice button {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: -4px -6px 0 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lotus-notice button:hover,
+.lotus-notice button:focus-visible {
+  color: var(--ink);
+  background: #ffffff14;
 }
 
 .scene-name {

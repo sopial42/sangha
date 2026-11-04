@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { MonasteryEvent } from '@sangha/shared'
-import { Normalizer, summarizeInput } from '../src/normalize'
+import { Normalizer, nextCronFire, summarizeInput } from '../src/normalize'
 
 function replay(name: string): MonasteryEvent[] {
   const n = new Normalizer()
@@ -102,5 +102,76 @@ describe('Normalizer on background work', () => {
       ],
     }
     expect(n.push(msg as never)).toEqual([{ t: 'background', tasks: [{ id: 'b1', type: 'local_bash', description: 'Run the e2e suite' }] }])
+  })
+})
+
+// His own /loop machinery: ScheduleWakeup (self-paced) or CronCreate/CronDelete (fixed interval), always as a
+// tool_use block on the priest's own turn (parent_tool_use_id null) — this is what Store.lastAutonomy reads
+// to know whether a loop keeps rescheduling itself or died.
+describe('Normalizer on /loop tools (ScheduleWakeup, CronCreate, CronDelete)', () => {
+  const tool = (name: string, input: unknown, parent: string | null = null) => ({
+    type: 'assistant',
+    parent_tool_use_id: parent,
+    message: { content: [{ type: 'tool_use', name, input }] },
+  })
+
+  it('ScheduleWakeup emits a loop.wake with nextAt from delaySeconds', () => {
+    const n = new Normalizer()
+    const before = Date.now()
+    const evs = n.push(tool('ScheduleWakeup', { delaySeconds: 300, reason: 'check later', prompt: 'continue' }) as never)
+    const wake = evs.find((e) => e.t === 'loop.wake')!
+    expect(wake.stop).toBe(false)
+    expect(wake.nextAt).toBeGreaterThanOrEqual(before + 300_000)
+    expect(wake.nextAt).toBeLessThanOrEqual(Date.now() + 300_000)
+  })
+
+  it('ScheduleWakeup with stop:true ends the loop (stop true, no nextAt)', () => {
+    const n = new Normalizer()
+    const evs = n.push(tool('ScheduleWakeup', { stop: true }) as never)
+    expect(evs.find((e) => e.t === 'loop.wake')).toEqual({ t: 'loop.wake', nextAt: null, stop: true })
+  })
+
+  it('CronCreate emits a loop.wake with the next fire computed from the cron expression', () => {
+    const n = new Normalizer()
+    const evs = n.push(tool('CronCreate', { cron: '*/5 * * * *', prompt: 'ping', recurring: true }) as never)
+    const wake = evs.find((e) => e.t === 'loop.wake')!
+    expect(wake.stop).toBe(false)
+    expect(wake.nextAt).not.toBeNull()
+    expect(wake.nextAt! % (5 * 60_000)).toBe(0) // lands exactly on a five-minute mark
+  })
+
+  it('CronDelete ends the loop (stop true, no nextAt)', () => {
+    const n = new Normalizer()
+    const evs = n.push(tool('CronDelete', { id: 'job1' }) as never)
+    expect(evs.find((e) => e.t === 'loop.wake')).toEqual({ t: 'loop.wake', nextAt: null, stop: true })
+  })
+
+  it('still reports the plain buddha.tool event alongside loop.wake', () => {
+    const n = new Normalizer()
+    const evs = n.push(tool('ScheduleWakeup', { delaySeconds: 60, reason: 'soon' }) as never)
+    expect(evs.some((e) => e.t === 'buddha.tool' && e.tool === 'ScheduleWakeup')).toBe(true)
+  })
+
+  it('a novice (parent set) calling these tools does not drive the priest’s own autonomy', () => {
+    const n = new Normalizer()
+    const evs = n.push(tool('ScheduleWakeup', { delaySeconds: 60 }, 'toolu_monk') as never)
+    expect(evs.some((e) => e.t === 'loop.wake')).toBe(false)
+    expect(evs.some((e) => e.t === 'monk.tool')).toBe(true)
+  })
+})
+
+describe('nextCronFire', () => {
+  it('finds the next five-minute mark after now, in local time', () => {
+    const from = new Date(2026, 0, 1, 10, 2, 30).getTime()
+    expect(nextCronFire('*/5 * * * *', from)).toBe(new Date(2026, 0, 1, 10, 5, 0, 0).getTime())
+  })
+
+  it('lands on the exact minute when already on a boundary, moving at least one minute ahead', () => {
+    const from = new Date(2026, 0, 1, 10, 5, 0).getTime()
+    expect(nextCronFire('*/5 * * * *', from)).toBe(new Date(2026, 0, 1, 10, 10, 0, 0).getTime())
+  })
+
+  it('returns null for an expression that is not a standard five-field cron', () => {
+    expect(nextCronFire('not a cron', Date.now())).toBeNull()
   })
 })

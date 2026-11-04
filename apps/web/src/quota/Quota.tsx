@@ -48,15 +48,12 @@ function Gauge({ label, w, reserve }: { label: string; w: QuotaWindow | null; re
   )
 }
 
-const WINDOW_LABEL: Record<'fiveHour' | 'sevenDay', string> = { fiveHour: 'les 5 heures', sevenDay: 'la semaine' }
-
 /** Shows only once the reserve itself has paused priests (a stricter, self-imposed cap hit ahead of the plan's own). */
 function ReserveBadge({ reserve, quota }: { reserve: QuotaReserveState | null; quota: QuotaData | null }) {
   if (!reserve?.reached) return null
-  const w = reserve.window === 'fiveHour' ? quota?.fiveHour ?? null : reserve.window === 'sevenDay' ? quota?.sevenDay ?? null : null
+  const w = reserve.window === 'sevenDay' ? quota?.sevenDay ?? null : null
   const reset = resetText(w)
-  const label = reserve.window ? WINDOW_LABEL[reserve.window] : null
-  const title = `Réserve atteinte${label ? ` sur ${label}` : ''}${reset ? `, ${reset}` : ''} : les prêtres sont en pause jusqu'à ce que la fenêtre reparte.`
+  const title = `Réserve atteinte sur la semaine${reset ? `, ${reset}` : ''} : les prêtres sont en pause jusqu'à ce que la fenêtre reparte.`
   return (
     <span className="quota-stop quota-reserve-stop" title={title}>
       Réserve atteinte — prêtres en pause
@@ -147,7 +144,7 @@ function ReservePanel({ reserve }: { reserve: QuotaReserveState | null }) {
   )
 }
 
-/** The plan quota: the current 5-hour window and the week, each with how much is used and when it starts afresh.
+/** The plan quota: the week, how much of it is used and when it starts afresh.
  *  Click it to raise, lower or switch off the share kept in reserve. */
 export function Quota() {
   const quota = useApp((s) => s.quota)
@@ -181,7 +178,6 @@ export function Quota() {
       >
         {quota?.status === 'rejected' && <span className="quota-stop">Quota atteint</span>}
         <ReserveBadge reserve={reserve} quota={quota} />
-        <Gauge label="Ces 5 heures" w={quota?.fiveHour ?? null} reserve={reserve} />
         <Gauge label="Cette semaine" w={quota?.sevenDay ?? null} reserve={reserve} />
       </button>
       {open && <ReservePanel reserve={reserve} />}

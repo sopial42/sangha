@@ -1,7 +1,15 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { Engine, Envelope, MonasteryEvent, Provider, QueuedMessage, Quota, SessionInfo } from '@sangha/shared'
+import type { AutonomyState, Engine, Envelope, MonasteryEvent, Provider, QueuedMessage, Quota, SessionInfo } from '@sangha/shared'
+
+/**
+ * Sent straight to a session to end an active loop (see `Sessions.autonomy`): the exact words asked of him
+ * when you stop it, so a loop still ends even if he never gets a turn to call `ScheduleWakeup(stop: true)`
+ * or `CronDelete` himself (e.g. you stopped him mid-turn, or he ignores the instruction). `lastAutonomy`
+ * below matches it verbatim as a second way a loop ends, alongside his own tool calls.
+ */
+export const LOOP_STOP_MESSAGE = "Arrête la boucle /loop : ne programme plus aucun réveil (ScheduleWakeup avec stop) et supprime tes tâches CronCreate. Ne fais rien d'autre."
 
 export type NoteKind = 'recap' | 'progress' | 'doing' | 'nirvana'
 export type Note<T> = { key: string; value: T; at: number }
@@ -270,33 +278,101 @@ export class Store {
   }
 
   /**
-   * His Claude Code `/goal` (keeps him going turn after turn until met), derived from the event log rather
-   * than a column of its own: the last `/goal ...` message decides whether it still runs, and a clear
-   * (`clear|stop|off|cancel`, case-insensitively, or a bare `/goal`) keeps the text of the last real one
-   * before it rather than wiping it, so the UI can offer to relaunch the same goal. Null: he never got one.
-   * `summary()` calls this for every session on every poll, so the scan is narrowed with a LIKE prefix match
-   * (SQLite's LIKE is ASCII case-insensitive) before the few candidates are parsed in JS.
+   * His autonomy — Claude Code `/goal` or `/loop`, never both at once (see `AutonomyState`) — derived from
+   * the event log rather than a column of its own. The last `/goal ...` or `/loop ...` message decides
+   * which mode is current: `Sessions.autonomy` only ever starts one after stopping the other, so whichever
+   * command came last is the one that counts, and the fields of the other mode are simply dropped.
+   *
+   * `goal`: unchanged from before autonomy existed — a clear (`clear|stop|off|cancel`, case-insensitively,
+   * or a bare `/goal`) goes inactive but keeps the text of the last real goal before it, so the UI can
+   * offer to relaunch the same one.
+   *
+   * `loop`: the argument's leading `\d+[smhd]` token, if any, is the interval ("5m" etc. — a fixed
+   * schedule, CronCreate); its absence means self-paced (ScheduleWakeup, called again every turn). Right
+   * after the `/loop` message he is optimistically active (no turn has had the chance yet to prove
+   * otherwise). From then on:
+   *  - a `loop.wake` (see normalize.ts, emitted for his own ScheduleWakeup/CronCreate/CronDelete calls)
+   *    sets `nextAt` and active/inactive straight from its own `stop` flag — this alone is what a
+   *    fixed-interval loop lives on: CronCreate fires once, and no turn ever needs to revisit it;
+   *  - for a self-paced loop (no interval) specifically, a `turn.done` that was not preceded by a
+   *    `loop.wake` since the previous `turn.done` (or since the `/loop` message, for the first one) means
+   *    he finished a turn without rescheduling himself: the loop died quietly, with nothing to tell it so;
+   *  - the exact `LOOP_STOP_MESSAGE` (Sangha's own stop, sent when you stop him before he gets a say) also
+   *    ends it, whatever his turns do afterwards.
+   * `nextAt` is only ever reported while active (null again once stopped, even if a wake-up had been due).
+   *
+   * Null: he never got either. `summary()` calls this for every session on every poll, so the scan is
+   * narrowed to the three relevant event types with a LIKE prefix match (SQLite's LIKE is ASCII
+   * case-insensitive) before the few candidates are parsed and correlated in JS.
    */
-  lastGoal(sessionId: string): { text: string; active: boolean } | null {
+  lastAutonomy(sessionId: string): AutonomyState | null {
     const rows = this.db
-      .prepare(`SELECT ev FROM events WHERE session_id = ? AND ev LIKE '{"t":"user.message","text":"/goal%' ORDER BY seq`)
+      .prepare(
+        `SELECT ev FROM events WHERE session_id = ? AND (ev LIKE '{"t":"user.message"%' OR ev LIKE '{"t":"loop.wake"%' OR ev LIKE '{"t":"turn.done"%') ORDER BY seq`,
+      )
       .all(sessionId) as { ev: string }[]
+
+    let mode: 'goal' | 'loop' | null = null
     let text: string | null = null
+    let interval: string | null = null
     let active = false
-    for (const { ev } of rows) {
-      const message = JSON.parse(ev) as { text: string }
-      // The LIKE above also catches a message that merely starts with "/goal" (e.g. "/goalkeeper"): require
-      // the command to end there or be followed by whitespace.
-      const m = /^\/goal(?:\s+([\s\S]*))?$/i.exec(message.text.trim())
-      if (!m) continue
-      const arg = m[1]?.trim() ?? ''
-      if (!arg || /^(clear|stop|off|cancel)$/i.test(arg)) active = false
-      else {
-        text = arg
-        active = true
+    let nextAt: number | null = null
+    // Whether a loop.wake has happened since the loop was (re)established or since the last turn.done:
+    // what tells a self-paced loop's next turn.done whether he rescheduled himself or went quiet.
+    let wakeSinceLastTurn = false
+
+    for (const { ev: raw } of rows) {
+      const ev = JSON.parse(raw) as MonasteryEvent
+      if (ev.t === 'user.message') {
+        const trimmed = ev.text.trim()
+        if (trimmed === LOOP_STOP_MESSAGE) {
+          if (mode === 'loop') active = false
+          continue
+        }
+        // The LIKE above also catches a message that merely starts with "/goal" or "/loop" (e.g.
+        // "/goalkeeper"): require the command to end there or be followed by whitespace.
+        const goalMatch = /^\/goal(?:\s+([\s\S]*))?$/i.exec(trimmed)
+        if (goalMatch) {
+          mode = 'goal'
+          const arg = goalMatch[1]?.trim() ?? ''
+          if (!arg || /^(clear|stop|off|cancel)$/i.test(arg)) active = false
+          else {
+            text = arg
+            active = true
+          }
+          interval = null
+          nextAt = null
+          wakeSinceLastTurn = false
+          continue
+        }
+        const loopMatch = /^\/loop(?:\s+([\s\S]*))?$/i.exec(trimmed)
+        if (loopMatch) {
+          mode = 'loop'
+          const arg = loopMatch[1]?.trim() ?? ''
+          const withInterval = /^(\d+[smhd])(?:\s+([\s\S]*))?$/.exec(arg)
+          interval = withInterval ? withInterval[1]! : null
+          text = (withInterval ? withInterval[2] : arg)?.trim() ?? ''
+          active = true
+          nextAt = null
+          wakeSinceLastTurn = false
+        }
+        continue
       }
+      if (ev.t === 'loop.wake') {
+        if (mode !== 'loop') continue // stray: only his own tool calls emit this, but stay defensive
+        wakeSinceLastTurn = true
+        active = !ev.stop
+        nextAt = ev.stop ? null : ev.nextAt
+        continue
+      }
+      // ev.t === 'turn.done' (the only other type the query above can return)
+      if (mode === 'loop' && interval === null && !wakeSinceLastTurn) active = false
+      wakeSinceLastTurn = false
     }
-    return text ? { text, active } : null
+
+    if (mode === null) return null
+    if (mode === 'goal') return text ? { mode, text, active } : null
+    return { mode, text: text ?? '', interval, nextAt: active ? nextAt : null, active }
   }
 
   /** Seq of the latest moment the session fell idle (busy:false). */

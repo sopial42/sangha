@@ -856,7 +856,7 @@ export function Dialogs() {
   if (dialog.kind === 'git') return <GitIdentityDialog onClose={close} />
   if (dialog.kind === 'shepherd') return <ShepherdDialog id={dialog.id} onClose={close} />
   if (dialog.kind === 'env') return <EnvDialog id={dialog.id} onClose={close} />
-  if (dialog.kind === 'goal') return <GoalDialog id={dialog.id} onClose={close} />
+  if (dialog.kind === 'autonomy') return <AutonomyDialog id={dialog.id} onClose={close} />
   if (dialog.kind === 'host') return <HostDialog onClose={close} />
   if (dialog.kind === 'mcp-library') return <McpLibraryDialog onClose={close} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
@@ -999,24 +999,50 @@ function ShepherdDialog({ id, onClose }: { id: string; onClose: () => void }) {
   )
 }
 
+/** A loop's rhythm, as a fixed choice; "libre" is typed free-form, validated by `CUSTOM_INTERVAL_RE`. */
+const AUTONOMY_INTERVALS: Record<string, string> = { '5m': '5 min', '15m': '15 min', '1h': '1 h' }
+const CUSTOM_INTERVAL_RE = /^\d+[smhd]$/
+
 /**
- * His `/goal`: he keeps going, turn after turn, on his own, until it is met. Prefilled with the one
- * he had before, even a cleared one, so relaunching it is a formality.
+ * His autonomy: the one engine that keeps him going on his own, never both at once — a `/goal` (turn
+ * after turn, until it is met) or a `/loop` (he wakes himself up, again and again, on the same
+ * instruction). Opens on whichever he currently runs; both tabs are prefilled with what he last had,
+ * even stopped, so relaunching or switching between them is a formality. Starting one stops the other.
  */
-function GoalDialog({ id, onClose }: { id: string; onClose: () => void }) {
+function AutonomyDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const session = useApp((s) => s.sessions[id])
-  const [text, setText] = useState(session?.goal?.text ?? '')
+  const current = session?.autonomy ?? null
+  const [tab, setTab] = useState<'goal' | 'loop'>(current?.mode ?? 'goal')
+  const [goalText, setGoalText] = useState(current?.mode === 'goal' ? current.text : '')
+  const [loopText, setLoopText] = useState(current?.mode === 'loop' ? current.text : '')
+  const [rhythm, setRhythm] = useState<'auto' | '5m' | '15m' | '1h' | 'custom'>(() => {
+    if (current?.mode !== 'loop') return 'auto'
+    const iv = current.interval
+    if (iv === null) return 'auto'
+    return iv === '5m' || iv === '15m' || iv === '1h' ? iv : 'custom'
+  })
+  const [customInterval, setCustomInterval] = useState(() => {
+    if (current?.mode !== 'loop') return ''
+    const iv = current.interval
+    return iv && iv !== '5m' && iv !== '15m' && iv !== '1h' ? iv : ''
+  })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   if (!session) return null
 
-  const launch = async (e?: React.FormEvent) => {
-    e?.preventDefault()
-    if (!text.trim()) return
+  const interval = rhythm === 'auto' ? null : rhythm === 'custom' ? customInterval.trim() : rhythm
+  const customInvalid = rhythm === 'custom' && !CUSTOM_INTERVAL_RE.test(customInterval.trim())
+
+  const switchTab = (t: 'goal' | 'loop') => {
+    setTab(t)
+    setError(null)
+  }
+
+  const run = async (body: { mode: 'goal' | 'loop'; text: string; interval?: string | null } | null) => {
     setBusy(true)
     setError(null)
     try {
-      await api.goal(id, text.trim())
+      await api.autonomy(id, body)
       onClose()
     } catch (err) {
       setError(message(err))
@@ -1024,41 +1050,153 @@ function GoalDialog({ id, onClose }: { id: string; onClose: () => void }) {
     }
   }
 
+  const launchGoal = (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (!goalText.trim()) return
+    void run({ mode: 'goal', text: goalText.trim() })
+  }
+
+  const launchLoop = (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (!loopText.trim() || customInvalid) return
+    void run({ mode: 'loop', text: loopText.trim(), interval })
+  }
+
+  // Plain Enter submits (as every other dialog's textarea here); Shift+Enter keeps its newline.
+  const enterSubmits = (submit: () => void) => (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !e.shiftKey)) {
+      e.preventDefault()
+      submit()
+    }
+  }
+
   return (
-    <Modal title="Objectif" onClose={onClose}>
-      <form className="form" onSubmit={launch}>
-        <p className="muted">Il enchaîne les tours tout seul jusqu'à ce que ce soit atteint. Interrompre l'arrête.</p>
-        <label>
-          Ce qu'il doit atteindre
-          <textarea
-            autoFocus
-            className="handoff-context"
-            value={text}
-            rows={6}
-            placeholder="Ex. : tous les tests passent et la PR est ouverte"
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !e.shiftKey)) {
-                e.preventDefault()
-                void launch()
-              }
-            }}
-          />
-        </label>
-        {error && (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
+    <Modal title="Autonomie" onClose={onClose}>
+      <div className="form">
+        {current?.active && (
+          <div className="autonomy-current">
+            <p className="muted">
+              En cours :{' '}
+              {current.mode === 'goal' ? (
+                <>◎ Objectif — {current.text}</>
+              ) : (
+                <>
+                  ↻ Boucle — {current.text} · {current.interval ? `toutes les ${AUTONOMY_INTERVALS[current.interval] ?? current.interval}` : 'à son rythme'}
+                </>
+              )}
+            </p>
+            <button type="button" className="btn btn-ghost btn-quiet" onClick={() => void run(null)} disabled={busy}>
+              Arrêter
+            </button>
+          </div>
         )}
-        <div className="form-actions">
-          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
-            Annuler
+
+        <div className="segmented" role="tablist" aria-label="Mode d'autonomie">
+          <button type="button" role="tab" aria-selected={tab === 'goal'} className={tab === 'goal' ? 'active' : ''} onClick={() => switchTab('goal')}>
+            Objectif
           </button>
-          <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
-            Lancer
+          <button type="button" role="tab" aria-selected={tab === 'loop'} className={tab === 'loop' ? 'active' : ''} onClick={() => switchTab('loop')}>
+            Boucle
           </button>
         </div>
-      </form>
+
+        {tab === 'goal' ? (
+          <form className="form" onSubmit={launchGoal}>
+            <p className="muted">Il enchaîne les tours tout seul jusqu'à ce que ce soit atteint.</p>
+            {current?.active && current.mode === 'loop' && <p className="hint">Lancer un objectif arrête la boucle en cours.</p>}
+            <label>
+              Ce qu'il doit atteindre
+              <textarea
+                autoFocus
+                className="handoff-context"
+                value={goalText}
+                rows={6}
+                placeholder="Ex. : tous les tests passent et la PR est ouverte"
+                onChange={(e) => setGoalText(e.target.value)}
+                onKeyDown={enterSubmits(() => launchGoal())}
+              />
+            </label>
+            <p className="muted small">Interrompre l'arrête aussi.</p>
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="form-actions">
+              <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+                Annuler
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={busy || !goalText.trim()}>
+                {current?.active && current.mode === 'goal' ? 'Mettre à jour' : 'Lancer'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form className="form" onSubmit={launchLoop}>
+            <p className="muted">Il se réveille de lui-même pour recommencer, jusqu'à ce que tu l'arrêtes.</p>
+            {current?.active && current.mode === 'goal' && <p className="hint">Lancer une boucle arrête l'objectif en cours.</p>}
+            <label>
+              La consigne à répéter
+              <textarea
+                autoFocus
+                className="handoff-context"
+                value={loopText}
+                rows={6}
+                placeholder="Ex. : relis les PR ouvertes, relance les démarches bloquées"
+                onChange={(e) => setLoopText(e.target.value)}
+                onKeyDown={enterSubmits(() => launchLoop())}
+              />
+            </label>
+            <fieldset>
+              <legend>Rythme</legend>
+              <label className="inline-radio">
+                <input type="radio" name="autonomy-rhythm" checked={rhythm === 'auto'} onChange={() => setRhythm('auto')} />
+                Il choisit son rythme
+              </label>
+              <label className="inline-radio">
+                <input type="radio" name="autonomy-rhythm" checked={rhythm === '5m'} onChange={() => setRhythm('5m')} />
+                5 min
+              </label>
+              <label className="inline-radio">
+                <input type="radio" name="autonomy-rhythm" checked={rhythm === '15m'} onChange={() => setRhythm('15m')} />
+                15 min
+              </label>
+              <label className="inline-radio">
+                <input type="radio" name="autonomy-rhythm" checked={rhythm === '1h'} onChange={() => setRhythm('1h')} />1 h
+              </label>
+              <label className="inline-radio autonomy-rhythm-free">
+                <input type="radio" name="autonomy-rhythm" checked={rhythm === 'custom'} onChange={() => setRhythm('custom')} />
+                Libre
+                {rhythm === 'custom' && (
+                  <input
+                    className="autonomy-rhythm-input"
+                    value={customInterval}
+                    onChange={(e) => setCustomInterval(e.target.value)}
+                    placeholder="ex. 90m"
+                    aria-label="Rythme libre"
+                    aria-invalid={customInvalid}
+                  />
+                )}
+              </label>
+              {rhythm === 'custom' && customInterval.length > 0 && customInvalid && <p className="form-error">Un nombre suivi de s, m, h ou j (ex. 90m).</p>}
+            </fieldset>
+            <p className="muted small">Interrompre l'arrête aussi.</p>
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="form-actions">
+              <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+                Annuler
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={busy || !loopText.trim() || customInvalid}>
+                {current?.active && current.mode === 'loop' ? 'Mettre à jour' : 'Lancer'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
     </Modal>
   )
 }
