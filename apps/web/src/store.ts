@@ -149,6 +149,7 @@ export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-pr
   | { kind: 'git' }
   | { kind: 'shepherd'; id: string }
   | { kind: 'env'; id: string }
+  | { kind: 'goal'; id: string }
   | { kind: 'host' }
   | { kind: 'mcp-library' } | null
 

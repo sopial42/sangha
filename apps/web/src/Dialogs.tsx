@@ -856,6 +856,7 @@ export function Dialogs() {
   if (dialog.kind === 'git') return <GitIdentityDialog onClose={close} />
   if (dialog.kind === 'shepherd') return <ShepherdDialog id={dialog.id} onClose={close} />
   if (dialog.kind === 'env') return <EnvDialog id={dialog.id} onClose={close} />
+  if (dialog.kind === 'goal') return <GoalDialog id={dialog.id} onClose={close} />
   if (dialog.kind === 'host') return <HostDialog onClose={close} />
   if (dialog.kind === 'mcp-library') return <McpLibraryDialog onClose={close} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
@@ -991,6 +992,70 @@ function ShepherdDialog({ id, onClose }: { id: string; onClose: () => void }) {
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
             Confier
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+/**
+ * His `/goal`: he keeps going, turn after turn, on his own, until it is met. Prefilled with the one
+ * he had before, even a cleared one, so relaunching it is a formality.
+ */
+function GoalDialog({ id, onClose }: { id: string; onClose: () => void }) {
+  const session = useApp((s) => s.sessions[id])
+  const [text, setText] = useState(session?.goal?.text ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  if (!session) return null
+
+  const launch = async (e?: React.FormEvent) => {
+    e?.preventDefault()
+    if (!text.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.goal(id, text.trim())
+      onClose()
+    } catch (err) {
+      setError(message(err))
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title="Objectif" onClose={onClose}>
+      <form className="form" onSubmit={launch}>
+        <p className="muted">Il enchaîne les tours tout seul jusqu'à ce que ce soit atteint. Interrompre l'arrête.</p>
+        <label>
+          Ce qu'il doit atteindre
+          <textarea
+            autoFocus
+            className="handoff-context"
+            value={text}
+            rows={6}
+            placeholder="Ex. : tous les tests passent et la PR est ouverte"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && (e.ctrlKey || e.metaKey || !e.shiftKey)) {
+                e.preventDefault()
+                void launch()
+              }
+            }}
+          />
+        </label>
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="form-actions">
+          <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
+            Annuler
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !text.trim()}>
+            Lancer
           </button>
         </div>
       </form>

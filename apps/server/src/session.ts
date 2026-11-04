@@ -180,8 +180,18 @@ class LiveSession {
     this.inbox.push(text)
   }
 
+  /**
+   * Stops his current turn and every background task he left running (a script, a novice): Sangha never
+   * declares `perTaskStopAffordance` (see sdk.d.ts), so nothing of ours renders a per-task stop control —
+   * only an explicit `stopTask` per id makes "interrupt" mean "stop everything" rather than "pause the
+   * reply while a runaway Bash or subagent keeps going". A novice's monkId (his summoning tool_use id) is
+   * not the id `stopTask` wants: `taskIdOfMonk` resolves it to his own SDK task id. Each stop is tried
+   * independently: one already gone (settled right as you interrupted) must not stop the others.
+   */
   async interrupt() {
     await this.q.interrupt().catch(() => undefined)
+    const taskIds = [...this.background.map((t) => t.id), ...[...this.novices.keys()].map((id) => this.normalizer.taskIdOfMonk(id))].filter((id): id is string => !!id)
+    await Promise.all(taskIds.map((id) => this.q.stopTask(id).catch(() => undefined)))
   }
 
   close() {
@@ -499,8 +509,30 @@ export class Sessions {
     this.send(id, 'The Sangha server restarted while you were working. Check where you stopped, then continue.')
   }
 
+  /**
+   * Really stop him: his current turn, and the background work he was still waiting on (scripts, novices) —
+   * none of that stays alive to keep him "working" after you pressed Interrompre. If his `/goal` was still
+   * running, it is cleared too: left alone, it would relaunch him turn after turn right past the interruption
+   * (his text stays in the summary, inactive, so you can relaunch it on purpose).
+   */
   async interrupt(id: string) {
     await this.live.get(id)?.interrupt()
+    if (id === BUDDHA_SESSION_ID || id.startsWith(EXTERNAL_PREFIX)) return // Buddha has none; an outside session's lives in its own terminal
+    if (this.store.lastGoal(id)?.active) this.goal(id, null)
+  }
+
+  /**
+   * His Claude Code `/goal`: he keeps going, turn after turn, until it is met (see `Store.lastGoal`). Sent
+   * as the bare slash command — never through `withReminder`, which would append your standing instruction
+   * and break the command — and right away rather than through the usual turn-end queue: steering him is
+   * not a message to discuss, so it should reach him now, mid-turn or not, not sit unread until he stops.
+   * `text` null sends `/goal clear`.
+   */
+  goal(id: string, text: string | null) {
+    const row = this.priestRow(id)
+    const cmd = text?.trim() ? `/goal ${text.trim()}` : '/goal clear'
+    this.emit(id, { t: 'user.message', text: cmd })
+    this.ensureLive(row).send(cmd)
   }
 
   // ——— Quota reserve: holding every priest once the plan quota approaches the share you asked to keep untouched ———
@@ -1399,6 +1431,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       silenced: this.store.silencedIds().has(row.id),
       note: this.store.notes().get(row.id) ?? null,
       reminder: this.store.reminders().get(row.id) ?? null,
+      goal: this.store.lastGoal(row.id),
       env: this.store.sessionEnv(row.id),
       queued: this.store.queued(row.id),
       context: row.id === BUDDHA_SESSION_ID ? null : this.contextOf(row),

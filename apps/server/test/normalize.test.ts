@@ -75,6 +75,21 @@ describe('summarizeInput', () => {
   })
 })
 
+describe('Normalizer.taskIdOfMonk', () => {
+  it('maps a monk back to the SDK task id stopTask expects, distinct from his monkId (the summoning tool_use id)', () => {
+    const n = new Normalizer()
+    n.push({ type: 'system', subtype: 'task_started', task_id: 't1', tool_use_id: 'toolu_abc', task_type: 'local_agent', subagent_type: 'reader', description: 'd', prompt: 'p', spawn_depth: 1 } as never)
+    expect(n.taskIdOfMonk('toolu_abc')).toBe('t1')
+  })
+
+  it('forgets the mapping once the task is done, so a stale id is never handed back', () => {
+    const n = new Normalizer()
+    n.push({ type: 'system', subtype: 'task_started', task_id: 't1', tool_use_id: 'toolu_abc', task_type: 'local_agent', subagent_type: 'reader', description: 'd', prompt: 'p', spawn_depth: 1 } as never)
+    n.push({ type: 'system', subtype: 'task_notification', task_id: 't1', status: 'completed', summary: 'ok' } as never)
+    expect(n.taskIdOfMonk('toolu_abc')).toBeUndefined()
+  })
+})
+
 describe('Normalizer on background work', () => {
   it('reports the live background set, without ambient watchers', () => {
     const n = new Normalizer()

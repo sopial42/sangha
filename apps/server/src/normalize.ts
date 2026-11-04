@@ -12,6 +12,9 @@ const SUMMON_TOOLS = new Set(['Agent', 'Task'])
 export class Normalizer {
   // task_id -> monkId (the summoning tool_use id, which is what parent_tool_use_id points at)
   private monkByTask = new Map<string, string>()
+  // The reverse of monkByTask: a novice's own SDK task id, the one `Query.stopTask` expects (never his
+  // monkId, which is his summoning tool_use id — a different string entirely).
+  private taskByMonk = new Map<string, string>()
 
   push(m: SDKMessage): MonasteryEvent[] {
     switch (m.type) {
@@ -65,6 +68,7 @@ export class Normalizer {
         if (m.task_type !== 'local_agent' || m.ambient) return []
         const monkId = m.tool_use_id ?? m.task_id
         this.monkByTask.set(m.task_id, monkId)
+        this.taskByMonk.set(monkId, m.task_id)
         return [
           {
             t: 'monk.summoned',
@@ -85,6 +89,7 @@ export class Normalizer {
         const monkId = this.monkByTask.get(m.task_id)
         if (!monkId) return []
         this.monkByTask.delete(m.task_id)
+        this.taskByMonk.delete(monkId)
         return [{ t: 'monk.done', monkId, status: m.status, summary: m.summary }]
       }
       case 'background_tasks_changed':
@@ -92,6 +97,11 @@ export class Normalizer {
       default:
         return []
     }
+  }
+
+  /** A live novice's own SDK task id, for `Query.stopTask` (interrupting him by his monkId would not do anything). */
+  taskIdOfMonk(monkId: string): string | undefined {
+    return this.taskByMonk.get(monkId)
   }
 
   private assistant(content: unknown, parent: string | null): MonasteryEvent[] {

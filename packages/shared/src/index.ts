@@ -185,6 +185,12 @@ export type SessionSummary = SessionInfo & {
   note: string | null
   /** A standing instruction of yours (e.g. "sois concis"), recalled to him with each of your messages. */
   reminder: string | null
+  /**
+   * His Claude Code `/goal` (he keeps going, turn after turn, until it is met): its text, and whether
+   * it still runs (`active: false` once cleared, e.g. by an interruption, so it can be relaunched).
+   * Null when he never had one.
+   */
+  goal: { text: string; active: boolean } | null
   /** His own environment variables, set by you; his process starts with them. */
   env: Record<string, string>
   /** Your messages written while he works: not read yet, sent together once his turn ends (editable until then). */

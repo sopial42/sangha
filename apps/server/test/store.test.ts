@@ -131,4 +131,64 @@ describe('Store', () => {
     s.archive('a')
     expect(s.allSessions().map((r) => r.id)).toEqual(['a', 'b'])
   })
+
+  describe('lastGoal', () => {
+    it('is null when he never got a /goal', () => {
+      const s = new Store(':memory:')
+      s.createSession(row('a'))
+      s.append('a', { t: 'user.message', text: 'fais X' })
+      expect(s.lastGoal('a')).toBeNull()
+    })
+
+    it('is active with the text right after /goal <text>', () => {
+      const s = new Store(':memory:')
+      s.createSession(row('a'))
+      s.append('a', { t: 'user.message', text: '/goal on continue jusqu’à la prod' })
+      expect(s.lastGoal('a')).toEqual({ text: 'on continue jusqu’à la prod', active: true })
+    })
+
+    it('goes inactive on /goal clear, keeping the text of the last real goal', () => {
+      const s = new Store(':memory:')
+      s.createSession(row('a'))
+      s.append('a', { t: 'user.message', text: '/goal on continue jusqu’à la prod' })
+      s.append('a', { t: 'user.message', text: '/goal clear' })
+      expect(s.lastGoal('a')).toEqual({ text: 'on continue jusqu’à la prod', active: false })
+    })
+
+    it('accepts stop|off|cancel and a bare /goal as clearing it too, case-insensitively', () => {
+      for (const clear of ['/goal stop', '/goal OFF', '/goal Cancel', '/goal']) {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/goal un objectif' })
+        s.append('a', { t: 'user.message', text: clear })
+        expect(s.lastGoal('a')).toEqual({ text: 'un objectif', active: false })
+      }
+    })
+
+    it('a fresh /goal reactivates with its own text, replacing the old one', () => {
+      const s = new Store(':memory:')
+      s.createSession(row('a'))
+      s.append('a', { t: 'user.message', text: '/goal premier objectif' })
+      s.append('a', { t: 'user.message', text: '/goal clear' })
+      s.append('a', { t: 'user.message', text: '/goal second objectif' })
+      expect(s.lastGoal('a')).toEqual({ text: 'second objectif', active: true })
+    })
+
+    it('ignores a message that merely starts with /goal, like /goalkeeper', () => {
+      const s = new Store(':memory:')
+      s.createSession(row('a'))
+      s.append('a', { t: 'user.message', text: '/goalkeeper save the day' })
+      expect(s.lastGoal('a')).toBeNull()
+    })
+
+    it('does not mix up goals between sessions', () => {
+      const s = new Store(':memory:')
+      s.createSession(row('a'))
+      s.createSession(row('b'))
+      s.append('a', { t: 'user.message', text: '/goal objectif de a' })
+      s.append('b', { t: 'user.message', text: 'rien à voir' })
+      expect(s.lastGoal('b')).toBeNull()
+      expect(s.lastGoal('a')).toEqual({ text: 'objectif de a', active: true })
+    })
+  })
 })

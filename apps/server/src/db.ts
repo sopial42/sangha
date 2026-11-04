@@ -266,6 +266,36 @@ export class Store {
     return r ? (JSON.parse(r.ev) as { quota: Quota }).quota : null
   }
 
+  /**
+   * His Claude Code `/goal` (keeps him going turn after turn until met), derived from the event log rather
+   * than a column of its own: the last `/goal ...` message decides whether it still runs, and a clear
+   * (`clear|stop|off|cancel`, case-insensitively, or a bare `/goal`) keeps the text of the last real one
+   * before it rather than wiping it, so the UI can offer to relaunch the same goal. Null: he never got one.
+   * `summary()` calls this for every session on every poll, so the scan is narrowed with a LIKE prefix match
+   * (SQLite's LIKE is ASCII case-insensitive) before the few candidates are parsed in JS.
+   */
+  lastGoal(sessionId: string): { text: string; active: boolean } | null {
+    const rows = this.db
+      .prepare(`SELECT ev FROM events WHERE session_id = ? AND ev LIKE '{"t":"user.message","text":"/goal%' ORDER BY seq`)
+      .all(sessionId) as { ev: string }[]
+    let text: string | null = null
+    let active = false
+    for (const { ev } of rows) {
+      const message = JSON.parse(ev) as { text: string }
+      // The LIKE above also catches a message that merely starts with "/goal" (e.g. "/goalkeeper"): require
+      // the command to end there or be followed by whitespace.
+      const m = /^\/goal(?:\s+([\s\S]*))?$/i.exec(message.text.trim())
+      if (!m) continue
+      const arg = m[1]?.trim() ?? ''
+      if (!arg || /^(clear|stop|off|cancel)$/i.test(arg)) active = false
+      else {
+        text = arg
+        active = true
+      }
+    }
+    return text ? { text, active } : null
+  }
+
   /** Seq of the latest moment the session fell idle (busy:false). */
   lastIdleSeq(sessionId: string): number {
     const r = this.db

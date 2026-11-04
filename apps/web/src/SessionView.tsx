@@ -26,6 +26,9 @@ import { useBackdropClose } from './backdrop'
 
 type Progress = { goal: string; state: string; next: string }
 
+const GOAL_CHIP_MAX = 48
+const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text)
+
 /**
  * Where the session stands. Shown at once from the recap already known (the one above his head in the
  * courtyard); a fuller point from Haiku replaces it quietly when ready.
@@ -692,60 +695,90 @@ export function SessionView() {
                         : 'Bouddha lui demandera dès qu’il s’arrête'}
                 </span>
               )}
+              {s.goal && (
+                <span className={`context-chip goal-chip ${s.goal.active ? '' : 'paused'}`} title={s.goal.text}>
+                  ◎ Objectif : {truncate(s.goal.text, GOAL_CHIP_MAX)}
+                  {!s.goal.active && ' · en pause'}
+                </span>
+              )}
             </div>
           </div>
           <div className="sv-act-col">
             {!isBuddha && <ReminderBox key={s.id} id={s.id} saved={s.reminder} />}
             <div className="sv-actions">
-              {!isBuddha && (!s.external || s.alive) && (
-                <button
-                  className="btn btn-ghost"
-                  onClick={() =>
-                    // Confiding opens a window for the context to hand over; taking him back is immediate.
-                    !s.shepherd || s.shepherd.state === 'refused' ? set({ dialog: { kind: 'shepherd', id: s.id } }) : void api.shepherd(s.id, false)
-                  }
-                  title={
-                    s.shepherd && s.shepherd.state !== 'refused'
-                      ? 'Bouddha arrête de le suivre'
-                      : 'Bouddha lui fera prendre une session neuve au moment qui lui convient, sans jamais l’interrompre, jusqu’à ce que ce soit fait'
-                  }
-                >
-                  {s.shepherd && s.shepherd.state !== 'refused' ? 'Reprendre à Bouddha' : 'Confier à Bouddha'}
-                </button>
-              )}
-              {s.status === 'interrupted' && (
-                <button className="btn btn-primary" onClick={() => void api.resume(s.id)}>
-                  Reprendre
-                </button>
-              )}
+              {/* With him: what moves his work forward. */}
+              <div className="sv-act-group sv-act-work">
+                {!isBuddha && !s.external && (
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      if (!s.goal) return set({ dialog: { kind: 'goal', id: s.id } })
+                      if (s.goal.active) return void api.goal(s.id, null)
+                      set({ dialog: { kind: 'goal', id: s.id } })
+                    }}
+                    title={
+                      !s.goal
+                        ? 'Lui donne un but : il enchaîne les tours tout seul jusqu’à ce que ce soit atteint'
+                        : s.goal.active
+                          ? 'Il arrête d’enchaîner les tours vers cet objectif'
+                          : 'Relance ce même objectif : il enchaîne les tours jusqu’à ce que ce soit atteint'
+                    }
+                  >
+                    {!s.goal ? 'Objectif' : s.goal.active ? "Arrêter l'objectif" : "Relancer l'objectif"}
+                  </button>
+                )}
+                {!isBuddha && (!s.external || s.alive) && (
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() =>
+                      // Confiding opens a window for the context to hand over; taking him back is immediate.
+                      !s.shepherd || s.shepherd.state === 'refused' ? set({ dialog: { kind: 'shepherd', id: s.id } }) : void api.shepherd(s.id, false)
+                    }
+                    title={
+                      s.shepherd && s.shepherd.state !== 'refused'
+                        ? 'Bouddha arrête de le suivre'
+                        : 'Bouddha lui fera prendre une session neuve au moment qui lui convient, sans jamais l’interrompre, jusqu’à ce que ce soit fait'
+                    }
+                  >
+                    {s.shepherd && s.shepherd.state !== 'refused' ? 'Reprendre à Bouddha' : 'Confier à Bouddha'}
+                  </button>
+                )}
+                {s.status === 'interrupted' && (
+                  <button className="btn btn-primary" onClick={() => void api.resume(s.id)}>
+                    Reprendre
+                  </button>
+                )}
+              </div>
+              {/* Réglages de la session : ne changent rien à ce qu'il fait, juste à comment. */}
               {!isBuddha && !s.external && (
-                <button className="btn btn-ghost" onClick={() => set({ dialog: { kind: 'dismiss', id: s.id } })}>
-                  Envoyer au nirvana
-                </button>
+                <div className="sv-act-group sv-act-settings">
+                  <button
+                    className={`btn btn-ghost ${envCount ? 'active' : ''}`}
+                    onClick={() => set({ dialog: { kind: 'env', id: s.id } })}
+                    title="Ses variables d'environnement, propres à cette session"
+                  >
+                    Env{envCount ? ` · ${envCount}` : ''}
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => {
+                      if (s.status === 'working' && !confirm('Il travaille : relancer interrompt son tour en cours. Relancer quand même ?')) return
+                      void api.restart(s.id)
+                    }}
+                    title="Relancer la session : même conversation, mais il relit son agent, ses outils et ses MCP"
+                  >
+                    Relancer
+                  </button>
+                  <McpPanel sessionId={s.id} open={mcpOpen} onToggleOpen={() => setMcpOpen((o) => !o)} onClose={() => setMcpOpen(false)} />
+                </div>
               )}
+              {/* À part, en retrait : la seule action qu'on ne défait pas. */}
               {!isBuddha && !s.external && (
-                <button
-                  className={`btn btn-ghost ${envCount ? 'active' : ''}`}
-                  onClick={() => set({ dialog: { kind: 'env', id: s.id } })}
-                  title="Ses variables d'environnement, propres à cette session"
-                >
-                  Env{envCount ? ` · ${envCount}` : ''}
-                </button>
-              )}
-              {!isBuddha && !s.external && (
-                <button
-                  className="btn btn-ghost"
-                  onClick={() => {
-                    if (s.status === 'working' && !confirm('Il travaille : relancer interrompt son tour en cours. Relancer quand même ?')) return
-                    void api.restart(s.id)
-                  }}
-                  title="Relancer la session : même conversation, mais il relit son agent, ses outils et ses MCP"
-                >
-                  Relancer
-                </button>
-              )}
-              {!isBuddha && !s.external && (
-                <McpPanel sessionId={s.id} open={mcpOpen} onToggleOpen={() => setMcpOpen((o) => !o)} onClose={() => setMcpOpen(false)} />
+                <div className="sv-act-group sv-act-danger">
+                  <button className="btn btn-ghost btn-quiet" onClick={() => set({ dialog: { kind: 'dismiss', id: s.id } })}>
+                    Envoyer au nirvana
+                  </button>
+                </div>
               )}
             </div>
           </div>

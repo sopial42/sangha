@@ -205,6 +205,12 @@ app.post('/api/sessions/:id/reminder', async (c) => {
   sessions.reminder(c.req.param('id'), text)
   return c.body(null, 204)
 })
+// His Claude Code `/goal`: he keeps going, turn after turn, until it is met (null sends `/goal clear`).
+app.post('/api/sessions/:id/goal', async (c) => {
+  const { text } = await c.req.json<{ text: string | null }>()
+  sessions.goal(c.req.param('id'), text)
+  return c.body(null, 204)
+})
 app.post('/api/sessions/:id/note', async (c) => {
   const { note } = await c.req.json<{ note: string | null }>()
   sessions.note(c.req.param('id'), note)
