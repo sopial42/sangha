@@ -813,7 +813,7 @@ export function SessionView() {
               {/* À part, en retrait : la seule action qu'on ne défait pas. */}
               {!isBuddha && !s.external && (
                 <div className="sv-act-group sv-act-danger">
-                  <button className="btn btn-ghost btn-quiet" onClick={() => set({ dialog: { kind: 'dismiss', id: s.id } })}>
+                  <button className="btn btn-ghost btn-nirvana" onClick={() => set({ dialog: { kind: 'dismiss', id: s.id } })}>
                     Envoyer au nirvana
                   </button>
                 </div>

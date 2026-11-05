@@ -909,6 +909,19 @@ input[type='range']:disabled::-moz-range-thumb {
   border-color: var(--vermilion);
 }
 
+/* Always outlined in red; filled once you point at it. */
+.btn-nirvana {
+  color: var(--vermilion);
+  border-color: var(--vermilion);
+}
+
+.btn-nirvana:hover:not(:disabled),
+.btn-nirvana:focus-visible {
+  color: var(--ink);
+  background: var(--vermilion);
+  border-color: var(--vermilion);
+}
+
 .sv-tags .status {
   margin: 0;
 }
