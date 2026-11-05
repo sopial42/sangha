@@ -10,6 +10,7 @@ import {
   type CostReport,
   type Envelope,
   type GlobalEvent,
+  type GlobalMcp,
   type McpServer,
   type MonasteryEvent,
   type NirvanaEntry,
@@ -28,7 +29,7 @@ import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState,
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
 import { library } from './library'
-import { enabledExtras, globalSwitch, mcpList, mcpLogin, mcpReady, mcpSettle, readCatalog, type Catalog } from './mcp'
+import { enabledExtras, mcpList, nativeMcp, mcpLogin, mcpReady, mcpSettle, readCatalog, type Catalog } from './mcp'
 import { readTailLines } from './files'
 import { Normalizer } from './normalize'
 import { relayToPeer } from './messenger'
@@ -295,6 +296,8 @@ const RESTARTED =
 
 export class Sessions {
   private live = new Map<string, LiveSession>()
+  /** MCP servers met in a priest, for the list of all of Sangha (native: he loads it himself, so on by default). */
+  private seenMcp = new Map<string, { scope: string; native: boolean }>()
   private listeners = new Map<string, Set<Listener>>()
   private globalListeners = new Set<GlobalListener>()
   private observer: Observer | null = null
@@ -1173,37 +1176,55 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   /** A priest's MCP servers, waking his process to ask it. */
   async mcp(id: string): Promise<McpServer[]> {
     const row = this.priestRow(id)
-    return mcpList(await this.ensureLive(row).mcpStatus(), this.catalog(row), this.store.mcpPrefs(), this.store.sessionMcpPrefs(id))
+    const statuses = await this.ensureLive(row).mcpStatus()
+    const native = nativeMcp(statuses)
+    const list = mcpList(statuses, this.catalog(row), this.store.mcpPrefs(), this.store.sessionMcpPrefs(id))
+    for (const s of list) this.seenMcp.set(s.name, { scope: s.scope, native: native.has(s.name) })
+    return list
   }
 
-  /**
-   * Switch a server for all of Sangha (every live priest that does not override it, and the next ones), or for
-   * this priest only (`enabled` null: back to the switch of all of Sangha).
-   */
-  async toggleMcp(id: string, name: string, enabled: boolean | null, level: 'sangha' | 'session'): Promise<McpServer[]> {
+  /** Switch a server for this priest only, over the switch of all of Sangha (`enabled` null: back to it). */
+  async toggleMcp(id: string, name: string, enabled: boolean | null): Promise<McpServer[]> {
     const row = this.priestRow(id)
-    if (level === 'sangha') this.store.setMcpPref(name, !!enabled)
-    else this.store.setSessionMcpPref(id, name, enabled)
-    const own = this.ensureLive(row)
-    for (const [otherId, s] of this.live) {
-      const other = s === own ? row : this.store.getSession(otherId)
-      if (!other || otherId === BUDDHA_SESSION_ID || otherId.startsWith(EXTERNAL_PREFIX)) continue
-      if (s !== own && (level === 'session' || name in this.store.sessionMcpPrefs(otherId))) continue
-      const applied = this.applyMcp(other, s, name)
-      if (s === own)
-        await applied.catch((e) => {
-          throw new UserError(`MCP ${name} : ${e instanceof Error ? e.message : String(e)}`)
-        })
-      else void applied.catch(() => undefined)
-    }
+    this.store.setSessionMcpPref(id, name, enabled)
+    await this.applyMcp(row, this.ensureLive(row), name).catch((e) => {
+      throw new UserError(`MCP ${name} : ${e instanceof Error ? e.message : String(e)}`)
+    })
     return this.mcp(id)
   }
 
-  /** Brings a live priest in line with his switches: a catalog server is added or dropped, another one switched. */
-  private applyMcp(row: SessionRow, s: LiveSession, name: string): Promise<void> {
-    const catalog = this.catalog(row)
-    if (name in catalog) return s.setExtraMcp(this.mcpPlan(row).extras)
-    return s.toggleMcp(name, this.store.sessionMcpPrefs(row.id)[name] ?? globalSwitch(name, catalog, this.store.mcpPrefs()))
+  /**
+   * The servers you can switch for all of Sangha: your Claude config's, the active library ones, and the ones
+   * priests load themselves (claude.ai, project), as last seen in a priest (one live priest is asked).
+   */
+  async globalMcp(): Promise<GlobalMcp[]> {
+    const priest = [...this.live.entries()].find(([id]) => id !== BUDDHA_SESSION_ID && !id.startsWith(EXTERNAL_PREFIX))
+    if (priest) await Promise.race([this.mcp(priest[0]), new Promise((r) => setTimeout(r, 5_000))]).catch(() => undefined)
+    const catalog: Catalog = { ...readCatalog(null), ...library.catalog() }
+    for (const [name, s] of Object.entries(catalog)) if (!this.seenMcp.has(name)) this.seenMcp.set(name, { scope: s.scope, native: false })
+    const prefs = this.store.mcpPrefs()
+    const names = new Set([...this.seenMcp.keys(), ...Object.keys(prefs)])
+    return [...names].map((name) => {
+      const seen = this.seenMcp.get(name)
+      return { name, scope: seen?.scope ?? 'user', enabled: prefs[name] ?? seen?.native ?? false }
+    })
+  }
+
+  /** Switch a server for all of Sangha: every live priest that does not override it follows, and the next ones. */
+  async setGlobalMcp(name: string, enabled: boolean): Promise<GlobalMcp[]> {
+    this.store.setMcpPref(name, enabled)
+    for (const [id, s] of this.live) {
+      const row = this.store.getSession(id)
+      if (!row || id === BUDDHA_SESSION_ID || id.startsWith(EXTERNAL_PREFIX) || name in this.store.sessionMcpPrefs(id)) continue
+      void this.applyMcp(row, s, name).catch(() => undefined)
+    }
+    return this.globalMcp()
+  }
+
+  /** Brings a live priest in line with his switches: one he loads himself is switched, a catalog one added or dropped. */
+  private async applyMcp(row: SessionRow, s: LiveSession, name: string): Promise<void> {
+    if (nativeMcp(await s.mcpStatus()).has(name)) return s.toggleMcp(name, this.store.sessionMcpPrefs(row.id)[name] ?? this.store.mcpPrefs()[name] ?? true)
+    return s.setExtraMcp(this.mcpPlan(row).extras)
   }
 
   /** Sign in to a server that needs it (your browser opens), then reconnect it for the project's live priests. */
@@ -1254,7 +1275,12 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   private mcpPlan(row: SessionRow): { extras: Record<string, McpServerConfig>; toggles: Record<string, boolean> } {
     const catalog = this.catalog(row)
     const prefs = { ...this.store.mcpPrefs(), ...this.store.sessionMcpPrefs(row.id) }
-    return { extras: enabledExtras(catalog, prefs), toggles: Object.fromEntries(Object.entries(prefs).filter(([name]) => !(name in catalog))) }
+    // Known to be loaded by priests themselves: switched, never added a second time.
+    const native = (name: string) => this.seenMcp.get(name)?.native || !(name in catalog)
+    return {
+      extras: enabledExtras(Object.fromEntries(Object.entries(catalog).filter(([name]) => !native(name))), prefs),
+      toggles: Object.fromEntries(Object.entries(prefs).filter(([name]) => native(name))),
+    }
   }
 
   /** A free-text note pinned on a priest, for whatever you want to remember about him. */

@@ -75,6 +75,9 @@ export function App() {
           <button className="btn btn-ghost" onClick={() => set({ dialog: { kind: 'providers' } })} title="Ajouter un endpoint de modèles (ex. OVH) à la place de Claude">
             Fournisseurs
           </button>
+          <button className="btn btn-ghost" onClick={() => set({ dialog: { kind: 'mcp' } })} title="Serveurs MCP de tous les prêtres, et la bibliothèque de Sangha">
+            MCP
+          </button>
           <button
             className={`btn btn-ghost ${gitIdentity === null ? 'btn-needed' : ''}`}
             onClick={() => set({ dialog: { kind: 'git' } })}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { providerEnv, shellExports, type CostReport, type LibraryMcp, type NirvanaEntry, type ProjectSuggestion, type Provider, envText, parseEnvText } from '@sangha/shared'
+import { providerEnv, shellExports, type CostReport, type GlobalMcp, type LibraryMcp, type NirvanaEntry, type ProjectSuggestion, type Provider, envText, parseEnvText } from '@sangha/shared'
 import { ApiError, api, openSession } from './api'
 import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
@@ -753,6 +753,74 @@ function LibraryCredentialsForm({
  * Sangha's own MCP servers, known but switched off until you activate one (in memory only: a restart of
  * the server turns them all off again). Once active, a server joins every priest's 🔌 catalog.
  */
+/** MCP servers switched for all of Sangha: every priest follows, unless he has his own switch (his MCP menu). */
+function McpDialog({ onClose, onLibrary }: { onClose: () => void; onLibrary: () => void }) {
+  const [list, setList] = useState<GlobalMcp[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  useEffect(() => void api.globalMcp().then(setList, (e) => setError(message(e))), [])
+
+  const toggle = (m: GlobalMcp) => {
+    setBusy(m.name)
+    setError(null)
+    api
+      .setGlobalMcp(m.name, !m.enabled)
+      .then(setList, (e) => setError(message(e)))
+      .finally(() => setBusy(null))
+  }
+
+  return (
+    <Modal title="Serveurs MCP" onClose={onClose}>
+      <div className="form">
+        <p className="hint">Pour tous les prêtres, sauf ceux qui ont leur propre réglage (menu MCP d’un prêtre).</p>
+        {error && (
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        )}
+        {list === null && !error && <p className="muted small">Chargement…</p>}
+        {list && (
+          <ul className="mcp-list">
+            {[...list]
+              .sort((a, b) => Number(b.enabled) - Number(a.enabled))
+              .map((m) => {
+                const claudeAi = m.name.startsWith('claude.ai ')
+                const plugin = /^plugin:[^:]+:(.+)$/.exec(m.name)?.[1]
+                return (
+                  <li key={m.name} className="mcp-row">
+                    <span className="mcp-name" title={`Portée : ${m.scope}`}>
+                      {claudeAi ? m.name.slice('claude.ai '.length) : (plugin ?? m.name)}
+                      {claudeAi && <span className="mcp-tag">claude.ai</span>}
+                      {plugin && <span className="mcp-tag">plugin</span>}
+                      {m.scope === 'library' && <span className="mcp-tag">Sangha</span>}
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={m.enabled}
+                      aria-label={`${m.enabled ? 'Désactiver' : 'Activer'} ${m.name}`}
+                      className={`mcp-switch ${m.enabled ? 'on' : ''}`}
+                      disabled={busy === m.name}
+                      onClick={() => toggle(m)}
+                    >
+                      <span className="mcp-switch-knob" aria-hidden />
+                    </button>
+                  </li>
+                )
+              })}
+          </ul>
+        )}
+        <div className="form-actions">
+          <button type="button" className="btn btn-ghost" onClick={onLibrary}>
+            📚 Bibliothèque de Sangha
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function McpLibraryDialog({ onClose }: { onClose: () => void }) {
   const [list, setList] = useState<LibraryMcp[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -858,7 +926,9 @@ export function Dialogs() {
   if (dialog.kind === 'env') return <EnvDialog id={dialog.id} onClose={close} />
   if (dialog.kind === 'autonomy') return <AutonomyDialog id={dialog.id} onClose={close} />
   if (dialog.kind === 'host') return <HostDialog onClose={close} />
-  if (dialog.kind === 'mcp-library') return <McpLibraryDialog onClose={close} />
+  if (dialog.kind === 'mcp') return <McpDialog onClose={close} onLibrary={() => set({ dialog: { kind: 'mcp-library' } })} />
+  // Reached from the MCP dialog: closing it goes back there.
+  if (dialog.kind === 'mcp-library') return <McpLibraryDialog onClose={() => set({ dialog: { kind: 'mcp' } })} />
   return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
 }
 

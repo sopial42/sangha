@@ -38,6 +38,9 @@ describe('MCP servers a priest does not load himself', () => {
       { name: 'playwright', status: 'failed', scope: 'local', error: 'boom', global: true, session: false },
       { name: 'atlassian', status: 'off', scope: 'user', global: false },
     ])
+    expect(mcpList([{ name: 'codegraph', status: 'connected', scope: 'user' }], {})).toEqual([
+      { name: 'codegraph', status: 'connected', scope: 'user', global: true },
+    ])
   })
 
   it('switches are kept for all of Sangha, and a priest can override them', () => {

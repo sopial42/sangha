@@ -299,22 +299,18 @@ function ReminderBox({ id, saved }: { id: string; saved: string | null }) {
   )
 }
 
-type McpLevel = 'sangha' | 'session'
-
 /**
- * One MCP server row: name (claude.ai and plugin ones get their own small tag), status, and its switch: the one of
- * all of Sangha, or this priest's own (marked, with a way back to the one of Sangha, when it differs).
+ * One MCP server row: name (claude.ai, plugin and Sangha ones get their own small tag), status, and this priest's
+ * switch (marked, with a way back to the switch of all of Sangha, when he has his own).
  */
 function McpRow({
   server,
-  level,
   busy,
   onToggle,
   onReset,
   onLogin,
 }: {
   server: McpServer
-  level: McpLevel
   busy: boolean
   onToggle: () => void
   onReset: () => void
@@ -324,8 +320,8 @@ function McpRow({
   const plugin = /^plugin:[^:]+:(.+)$/.exec(server.name)?.[1]
   const sangha = server.scope === 'library'
   const name = claudeAi ? server.name.slice('claude.ai '.length) : (plugin ?? server.name)
-  const on = level === 'sangha' ? server.global : (server.session ?? server.global)
-  const own = level === 'session' && server.session !== undefined
+  const on = server.session ?? server.global
+  const own = server.session !== undefined
   return (
     <li className="mcp-row">
       <span className="mcp-name" title={`Portée : ${server.scope}`}>
@@ -376,10 +372,7 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null) // name of the server mid-toggle, if any
-  const [level, setLevel] = useState<McpLevel>('sangha')
   const wrapRef = useRef<HTMLDivElement>(null)
-  const dialog = useApp((st) => st.dialog)
-  const set = useApp((st) => st.set)
 
   // A different priest: forget what we knew, fetch fresh next time the popover opens.
   useEffect(() => {
@@ -403,22 +396,6 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sessionId])
 
-  // The library dialog can add or remove an entry from this priest's catalog: once it closes, refetch.
-  const libraryOpenRef = useRef(false)
-  useEffect(() => {
-    if (dialog?.kind === 'mcp-library') libraryOpenRef.current = true
-    else if (libraryOpenRef.current) {
-      libraryOpenRef.current = false
-      load()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dialog])
-
-  const openLibrary = () => {
-    onClose() // one overlay at a time: the dialog covers the popover anyway
-    set({ dialog: { kind: 'mcp-library' } })
-  }
-
   // A click outside the button or the popover closes it, same as any other dropdown.
   useEffect(() => {
     if (!open) return
@@ -433,7 +410,7 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
     setBusy(server.name)
     setError(null)
     api
-      .setMcpServer(sessionId, server.name, enabled, level)
+      .setMcpServer(sessionId, server.name, enabled)
       .then(setServers)
       .catch((e) => setError(e instanceof ApiError ? e.message : `Impossible de changer ${server.name}.`))
       .finally(() => setBusy(null))
@@ -466,21 +443,11 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
           <header className="mcp-popover-head">
             <h4>Serveurs MCP</h4>
             <div className="mcp-popover-actions">
-              <button type="button" className="text-link" onClick={openLibrary}>
-                📚 Bibliothèque
-              </button>
               <button type="button" className="text-link" onClick={load} disabled={loading}>
                 {loading ? 'Rafraîchissement…' : 'Rafraîchir'}
               </button>
             </div>
           </header>
-          <div className="mcp-level" role="radiogroup" aria-label="Réglage">
-            {(['sangha', 'session'] as const).map((l) => (
-              <button key={l} type="button" role="radio" aria-checked={level === l} className={level === l ? 'active' : ''} onClick={() => setLevel(l)}>
-                {l === 'sangha' ? 'Tout Sangha' : 'Ce prêtre'}
-              </button>
-            ))}
-          </div>
           {loading && !sorted && <p className="muted small">Je réveille le prêtre…</p>}
           {error && <p className="mcp-error">{error}</p>}
           {sorted && sorted.length === 0 && <p className="muted small">Aucun serveur MCP.</p>}
@@ -490,9 +457,8 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
                 <McpRow
                   key={server.name}
                   server={server}
-                  level={level}
                   busy={busy === server.name}
-                  onToggle={() => toggle(server, level === 'sangha' ? !server.global : !(server.session ?? server.global))}
+                  onToggle={() => toggle(server, !(server.session ?? server.global))}
                   onReset={() => toggle(server, null)}
                   onLogin={() => login(server)}
                 />
@@ -500,9 +466,7 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
             </ul>
           )}
           <p className="muted small mcp-footnote">
-            {level === 'sangha'
-              ? 'Pour tous les prêtres, sauf ceux qui ont leur propre réglage.'
-              : 'Pour ce prêtre seulement, par-dessus le réglage de tout Sangha.'}
+            Pour ce prêtre seulement. Le réglage de tout Sangha est sur la page d’accueil (MCP).
           </p>
         </div>
       )}

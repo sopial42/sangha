@@ -154,6 +154,7 @@ export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-pr
   | { kind: 'env'; id: string }
   | { kind: 'autonomy'; id: string }
   | { kind: 'host' }
+  | { kind: 'mcp' }
   | { kind: 'mcp-library' } | null
 
 type AppState = {

@@ -235,6 +235,9 @@ export type McpServer = {
   session?: boolean
 }
 
+/** An MCP server as switched for all of Sangha (each priest can override it). */
+export type GlobalMcp = { name: string; scope: string; enabled: boolean }
+
 /** A value a library server needs: secrets are never sent back, only whether they are set. */
 export type LibraryField = { key: string; label: string; secret: boolean; optional: boolean; placeholder?: string; set: boolean; value?: string }
 

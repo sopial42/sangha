@@ -75,12 +75,13 @@ export function enabledExtras(catalog: Catalog, prefs: Record<string, boolean>):
   return Object.fromEntries(Object.entries(catalog).filter(([name]) => prefs[name]).map(([name, s]) => [name, s.config]))
 }
 
-/** A server's switch for all of Sangha: catalog servers start off, the ones he loads himself on. */
-export const globalSwitch = (name: string, catalog: Catalog, global: Record<string, boolean>): boolean => global[name] ?? !(name in catalog)
+/** The servers a priest loads himself (from his settings, not added by Sangha): on unless switched off. */
+export const nativeMcp = (statuses: McpServerStatus[]): Set<string> => new Set(statuses.filter((s) => s.scope !== 'dynamic').map((s) => s.name))
 
 /** What the priest runs, plus the catalog servers he does not load, shown as off; with their switches. */
 export function mcpList(statuses: McpServerStatus[], catalog: Catalog, global: Record<string, boolean> = {}, own: Record<string, boolean> = {}): McpServer[] {
-  const switches = (name: string) => ({ global: globalSwitch(name, catalog, global), ...(name in own ? { session: own[name] } : {}) })
+  const native = nativeMcp(statuses)
+  const switches = (name: string) => ({ global: global[name] ?? native.has(name), ...(name in own ? { session: own[name] } : {}) })
   const list: McpServer[] = statuses.map((s) => ({
     name: s.name,
     status: s.status,

@@ -1,4 +1,4 @@
-import type { CostReport, Envelope, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, LibraryMcp, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, QuotaReserve, QuotaReserveState, SessionSummary } from '@sangha/shared'
+import type { CostReport, Envelope, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, GlobalMcp, LibraryMcp, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, QuotaReserve, QuotaReserveState, SessionSummary } from '@sangha/shared'
 import { yeet } from './notify'
 import { emptyView, useApp } from './store'
 
@@ -94,9 +94,10 @@ export const api = {
   /** Switch one of his MCP servers on or off; enabling can take up to ~30s while it connects. */
   /** Sign in to one of his servers: opens your browser, answers once you authorized (up to a few minutes). */
   loginMcpServer: (id: string, name: string) => json<McpServer[]>(`/api/sessions/${id}/mcp/login`, post({ name })),
-  /** `level` 'sangha': for all of Sangha; 'session': for this priest only (`enabled` null: back to the one of Sangha). */
-  setMcpServer: (id: string, name: string, enabled: boolean | null, level: 'sangha' | 'session') =>
-    json<McpServer[]>(`/api/sessions/${id}/mcp`, post({ name, enabled, level })),
+  /** For this priest only (`enabled` null: back to the switch of all of Sangha). */
+  setMcpServer: (id: string, name: string, enabled: boolean | null) => json<McpServer[]>(`/api/sessions/${id}/mcp`, post({ name, enabled })),
+  globalMcp: () => json<GlobalMcp[]>('/api/mcp'),
+  setGlobalMcp: (name: string, enabled: boolean) => json<GlobalMcp[]>('/api/mcp', post({ name, enabled })),
   mcpLibrary: () => json<LibraryMcp[]>('/api/mcp-library'),
   /** `values`: credentials to save in .env (an empty one keeps what is saved); `active`: switch it on or off. */
   setLibraryMcp: (name: string, change: { active?: boolean; values?: Record<string, string> }) => json<LibraryMcp[]>(`/api/mcp-library/${encodeURIComponent(name)}`, post(change)),

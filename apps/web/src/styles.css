@@ -1018,28 +1018,6 @@ input[type='range']:disabled::-moz-range-thumb {
   border-color: var(--saffron);
   color: var(--saffron);
 }
-.mcp-level {
-  display: flex;
-  gap: 2px;
-  padding: 2px;
-  margin-bottom: 8px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-}
-.mcp-level button {
-  flex: 1;
-  padding: 3px 8px;
-  font-size: 12px;
-  border: 0;
-  border-radius: 999px;
-  background: none;
-  color: var(--muted);
-  cursor: pointer;
-}
-.mcp-level button.active {
-  background: var(--line);
-  color: var(--ink);
-}
 
 .mcp-status {
   display: inline-flex;
