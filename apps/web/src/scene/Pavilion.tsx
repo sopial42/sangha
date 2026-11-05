@@ -30,6 +30,8 @@ export function Pavilion({
   foot?: ReactNode
 }) {
   const [snuffed, setSnuffed] = useState(false)
+  // Hovering the door guard below lights the pavilion up as if hovering the pavilion itself.
+  const [doorHover, setDoorHover] = useState(false)
   const w = Math.max(90, width)
   const pillars = [-w / 2 + 6, -w / 6, w / 6, w / 2 - 6]
   const label = `Pavillon ${project.name}${project.branch ? ` (${project.branch})` : ''} : ouvrir une session`
@@ -41,7 +43,7 @@ export function Pavilion({
   return (
     <g>
     <g
-      className="pavilion clickable"
+      className={`pavilion clickable${doorHover ? ' is-hover' : ''}`}
       role="button"
       tabIndex={0}
       aria-label={label}
@@ -73,6 +75,21 @@ export function Pavilion({
         <Incense size={1.7} lit={!snuffed} label={`Éteindre le grand encens : retirer ${project.name} du monastère`} hint="Éteindre : retirer le projet" onSnuff={() => void snuff()} />
       </g>
     )}
+    {/* Drawn last, over its foot and burner: the burner's sticks, smoke and halo, or a priest on the
+        basin's far bank, can rise in front of the door, but a click on the pavilion's body always
+        opens a new session — never snuffs the burner by accident. */}
+    <rect
+      x={-w / 2}
+      y="-124"
+      width={w}
+      height="126"
+      fill="transparent"
+      style={{ cursor: 'pointer' }}
+      aria-hidden="true"
+      onClick={onClick}
+      onMouseEnter={() => setDoorHover(true)}
+      onMouseLeave={() => setDoorHover(false)}
+    />
     </g>
   )
 }

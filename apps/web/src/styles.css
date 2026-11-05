@@ -2007,6 +2007,7 @@ input[type='range']:disabled::-moz-range-thumb {
 }
 
 .pavilion:hover .pavilion-name,
+.pavilion.is-hover .pavilion-name,
 .pavilion:focus-visible .pavilion-name {
   fill: var(--gold);
 }
@@ -2311,6 +2312,7 @@ input[type='range']:disabled::-moz-range-thumb {
   .priest.clickable:hover,
   .priest.clickable:focus-visible,
   .pavilion.clickable:hover,
+  .pavilion.clickable.is-hover,
   .pavilion.clickable:focus-visible,
   .add-project.clickable:hover,
   .add-project.clickable:focus-visible,
