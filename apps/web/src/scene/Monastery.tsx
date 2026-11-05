@@ -36,8 +36,8 @@ const ROW_GAP = 225
 const MOBILE_ROW_GAP = 260
 // Courtyard kept free at each side of the scene: the bubble of a priest at the far end opens outward.
 const EDGE = 100
-// Each temple keeps its own lotus basin right at its foot: its stone rim against the platform, the
-// big burner standing on its near rim, its priests sitting all around it.
+// Each temple keeps its own lotus basin right at its foot: its stone rim against the platform, its
+// priests sitting all around it (the big burner stands aside, at the pavilion's bottom right).
 const POND_Y = 30
 
 /** Rows of priests in front of a pavilion, filled evenly (7 sit 4 + 3, not 6 + 1). */
@@ -256,7 +256,7 @@ export function Monastery() {
   const marker = mobile
     ? { x: width / 2, y: (rest as { markerY: number }).markerY }
     : last
-      ? { x: last.x + PAVILION_W / 2 + 48, y: last.y - 40 }
+      ? { x: last.x + PAVILION_W / 2 + 86, y: last.y - 40 } // past the big burner at its bottom right
       : { x: width / 2, y: PAVILION_Y - 40 }
   // On mobile, the hall shrinks with the courtyard (never wider than it), and the sky crops tighter
   // to match: less empty space above a smaller hall.

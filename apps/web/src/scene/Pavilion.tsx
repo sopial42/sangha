@@ -69,10 +69,10 @@ export function Pavilion({
       </text>
     </g>
     {foot}
-    {/* the big burner before the steps */}
+    {/* the big burner, set down at the pavilion's bottom right corner, beside its basin */}
     {onRemove && (
-      <g transform="translate(0 52)">
-        <Incense size={1.7} lit={!snuffed} label={`Éteindre le grand encens : retirer ${project.name} du monastère`} hint="Éteindre : retirer le projet" onSnuff={() => void snuff()} />
+      <g transform={`translate(${w / 2 + 30} 10)`}>
+        <Incense size={1.2} lit={!snuffed} label={`Éteindre le grand encens : retirer ${project.name} du monastère`} hint="Éteindre : retirer le projet" onSnuff={() => void snuff()} />
       </g>
     )}
     {/* Drawn last, over its foot and burner: the burner's sticks, smoke and halo, or a priest on the

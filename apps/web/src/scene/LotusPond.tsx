@@ -47,17 +47,16 @@ function ChillingPriest({ robe, delay, tea, still }: { robe: string; delay: numb
   )
 }
 
-/** Where priests sit around the water, in the order they arrive: the far bank first, facing you, then
- *  its two ends, then the near bank beside the burner; last, the middle of the far bank, right behind
- *  the burner's sticks. */
+/** Where priests sit around the water, in the order they arrive: the far bank first, facing you,
+ *  then its two ends, then the near bank. */
 const BANK = [
-  { x: -36, y: -18 },
-  { x: 36, y: -18 },
+  { x: 0, y: -21 },
+  { x: -38, y: -18 },
+  { x: 38, y: -18 },
   { x: -76, y: -2 },
   { x: 76, y: -2 },
-  { x: -50, y: 22 },
-  { x: 50, y: 22 },
-  { x: 0, y: -21 },
+  { x: -36, y: 25 },
+  { x: 36, y: 25 },
 ]
 
 /** A paper lantern floating on the water, its candle flickering. */
@@ -140,7 +139,7 @@ export function PondDefs() {
 }
 
 /**
- * A temple's lotus basin, closed, right at the foot of its pavilion (its big burner on the near rim): lily pads, a floating lantern, and its
+ * A temple's lotus basin, closed, right at the foot of its pavilion: lily pads, a floating lantern, and its
  * priests set aside sitting around the water like an evening off — up to seven on the bank, a "+N"
  * for the rest. Calm — no labels, no bubbles: hovering one shows who he is and his note. Glows softly when one of them needs you, and again (a brighter ring) while a dragged
  * priest of this temple hovers, ready to be dropped in. Empty, it fades back, there for a drop.
@@ -236,8 +235,7 @@ export function PondClosed({
           <ellipse key={i} rx="4" ry="6.5" fill={i === 1 ? '#fbd7e0' : '#e79bb0'} transform={`rotate(${(i - 1) * 55})`} />
         ))}
       </g>
-      {/* off-center: the big burner stands on the near rim, in the middle */}
-      <FloatingLantern x={-24} y={-2} reducedMotion={reducedMotion} />
+      <FloatingLantern x={2} y={2} reducedMotion={reducedMotion} />
       {shown
         .map((p, i) => ({ p, i, at: BANK[i]! }))
         .sort((a, b) => a.at.y - b.at.y)
