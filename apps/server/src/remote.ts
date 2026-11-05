@@ -31,7 +31,9 @@ const ANSI = /\x1b\[[0-9;?<>=]*[a-zA-Z]|\x1b\][^\x07]*\x07/g
 // Inherited from a Claude process above Sangha, these would turn his transcript saving off.
 const CHILD_MARKERS = ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_ENTRYPOINT']
 
-export type RemoteControl = { url: string; stop: () => void }
+/** `closed`: resolves once the process has actually ended (whoever stopped it) — never two processes on
+ * one conversation, so a caller taking him back from the remote must wait on this before touching `ensureLive`. */
+export type RemoteControl = { url: string; stop: () => void; closed: Promise<void> }
 
 /**
  * Resumes his conversation in an interactive `claude --remote-control` and resolves with the claude.ai/code
@@ -51,6 +53,8 @@ export function startRemote(
   const stop = () => {
     if (proc.exitCode === null) proc.kill('SIGTERM')
   }
+  let resolveClosed: () => void
+  const closed = new Promise<void>((r) => (resolveClosed = r))
   return new Promise((resolve, reject) => {
     let out = ''
     let url: string | null = null
@@ -65,7 +69,7 @@ export function startRemote(
       if (m) {
         url = m[0]
         clearTimeout(timer)
-        resolve({ url, stop })
+        resolve({ url, stop, closed })
       }
     })
     proc.on('error', (e) => {
@@ -74,8 +78,10 @@ export function startRemote(
     })
     proc.on('exit', () => {
       clearTimeout(timer)
-      if (url) onExit()
-      else reject(new Error(`claude s'est arrêté avant le lien : ${out.replace(ANSI, '').replace(/\s+/g, ' ').slice(-300)}`))
+      if (url) {
+        onExit()
+        resolveClosed()
+      } else reject(new Error(`claude s'est arrêté avant le lien : ${out.replace(ANSI, '').replace(/\s+/g, ' ').slice(-300)}`))
     })
   })
 }

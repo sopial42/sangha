@@ -2,12 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
 import { BUDDHA_SESSION_ID } from '@sangha/shared'
 import { query } from '@anthropic-ai/claude-agent-sdk'
+import { config } from '../src/config'
 import { LOOP_STOP_MESSAGE, Store, type SessionRow } from '../src/db'
 import { QuotaReserveSetting } from '../src/quotaReserve'
-import { Sessions, UserError } from '../src/session'
+import { startRemote } from '../src/remote'
+import { RESTARTED, Sessions, UserError } from '../src/session'
 import type { Projects } from '../src/projects'
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({ query: vi.fn() }))
+vi.mock('../src/remote', () => ({ startRemote: vi.fn() }))
 
 /** A fake `Query`: an async-iterable system/assistant message feed you control with `push`, plus spies
  * on the control methods `LiveSession` calls. Draining `options.prompt` (his real inbox) into `sent`
@@ -20,19 +23,27 @@ function mockQuery(sent: string[]) {
     if (typeof prompt === 'string') return { [Symbol.asyncIterator]: async function* () {} } as unknown as Query
     const outbox: unknown[] = []
     let wake: (() => void) | null = null
+    let closed = false
     void (async () => {
       for await (const m of prompt as AsyncIterable<SDKUserMessage>) sent.push(m.message.content as string)
     })()
     const fake = {
       [Symbol.asyncIterator]: async function* () {
         for (;;) {
+          if (closed) return
           if (outbox.length) yield outbox.shift()
           else await new Promise<void>((r) => (wake = r))
         }
       },
       interrupt: vi.fn().mockResolvedValue(undefined),
       stopTask: vi.fn().mockResolvedValue(undefined),
-      close: vi.fn(),
+      // A real `close()` ends his process: the pump loop below must actually see the iterator finish
+      // (so `LiveSession.closed` resolves, `onClosed` runs, and he leaves the live map), not stay a no-op.
+      close: vi.fn(() => {
+        closed = true
+        wake?.()
+        wake = null
+      }),
       mcpServerStatus: vi.fn().mockResolvedValue([]),
       toggleMcpServer: vi.fn().mockResolvedValue(undefined),
       setMcpServers: vi.fn().mockResolvedValue(undefined),
@@ -298,5 +309,226 @@ describe('Sessions lotus', () => {
 
   it('refuses to set aside an unknown session', () => {
     expect(() => sessions.lotus('nope', true)).toThrow(UserError)
+  })
+})
+
+const baseRow = (): SessionRow => ({
+  id: 'p1',
+  project: 'proj',
+  agent: 'claude',
+  title: 't',
+  createdAt: Date.now(),
+  claudeSessionId: null,
+  branch: null,
+  worktree: '/tmp/sangha-test-worktree',
+  baseSha: null,
+  archivedAt: null,
+  lastSeenSeq: 0,
+})
+
+/** A `result` SDK message: ends his turn (`turn.done`), the trigger for both the idle-close timer and
+ * `BusySettle`'s grace period. */
+const resultMessage = () => ({ type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0, duration_ms: 1, usage: { input_tokens: 0, output_tokens: 0 } })
+
+describe('Sessions loop re-arming', () => {
+  let store: Store
+  let sessions: Sessions
+  let sent: string[]
+  let row: SessionRow
+
+  beforeEach(async () => {
+    sent = []
+    mockQuery(sent)
+    store = new Store(':memory:')
+    sessions = new Sessions(store, fakeProjects, () => ({}), new QuotaReserveSetting(() => null, () => undefined))
+    row = baseRow()
+    store.createSession(row)
+    sessions.send(row.id, 'hello')
+    await tick() // his process starts and reads the first message
+  })
+
+  afterEach(() => {
+    sessions.closeAll()
+    vi.clearAllMocks()
+  })
+
+  it('re-arms an active fixed-interval loop right when a fresh process starts (restart), before anything else', async () => {
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille le déploiement', interval: '5m' })
+    await tick()
+    const before = sent.length
+
+    await sessions.restart(row.id)
+    await tick()
+    await tick() // mcpReady() resolves: the RESTARTED notice follows, but his process is already "turning"
+    // (reading the rearm command) so it waits behind it rather than jumping ahead, editable like any other.
+    expect(sent.slice(before)).toEqual(['/loop 5m surveille le déploiement'])
+    expect(store.queued(row.id).map((m) => m.text)).toEqual([RESTARTED])
+
+    // His turn over (the rearmed /loop handled): the restart notice follows right after, never ahead of it.
+    vi.mocked(query).mock.results.at(-1)!.value.push(resultMessage())
+    await tick()
+
+    expect(sent.slice(before)).toEqual(['/loop 5m surveille le déploiement', RESTARTED])
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'surveille le déploiement', interval: '5m', nextAt: null, active: true })
+  })
+
+  it('does not re-arm a self-paced loop that is no longer active', async () => {
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille' })
+    await tick()
+    // A turn ends without rescheduling himself (no loop.wake since the /loop message): the loop died quietly.
+    vi.mocked(query).mock.results[0]!.value.push(resultMessage())
+    await tick()
+    expect(sessions.summaryOf(row.id)?.autonomy?.active).toBe(false)
+    const before = sent.length
+
+    await sessions.restart(row.id)
+    await tick()
+    await tick()
+
+    expect(sent.slice(before)).toEqual([RESTARTED])
+  })
+
+  it('never re-arms into a process that is already alive: a plain message does not re-send /loop', async () => {
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille', interval: '5m' })
+    await tick()
+    // A fixed-interval loop needs no turn-by-turn reschedule to stay active; ends his turn so the message
+    // below is delivered right away rather than queued (a queued message would still be undelivered when
+    // the test ends, and `afterEach`'s close would flush it into a stray, test-polluting process start).
+    vi.mocked(query).mock.results[0]!.value.push(resultMessage())
+    await tick()
+    expect(sessions.summaryOf(row.id)?.autonomy?.active).toBe(true)
+    const before = sent.length
+
+    sessions.send(row.id, 'coucou')
+    await tick()
+
+    expect(sent.slice(before)).toEqual(['coucou'])
+  })
+
+  it('never idle-closes a process with an active loop, however long it stays still', async () => {
+    const was = config.idleCloseMs
+    config.idleCloseMs = 10
+    try {
+      // Fixed-interval: unlike a self-paced one, it stays active across a quiet turn (no reschedule needed).
+      await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille', interval: '5m' })
+      await tick()
+      vi.mocked(query).mock.results[0]!.value.push(resultMessage())
+      await tick()
+      expect(sessions.summaryOf(row.id)?.autonomy?.active).toBe(true)
+      await new Promise((r) => setTimeout(r, 50)) // real wait, well past idleCloseMs
+      const callsBefore = vi.mocked(query).mock.calls.length
+
+      sessions.send(row.id, 'toujours là ?')
+      await tick()
+
+      expect(vi.mocked(query).mock.calls.length).toBe(callsBefore) // same process: none was spun up
+      expect(sent.at(-1)).toBe('toujours là ?')
+    } finally {
+      config.idleCloseMs = was
+    }
+  })
+
+  it('idle-closes normally once still, when there is no active loop (baseline)', async () => {
+    const was = config.idleCloseMs
+    config.idleCloseMs = 10
+    try {
+      vi.mocked(query).mock.results[0]!.value.push(resultMessage())
+      await tick()
+      await new Promise((r) => setTimeout(r, 50))
+      const callsBefore = vi.mocked(query).mock.calls.length
+
+      sessions.send(row.id, 'toujours là ?')
+      await tick()
+
+      expect(vi.mocked(query).mock.calls.length).toBe(callsBefore + 1) // a fresh process was spun up
+    } finally {
+      config.idleCloseMs = was
+    }
+  })
+})
+
+describe('Sessions remote control', () => {
+  let store: Store
+  let sessions: Sessions
+  let sent: string[]
+  let row: SessionRow
+
+  /** A controllable fake `RemoteControl`: `stop()` ends it synchronously, like a process that exited at once. */
+  function fakeRemote() {
+    let onExit: (() => void) | null = null
+    let resolveClosed: (() => void) | null = null
+    const closed = new Promise<void>((r) => (resolveClosed = r))
+    vi.mocked(startRemote).mockImplementation(async (_cwd, _claudeSessionId, _name, _env, exit) => {
+      onExit = exit
+      return {
+        url: 'https://claude.ai/code/session_test',
+        stop: () => {
+          onExit?.()
+          resolveClosed?.()
+        },
+        closed,
+      }
+    })
+  }
+
+  beforeEach(async () => {
+    const was = config.settleMs
+    config.settleMs = 10 // BusySettle is captured at LiveSession construction: set this before his first send()
+    sent = []
+    mockQuery(sent)
+    store = new Store(':memory:')
+    sessions = new Sessions(store, fakeProjects, () => ({}), new QuotaReserveSetting(() => null, () => undefined))
+    row = baseRow()
+    store.createSession(row)
+    sessions.send(row.id, 'hello')
+    await tick()
+    // Remote Control resumes a Claude session id: give him one, as a real process would on 'init'.
+    vi.mocked(query).mock.results[0]!.value.push({ type: 'system', subtype: 'init', session_id: 'claude-sess-1', model: 'x', agents: [], skills: [], plugins: [] })
+    await tick()
+    config.settleMs = was
+  })
+
+  afterEach(() => {
+    sessions.closeAll()
+    vi.clearAllMocks()
+  })
+
+  it('refuses while he is busy at all, even right after a turn just resumed (the settle grace period)', async () => {
+    fakeRemote()
+    vi.mocked(query).mock.results[0]!.value.push(resultMessage())
+    await tick()
+    // His turn is over, but BusySettle has not let settleMs elapse yet: still told busy.
+    expect(sessions.summaryOf(row.id)?.status).toBe('working')
+
+    await expect(sessions.remoteControl(row.id)).rejects.toThrow(UserError)
+  })
+
+  it('a plain message while a remote holds him takes him back, instead of queueing forever', async () => {
+    fakeRemote()
+    vi.mocked(query).mock.results[0]!.value.push(resultMessage())
+    await tick()
+    await new Promise((r) => setTimeout(r, 30)) // past the short settleMs: he is no longer busy
+    await sessions.remoteControl(row.id)
+    expect(sessions.summaryOf(row.id)?.remote).toBeTruthy()
+
+    sessions.send(row.id, 'coucou')
+    await tick()
+
+    expect(sessions.summaryOf(row.id)?.remote).toBeFalsy() // taken back: the remote was stopped
+    expect(sent.at(-1)).toBe('coucou') // and delivered, not stuck in the queue forever
+  })
+
+  it('autonomy takes him back from remote control instead of refusing', async () => {
+    fakeRemote()
+    vi.mocked(query).mock.results[0]!.value.push(resultMessage())
+    await tick()
+    await new Promise((r) => setTimeout(r, 30))
+    await sessions.remoteControl(row.id)
+
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'continue' })
+    await tick()
+
+    expect(sessions.summaryOf(row.id)?.remote).toBeFalsy()
+    expect(sent.at(-1)).toBe('/goal continue')
   })
 })

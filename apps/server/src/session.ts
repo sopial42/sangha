@@ -6,6 +6,7 @@ import { reserveMessage, reserveState, type QuotaReserveSetting } from './quotaR
 import { checkSessionEnv } from './sessionEnv'
 import {
   BUDDHA_SESSION_ID,
+  type AutonomyState,
   type BackgroundScript,
   type CostReport,
   type Envelope,
@@ -127,6 +128,9 @@ class LiveSession {
     private onClosed: () => void,
     onClaudeSessionId: (id: string) => void,
     private requestScriptSummary: (taskId: string, command: string) => void,
+    /** Whether his session currently has an active `/loop`: its CronCreate jobs and ScheduleWakeup live
+     * only inside this process, so it must never be idle-closed (see `refreshBusy`) while one is active. */
+    private isLoopActive: () => boolean,
     mcpToggles: Record<string, boolean> = {},
   ) {
     // Claude by default; a provider's session gets its own environment through `options.env`.
@@ -279,7 +283,9 @@ class LiveSession {
     const busy = this.turnRunning || this.novices.size > 0 || this.background.length > 0
     this.settle.set(busy, { now })
     clearTimeout(this.idleTimer)
-    if (!busy) this.idleTimer = setTimeout(() => this.close(), config.idleCloseMs)
+    // An active `/loop`'s CronCreate jobs and ScheduleWakeup live only in this process: idle-closing it
+    // while still would kill a loop pacing itself slower than `idleCloseMs`, with nothing left to wake him.
+    if (!busy && !this.isLoopActive()) this.idleTimer = setTimeout(() => this.close(), config.idleCloseMs)
   }
 }
 
@@ -292,7 +298,7 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 export const FAREWELL =
   'La suite de ton travail continue dans une session neuve, qui a reçu ta passation. Arrête ici tout travail : ne lance ni ne relance plus de sous-agents, et ne réponds plus aux notifications de tâches. Tu peux être fermée.'
 
-const RESTARTED =
+export const RESTARTED =
   'Ta session vient d’être relancée depuis Sangha : ton fichier d’agent, tes outils, skills et serveurs MCP ont été relus. Vérifie que ce qui te manquait est là, puis reprends où tu en étais (si tu attendais une réponse de ma part, attends-la).'
 
 export class Sessions {
@@ -467,7 +473,10 @@ export class Sessions {
     if (id.startsWith(EXTERNAL_PREFIX)) throw new UserError('utilise reply() pour une session externe')
     const row = this.store.getSession(id)
     if (!row || row.archivedAt) throw new UserError('session inconnue')
-    // In a turn, held by the quota reserve, or driven from claude.ai: the message waits, editable.
+    // Driven from claude.ai: takes him back rather than queueing forever — stopping it fires its own
+    // `onExit` (below), which flushes whatever ends up queued once it has actually ended.
+    if (this.remotes.has(id)) this.stopRemote(id)
+    // In a turn, held by the quota reserve, or (still, right now) the remote: the message waits, editable.
     if (this.reserve.reached || this.live.get(id)?.turning || this.remotes.has(id)) {
       this.store.addQueued(id, { id: crypto.randomUUID(), text, at: Date.now() })
       this.broadcastSession(id)
@@ -484,9 +493,13 @@ export class Sessions {
   /** His turn ended (or his process did): what you wrote meanwhile leaves, as one message. Held while the reserve bites. */
   private flushQueued(id: string) {
     const row = this.store.getSession(id)
-    if (!row || row.archivedAt || this.reserve.reached || this.live.get(id)?.turning || this.remotes.has(id)) return
+    if (!row || row.archivedAt || this.reserve.reached || this.live.get(id)?.turning) return
+    if (!this.store.queued(id).length) return
+    // Takes him back rather than leaving it queued forever: stopping the remote re-runs this very function
+    // from its own `onExit`, once it has actually ended.
+    if (this.remotes.has(id)) return this.stopRemote(id)
     const queued = this.store.takeQueued(id)
-    if (queued.length) this.deliver(row, queued.map((m) => m.text).join('\n\n'))
+    this.deliver(row, queued.map((m) => m.text).join('\n\n'))
   }
 
   editQueued(id: string, messageId: string, text: string) {
@@ -519,7 +532,9 @@ export class Sessions {
     const row = this.priestRow(id)
     if (!row.claudeSessionId) throw new UserError('pas encore de conversation à reprendre')
     const old = this.live.get(id)
-    if (old?.turning) throw new UserError('il travaille : attends la fin de son tour (ou interromps-le), puis réessaie')
+    // `busy` (not just `turning`): a turn just resumed and already ended counts too, through BusySettle's
+    // short grace period — he may still be about to reschedule a loop or otherwise act right after it.
+    if (old?.busy) throw new UserError('il travaille : attends la fin de son tour (ou interromps-le), puis réessaie')
     if (old) {
       old.close()
       await Promise.race([old.closed, new Promise((r) => setTimeout(r, 15_000))])
@@ -546,6 +561,18 @@ export class Sessions {
     this.remotes.get(id)?.stop()
   }
 
+  /**
+   * Takes him back from an active Remote Control before anything of ours calls `ensureLive`: never two
+   * processes on one conversation, so this stops it and actually waits for it to end (its own `onExit`
+   * already clears `this.remotes`) rather than just asking and hoping. A no-op when no remote is active.
+   */
+  private async takeBackFromRemote(id: string): Promise<void> {
+    const rc = this.remotes.get(id)
+    if (!rc) return
+    rc.stop()
+    await Promise.race([rc.closed, new Promise((r) => setTimeout(r, 15_000))])
+  }
+
   /** Relaunch a session the server stopped mid-work. */
   resume(id: string) {
     this.send(id, 'The Sangha server restarted while you were working. Check where you stopped, then continue.')
@@ -562,13 +589,15 @@ export class Sessions {
     await this.live.get(id)?.interrupt()
     if (id === BUDDHA_SESSION_ID || id.startsWith(EXTERNAL_PREFIX)) return // Buddha has none; an outside session's lives in its own terminal
     const current = this.store.lastAutonomy(id)
-    if (current?.active) this.stopAutonomy(id, current.mode)
+    if (current?.active) await this.stopAutonomy(id, current.mode)
   }
 
   /** Sends `/goal clear` or a loop's stop text straight to him. Whether his turn needs interrupting first
-   * (a loop, left alone, would just schedule its next wake-up) is for the caller to decide. */
-  private stopAutonomy(id: string, mode: 'goal' | 'loop') {
+   * (a loop, left alone, would just schedule its next wake-up) is for the caller to decide. Takes him back
+   * first if a remote currently holds him, rather than refusing. */
+  private async stopAutonomy(id: string, mode: 'goal' | 'loop') {
     const row = this.priestRow(id)
+    await this.takeBackFromRemote(id)
     const cmd = mode === 'goal' ? '/goal clear' : LOOP_STOP_MESSAGE
     this.emit(id, { t: 'user.message', text: cmd })
     this.ensureLive(row).send(cmd)
@@ -587,22 +616,28 @@ export class Sessions {
    */
   async autonomy(id: string, patch: { mode: 'goal' | 'loop'; text: string; interval?: string | null } | null) {
     const row = this.priestRow(id)
+    // Takes him back from a remote rather than refusing — `ensureLive` below would otherwise throw.
+    await this.takeBackFromRemote(id)
     const current = this.store.lastAutonomy(id)
 
     if (!patch) {
       if (!current) return
       if (current.mode === 'loop') await this.live.get(id)?.interrupt()
-      this.stopAutonomy(id, current.mode)
+      await this.stopAutonomy(id, current.mode)
       return
     }
 
-    if (current && current.mode !== patch.mode) this.stopAutonomy(id, current.mode)
+    if (current && current.mode !== patch.mode) await this.stopAutonomy(id, current.mode)
 
     const text = patch.text.trim()
     const interval = patch.mode === 'loop' ? patch.interval?.trim() : null
     const cmd = patch.mode === 'goal' ? `/goal ${text}` : `/loop ${interval ? `${interval} ` : ''}${text}`
+    // `ensureLive` before `emit`: if his process is dead and this is what starts a fresh one, `lastAutonomy`
+    // must still reflect the *previous* state when the fresh process decides whether to re-arm a loop —
+    // this command is about to supersede it anyway, never the one it needs re-sent to it.
+    const live = this.ensureLive(row)
     this.emit(id, { t: 'user.message', text: cmd })
-    this.ensureLive(row).send(cmd)
+    live.send(cmd)
   }
 
   // ——— Quota reserve: holding every priest once the plan quota approaches the share you asked to keep untouched ———
@@ -1619,11 +1654,36 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
         },
         (claudeId) => this.store.setClaudeSessionId(row.id, claudeId),
         (taskId, command) => this.scriptSummaries.request(row.id, taskId, command, row.title),
+        () => !!this.activeLoop(row.id),
         mcp?.toggles,
       )
       this.live.set(row.id, s)
+      this.rearmLoop(row.id, s)
     }
     return s
+  }
+
+  /** The active `/loop`, if any (never for Buddha, who has none). */
+  private activeLoop(id: string): Extract<AutonomyState, { mode: 'loop' }> | null {
+    if (id === BUDDHA_SESSION_ID) return null
+    const a = this.store.lastAutonomy(id)
+    return a?.mode === 'loop' && a.active ? a : null
+  }
+
+  /**
+   * A `/loop`'s CronCreate jobs and ScheduleWakeup live only inside the Claude process that had it: once
+   * that process ends for any reason other than the loop itself being stopped (a server restart, Relancer,
+   * Remote Control taking over, a crash…), none of that schedule survives into the fresh one. Re-sending
+   * the exact `/loop [interval ]text` that started it — as a real message in his own conversation, right
+   * when the fresh process is created — is the only way it gets re-armed. Called once per process, only
+   * from `ensureLive`'s own construction branch: a plain message to one already alive must never re-send it.
+   */
+  private rearmLoop(id: string, live: LiveSession) {
+    const loop = this.activeLoop(id)
+    if (!loop) return
+    const cmd = `/loop ${loop.interval ? `${loop.interval} ` : ''}${loop.text}`
+    this.emit(id, { t: 'user.message', text: cmd })
+    live.send(cmd)
   }
 
   private emit(id: string, ev: MonasteryEvent) {
