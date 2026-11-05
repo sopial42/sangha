@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { BUDDHA_SESSION_ID, modelKey, type BackgroundScript, type McpServer, type SessionSummary } from '@sangha/shared'
-import { api, ApiError, closeSession, finishClose } from './api'
+import { api, ApiError, closeSession, finishClose, lotusFailure } from './api'
 import { Chat } from './chat/Chat'
 import { goToNeighbour } from './nav'
 import { Md, MdInline } from './Md'
@@ -728,18 +728,14 @@ export function SessionView() {
                     className="btn btn-ghost"
                     onClick={() => {
                       setLotusError(null)
-                      api.lotus(s.id, !s.lotus).catch((e: unknown) =>
-                        setLotusError(
-                          e instanceof ApiError && e.status === 404
-                            ? 'Ton serveur Sangha ne connaît pas encore le lotus : relance-le (make dev).'
-                            : `Le lotus n'a pas pu être enregistré : ${e instanceof Error ? e.message : String(e)}.`,
-                        ),
-                      )
+                      // Without a note, a word first: in the pond, it's all you'll see of him on hover.
+                      if (!s.lotus && !s.note) return set({ dialog: { kind: 'note', id: s.id, lotus: true } })
+                      api.lotus(s.id, !s.lotus).catch((e: unknown) => setLotusError(lotusFailure(e)))
                     }}
                     title={
                       s.lotus
                         ? 'Le faire ressortir du bassin aux lotus : il reprend sa place devant son pavillon'
-                        : 'Le mettre de côté dans le bassin aux lotus, au calme, hors de son pavillon'
+                        : 'Le mettre de côté dans le bassin aux lotus de son pavillon, au calme'
                     }
                   >
                     {s.lotus ? 'Sortir du lotus' : 'Mettre au lotus'}

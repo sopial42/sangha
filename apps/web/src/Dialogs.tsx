@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { providerEnv, shellExports, type CostReport, type GlobalMcp, type LibraryMcp, type NirvanaEntry, type ProjectSuggestion, type Provider, envText, parseEnvText } from '@sangha/shared'
-import { ApiError, api, openSession } from './api'
+import { ApiError, api, lotusFailure, openSession } from './api'
 import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
 import { useBackdropClose } from './backdrop'
@@ -375,7 +375,11 @@ function IncenseChoice({ id, onClose }: { id: string; onClose: () => void }) {
 }
 
 /** Your own note about a priest, shown under him in the courtyard. */
-function NoteEditor({ id, onClose }: { id: string; onClose: () => void }) {
+/**
+ * His note. `lotus`: opened on his way to the lotus pond without one — there, hovering him is all
+ * you'll see of him, so a word now says where he stands; he goes in once it's saved (or without one).
+ */
+function NoteEditor({ id, lotus, onClose }: { id: string; lotus?: boolean; onClose: () => void }) {
   const session = useApp((s) => s.sessions[id])
   const [note, setNote] = useState(session?.note ?? '')
   const [busy, setBusy] = useState(false)
@@ -386,20 +390,31 @@ function NoteEditor({ id, onClose }: { id: string; onClose: () => void }) {
     setBusy(true)
     setError(null)
     try {
-      await api.note(id, value)
-      onClose()
+      if (value !== (session.note ?? null)) await api.note(id, value)
     } catch (err) {
       setError(message(err))
       setBusy(false)
+      return
     }
+    if (lotus) {
+      try {
+        await api.lotus(id, true)
+      } catch (err) {
+        setError(lotusFailure(err))
+        setBusy(false)
+        return
+      }
+    }
+    onClose()
   }
 
   return (
-    <Modal title="Petit mot" onClose={onClose}>
+    <Modal title={lotus ? 'Un mot avant le lotus ?' : 'Petit mot'} onClose={onClose}>
       <div className="form">
         <p>
           <b>{session.title}</b>
         </p>
+        {lotus && <p className="muted">Au bassin aux lotus, sa note est ce que tu verras de lui en le survolant : un mot pour te rappeler où il en est.</p>}
         <label>
           Note
           <textarea
@@ -426,13 +441,19 @@ function NoteEditor({ id, onClose }: { id: string; onClose: () => void }) {
           <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>
             Annuler
           </button>
-          {session.note != null && (
-            <button type="button" className="btn btn-danger" onClick={() => void save(null)} disabled={busy}>
-              Effacer
+          {lotus ? (
+            <button type="button" className="btn btn-ghost" onClick={() => void save(null)} disabled={busy}>
+              Sans note
             </button>
+          ) : (
+            session.note != null && (
+              <button type="button" className="btn btn-danger" onClick={() => void save(null)} disabled={busy}>
+                Effacer
+              </button>
+            )
           )}
           <button type="button" className="btn btn-primary" onClick={() => void save(note.trim() || null)} disabled={busy}>
-            Enregistrer
+            {lotus ? 'Mettre au lotus' : 'Enregistrer'}
           </button>
         </div>
       </div>
@@ -917,7 +938,7 @@ export function Dialogs() {
   if (dialog.kind === 'add-project') return <AddProject onClose={close} />
   if (dialog.kind === 'remove-project') return <RemoveProject name={dialog.name} onClose={close} />
   if (dialog.kind === 'incense') return <IncenseChoice id={dialog.id} onClose={close} />
-  if (dialog.kind === 'note') return <NoteEditor id={dialog.id} onClose={close} />
+  if (dialog.kind === 'note') return <NoteEditor id={dialog.id} lotus={dialog.lotus} onClose={close} />
   if (dialog.kind === 'nirvana') return <Nirvana onClose={close} />
   if (dialog.kind === 'costs') return <Costs onClose={close} />
   if (dialog.kind === 'providers') return <Providers onClose={close} />

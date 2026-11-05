@@ -1,7 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useEffect, useRef, useState } from 'react'
 import { BUDDHA_SESSION_ID, type ProjectInfo, type SessionSummary } from '@sangha/shared'
-import { api, ApiError, openSession } from '../api'
+import { api, lotusFailure, openSession } from '../api'
 import { agentTitle, priestsOf, robeOfAgent } from '../priests'
 import { useApp } from '../store'
 import { Backdrop, FLOOR_Y, HALL_SCALE, hallTransform } from './Backdrop'
@@ -36,20 +36,24 @@ const ROW_GAP = 225
 const MOBILE_ROW_GAP = 260
 // Courtyard kept free at each side of the scene: the bubble of a priest at the far end opens outward.
 const EDGE = 100
-// On mobile, the lotus pond is a plain row of its own, right under the hall, before the pavilions —
-// no room to anchor it beside a shrunken hall the way the desktop courtyard does. Tall enough that its
-// tree and water clear the first pavilion's roof below (which reaches 148 above its own base).
-const MOBILE_POND_ROW_H = 370
-// Where the pond sits within its row, close to the top (under the hall): leaves enough of the row
-// below it for a pavilion's roof never to brush its water.
-const MOBILE_POND_Y = 150
+// Each temple keeps its own lotus pond, at the left of its pavilion, a little apart from its roof
+// (which overhangs the body by 22 on each side); smaller on mobile, where the column is narrow.
+const ROOF_HALF = PAVILION_W / 2 + 22
+const POND_WATER_RX = 80 // the pond's water, before scaling (see LotusPond)
+const POND_SCALE = 0.55
+const MOBILE_POND_SCALE = 0.45
+const pondOffset = (scale: number) => -(ROOF_HALF + 8 + POND_WATER_RX * scale)
+// Courtyard a pavilion's slot gains on its left for that pond; the pavilion shifts right by half of it.
+const POND_ROOM = 90
+// On mobile, the leftmost a pavilion may stand for its pond to stay on screen.
+const MOBILE_PAVILION_MIN_X = -pondOffset(MOBILE_POND_SCALE) + POND_WATER_RX * MOBILE_POND_SCALE + 4
 
 /** Rows of priests in front of a pavilion, filled evenly (7 sit 4 + 3, not 6 + 1). */
 const rowsFor = (priests: number) => Math.max(1, Math.ceil(priests / PER_ROW))
 const perRowFor = (priests: number) => Math.ceil(priests / rowsFor(priests))
 
 /** Width a pavilion needs so its priests sit in front of it in one readable row. */
-const slotWidth = (priests: number) => Math.max(MIN_SLOT, perRowFor(priests) * PRIEST_W * PRIEST_SCALE + 30)
+const slotWidth = (priests: number) => Math.max(MIN_SLOT, perRowFor(priests) * PRIEST_W * PRIEST_SCALE + 30) + POND_ROOM
 
 /** Seats in front of a pavilion at (cx, baseY): rows of up to `perRow` priests, `rowGap` apart. */
 function seats(count: number, cx: number, baseY: number, perRow = perRowFor(count), rowGap = ROW_GAP): { x: number; y: number; scale: number; bubbleSide: 1 | -1 }[] {
@@ -125,19 +129,18 @@ function arrange(widths: number[], box: { w: number; h: number }, extras: number
  * whole courtyard shrinking to fit. `boxWidth` becomes the courtyard width almost directly (a
  * near 1:1 mapping of SVG units to CSS pixels), so priests stay at a readable, near-native size.
  */
-function arrangeMobile(counts: number[], boxWidth: number): { spots: Placed[]; width: number; height: number; perRow: 1 | 2; markerY: number; pondY: number } {
+function arrangeMobile(counts: number[], boxWidth: number): { spots: Placed[]; width: number; height: number; perRow: 1 | 2; markerY: number } {
   const perRow = boxWidth >= MOBILE_TWO_COL_MIN ? 2 : 1
   const width = Math.max(MOBILE_MIN_WIDTH, boxWidth)
-  const pondY = PAVILION_Y + MOBILE_POND_Y
   const spots: Placed[] = []
-  let y = PAVILION_Y + MOBILE_POND_ROW_H
+  let y = PAVILION_Y
   for (const count of counts) {
     spots.push({ x: width / 2, y })
     const rows = Math.max(1, Math.ceil(count / perRow))
     y += ROW_H + (rows - 1) * MOBILE_ROW_GAP
   }
   // `y` now sits exactly where one more (empty) row would start: where the add-project marker goes.
-  return { spots, width, height: y + 120, perRow, markerY: y, pondY }
+  return { spots, width, height: y + 120, perRow, markerY: y }
 }
 
 /** Rendered size of an element, kept current. */
@@ -237,16 +240,12 @@ export function Monastery() {
   useEffect(() => () => void (lotusNoticeTimer.current && clearTimeout(lotusNoticeTimer.current)), [])
   const noticeLotusFailure = (e: unknown) => {
     if (lotusNoticeTimer.current) clearTimeout(lotusNoticeTimer.current)
-    setLotusNotice(
-      e instanceof ApiError && e.status === 404
-        ? 'Ton serveur Sangha ne connaît pas encore le lotus : relance-le (make dev).'
-        : `Le lotus n'a pas pu être enregistré : ${e instanceof Error ? e.message : String(e)}.`,
-    )
+    setLotusNotice(lotusFailure(e))
     lotusNoticeTimer.current = setTimeout(() => setLotusNotice(null), 8_000)
   }
 
   const pavilions = [...projects]
-  for (const p of seated) if (!pavilions.some((x) => x.name === p.project)) pavilions.push(orphanProject(p.project))
+  for (const p of priests) if (!pavilions.some((x) => x.name === p.project)) pavilions.push(orphanProject(p.project))
 
   // Each pavilion gets the width its priests need, packed into centered rows.
   const [svgRef, box] = useBox<SVGSVGElement>()
@@ -258,8 +257,13 @@ export function Monastery() {
   const extras = counts.map((n) => (rowsFor(n) - 1) * ROW_GAP)
   const { spots: places, width, height, ...rest } = mobile ? arrangeMobile(counts, box.w) : arrange(widths, box, extras)
   const mobilePerRow = mobile ? (rest as { perRow: 1 | 2 }).perRow : null
+  // Where each pavilion stands within its slot (shifted right, its pond on its left) and where its pond
+  // lies. On mobile, priests stay centered on the column; only the pavilion moves aside if it must.
+  const pondScale = mobile ? MOBILE_POND_SCALE : POND_SCALE
+  const pavilionAt = places.map((pl) => ({ x: mobile ? Math.max(pl.x, MOBILE_PAVILION_MIN_X) : pl.x + POND_ROOM / 2, y: pl.y }))
+  const ponds = pavilionAt.map((pl) => ({ x: pl.x + pondOffset(pondScale), y: pl.y }))
   // The add-project marker sits just right of the last pavilion on desktop, or as one more row on mobile.
-  const last = places.at(-1)
+  const last = pavilionAt.at(-1)
   const marker = mobile
     ? { x: width / 2, y: (rest as { markerY: number }).markerY }
     : last
@@ -270,11 +274,6 @@ export function Monastery() {
   const hallScale = mobile ? Math.max(0.4, Math.min(HALL_SCALE, width / 620)) : HALL_SCALE
   const top = mobile ? Math.round(FLOOR_Y - (FLOOR_Y - TOP) * (hallScale / HALL_SCALE)) : DESKTOP_TOP
   const moon = moonPosition(width, mobile, top)
-  // The pond sits under a Bodhi tree, to the left of the hall (desktop); on mobile it's one more row,
-  // right under the hall, before the pavilions.
-  const pond = mobile
-    ? { x: width / 2, y: (rest as { pondY: number }).pondY }
-    : { x: width / 2 + hallScale * (90 - 500), y: FLOOR_Y + hallScale * 20 }
 
   const anyWorking = priests.some((p) => p.status === 'working') || buddha?.status === 'working'
   const buddhaSpeaking = selectedId === BUDDHA_SESSION_ID && view.draft.length > 0
@@ -306,7 +305,7 @@ export function Monastery() {
   // the mobile column stacks one priest per row, where this collision never arises).
   const seatsByPavilion = pavilions.map((p, i) => {
     const mine = seated.filter((s) => s.project === p.name)
-    return { p, mine, spots: seats(mine.length, places[i]!.x, places[i]!.y, mobilePerRow ?? perRowFor(mine.length), mobile ? MOBILE_ROW_GAP : ROW_GAP) }
+    return { p, mine, spots: seats(mine.length, mobile ? places[i]!.x : pavilionAt[i]!.x, places[i]!.y, mobilePerRow ?? perRowFor(mine.length), mobile ? MOBILE_ROW_GAP : ROW_GAP) }
   })
   const bubbleSides = mobile
     ? {}
@@ -314,20 +313,27 @@ export function Monastery() {
         seatsByPavilion.flatMap(({ mine, spots }) => mine.map((s, j) => ({ id: s.id, x: spots[j]!.x, y: spots[j]!.y, scale: spots[j]!.scale, side: spots[j]!.bubbleSide }))),
       )
 
-  // --- The lotus pond: open/close, and dragging a priest in or out --------------------------------
-  const [pondOpen, setPondOpen] = useState(false)
+  // --- The temples' lotus ponds: open/close, and dragging a priest in or out ---------------------
+  // A priest goes into his own temple's pond, and only that one: `pond` is where it lies.
+  const pondOf = (project: string) => ponds[pavilions.findIndex((x) => x.name === project)] ?? { x: width / 2, y: PAVILION_Y }
+  const lotusOf = (project: string) => lotusPriests.filter((p) => p.project === project)
+  const [pondOpen, setPondOpen] = useState<string | null>(null)
+  const openPond = pondOpen && pavilions.some((x) => x.name === pondOpen) ? pondOpen : null
   type DragPhase = 'dragging' | 'settling-in' | 'settling-out' | 'returning'
-  type Drag = { id: string; from: 'seat' | 'pond'; phase: DragPhase; x: number; y: number; overTarget: boolean; robe: string; label: string; origin: { x: number; y: number } }
+  type Drag = { id: string; project: string; pond: { x: number; y: number }; from: 'seat' | 'pond'; phase: DragPhase; x: number; y: number; overTarget: boolean; robe: string; label: string; origin: { x: number; y: number } }
   const [drag, setDrag] = useState<Drag | null>(null)
   const dragRef = useRef<Drag | null>(null)
-  const pondRef = useRef(pond)
-  pondRef.current = pond
   const panelRectRef = useRef({ x: 0, y: 0, w: 0, h: 0 })
   const availPanelW = width - 40
-  if (pondOpen) {
-    const { w: pw, h: ph } = pondPanelSize(lotusPriests.length, availPanelW)
-    panelRectRef.current = { x: pond.x - pw / 2, y: pond.y - ph / 2, w: pw, h: ph }
-  }
+  // The open panel grows from its pond, kept whole within the courtyard.
+  const openSize = openPond ? pondPanelSize(lotusOf(openPond).length, availPanelW) : null
+  const panelAt = openPond && openSize
+    ? (() => {
+        const at = pondOf(openPond)
+        return { x: Math.min(Math.max(at.x, openSize.w / 2 + 20), width - openSize.w / 2 - 20), y: Math.max(at.y, top + openSize.h / 2 + 20) }
+      })()
+    : null
+  if (panelAt && openSize) panelRectRef.current = { x: panelAt.x - openSize.w / 2, y: panelAt.y - openSize.h / 2, w: openSize.w, h: openSize.h }
   const updateDrag = (patch: Partial<Drag>) => {
     if (!dragRef.current) return
     const next = { ...dragRef.current, ...patch }
@@ -348,7 +354,8 @@ export function Monastery() {
     const p = pt.matrixTransform(ctm.inverse())
     return { x: p.x, y: p.y }
   }
-  const isOverPond = (p: { x: number; y: number }) => Math.hypot(p.x - pondRef.current.x, p.y - (pondRef.current.y + POND_CENTER_Y)) <= POND_HIT_R
+  const isOverPond = (p: { x: number; y: number }, pond: { x: number; y: number }) =>
+    Math.hypot(p.x - pond.x, p.y - (pond.y + POND_CENTER_Y * pondScale)) <= POND_HIT_R * pondScale
   const isOverPanel = (p: { x: number; y: number }) => {
     const r = panelRectRef.current
     return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h
@@ -362,9 +369,14 @@ export function Monastery() {
     const d = dragRef.current
     if (!d || d.id !== id) return
     if (d.from === 'seat') {
-      if (d.overTarget) {
+      if (d.overTarget && !sessions[id]?.note) {
+        // No note yet: back to his seat, and a word first — in the pond, it's all you'll see of him on hover.
+        updateDrag({ phase: 'returning', x: d.origin.x, y: d.origin.y })
+        settleTimer(id, 360)
+        set({ dialog: { kind: 'note', id, lotus: true } })
+      } else if (d.overTarget) {
         setOptimisticLotus((s) => new Set(s).add(id))
-        updateDrag({ phase: 'settling-in', x: pondRef.current.x, y: pondRef.current.y })
+        updateDrag({ phase: 'settling-in', x: d.pond.x, y: d.pond.y })
         api.lotus(id, true).catch((e: unknown) => {
           setOptimisticLotus((s) => (s.has(id) ? new Set([...s].filter((x) => x !== id)) : s))
           noticeLotusFailure(e)
@@ -390,9 +402,10 @@ export function Monastery() {
       }
     }
   }
-  // `isOverTarget`: for a drag out of the courtyard, the pond itself; for a drag out of the open
+  // `isOverTarget`: for a drag out of the courtyard, his temple's pond; for a drag out of the open
   // panel, anywhere outside it — dropping back onto the panel cancels (he's released nowhere new).
-  const startDrag = (e: React.PointerEvent, id: string, from: 'seat' | 'pond', robe: string, label: string, origin: { x: number; y: number }) => {
+  const startDrag = (e: React.PointerEvent, id: string, project: string, from: 'seat' | 'pond', robe: string, label: string, origin: { x: number; y: number }) => {
+    const pond = pondOf(project)
     if (e.pointerType !== 'touch' && e.button !== 0) return
     const svg = svgRef.current
     if (!svg) return
@@ -406,7 +419,7 @@ export function Monastery() {
 
     const activate = () => {
       active = true
-      const d: Drag = { id, from, phase: 'dragging', x: startWorld.x, y: startWorld.y, overTarget: from === 'seat' ? isOverPond(startWorld) : !isOverPanel(startWorld), robe, label, origin }
+      const d: Drag = { id, project, pond, from, phase: 'dragging', x: startWorld.x, y: startWorld.y, overTarget: from === 'seat' ? isOverPond(startWorld, pond) : !isOverPanel(startWorld), robe, label, origin }
       dragRef.current = d
       setDrag(d)
     }
@@ -429,7 +442,7 @@ export function Monastery() {
         else return
       }
       const p = clientToSvg(ev.clientX, ev.clientY)
-      const overTarget = from === 'seat' ? isOverPond(p) : !isOverPanel(p)
+      const overTarget = from === 'seat' ? isOverPond(p, pond) : !isOverPanel(p)
       updateDrag({ x: p.x, y: p.y, overTarget })
     }
     const onUp = (ev: PointerEvent) => {
@@ -454,17 +467,16 @@ export function Monastery() {
 
   // Escape closes the pond's open panel first, same as any other overlay.
   useEffect(() => {
-    if (!pondOpen) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPondOpen(false)
+    if (!openPond) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPondOpen(null)
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [pondOpen])
+  }, [openPond])
 
-  const pondNeedsAttention = lotusPriests.some((p) => (p.status === 'waiting' && !p.silenced) || p.status === 'error')
-  const openSize = pondOpen ? pondPanelSize(lotusPriests.length, availPanelW) : null
+  const needsAttention = (p: SessionSummary) => (p.status === 'waiting' && !p.silenced) || p.status === 'error'
   // Tall panels (many priests set aside) can reach below the courtyard's usual bottom: grow the
   // viewBox to fit rather than let it clip.
-  const effectiveHeight = openSize ? Math.max(height, pond.y + openSize.h / 2 + 60) : height
+  const effectiveHeight = panelAt && openSize ? Math.max(height, panelAt.y + openSize.h / 2 + 60) : height
 
   return (
     <>
@@ -485,7 +497,7 @@ export function Monastery() {
       </g>
 
       {pavilions.map((p, i) => (
-        <g key={p.name} transform={`translate(${places[i]!.x} ${places[i]!.y})`}>
+        <g key={p.name} transform={`translate(${pavilionAt[i]!.x} ${pavilionAt[i]!.y})`}>
           <Pavilion
             project={p}
             width={PAVILION_W}
@@ -498,6 +510,28 @@ export function Monastery() {
       <g transform={`translate(${marker.x} ${marker.y})`}>
         <AddProjectMarker onClick={() => set({ dialog: { kind: 'add-project' } })} />
       </g>
+
+      {/* Each temple's closed pond, beside its pavilion: a calm stack under a Bodhi tree, drawn
+          before the priests so their bubbles pass over it. */}
+      {pavilions.map((p, i) => {
+        const mine = lotusOf(p.name)
+        return (
+          <PondClosed
+            key={p.name}
+            x={ponds[i]!.x}
+            y={ponds[i]!.y}
+            scale={pondScale}
+            project={p.name}
+            priests={mine}
+            resolveTitle={(x) => agentTitle(x, projects)}
+            hiddenId={drag && drag.from === 'seat' ? drag.id : null}
+            needsAttention={mine.some(needsAttention)}
+            dropHover={!!drag && drag.from === 'seat' && drag.project === p.name && drag.overTarget}
+            reducedMotion={reducedMotion}
+            onOpen={() => setPondOpen(p.name)}
+          />
+        )
+      })}
 
       <AnimatePresence>
         {seatsByPavilion.flatMap(({ mine, spots }) =>
@@ -521,7 +555,7 @@ export function Monastery() {
               onNote={() => set({ dialog: { kind: 'note', id: s.id } })}
               moon={moon}
               ackToken={closingAck?.id === s.id ? closingAck.token : undefined}
-              onDragStart={(e) => startDrag(e, s.id, 'seat', robeOfAgent(s.agent), agentTitle(s, projects), { x: spots[j]!.x, y: spots[j]!.y })}
+              onDragStart={(e) => startDrag(e, s.id, s.project, 'seat', robeOfAgent(s.agent), agentTitle(s, projects), { x: spots[j]!.x, y: spots[j]!.y })}
               beingDragged={drag?.id === s.id && drag.from === 'seat'}
             />
           )),
@@ -530,53 +564,34 @@ export function Monastery() {
 
       <Moon x={moon.x} y={moon.y} r={moon.r} arrivalTick={moonArrivals} onOpen={() => set({ dialog: { kind: 'nirvana' } })} />
 
-      {/* The lotus pond, last of all: closed, a calm stack under a Bodhi tree; open, a panel over the
-          whole courtyard — nothing beneath should catch a click meant to close it. */}
-      <AnimatePresence mode="sync">
-        {pondOpen ? (
+      {/* An open pond, last of all: a panel over the whole courtyard — nothing beneath should catch a
+          click meant to close it. */}
+      <AnimatePresence>
+        {openPond && panelAt && (
           <motion.g
-            key="pond-open"
+            key={`pond-open-${openPond}`}
             initial={reducedMotion ? false : { opacity: 0, scale: 0.86 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.86 }}
             transition={{ duration: 0.22 }}
-            style={{ originX: `${pond.x}px`, originY: `${pond.y}px` }}
+            style={{ originX: `${panelAt.x}px`, originY: `${panelAt.y}px` }}
           >
-            <rect x={-4000} y={-4000} width={8000} height={8000} fill="#0b0810a6" onClick={() => setPondOpen(false)} />
+            <rect x={-4000} y={-4000} width={8000} height={8000} fill="#0b0810a6" onClick={() => setPondOpen(null)} />
             <PondOpen
-              x={pond.x}
-              y={pond.y}
-              priests={lotusPriests}
+              x={panelAt.x}
+              y={panelAt.y}
+              project={openPond}
+              priests={lotusOf(openPond)}
               resolveTitle={(p) => agentTitle(p, projects)}
               hiddenId={drag && drag.from === 'seat' ? drag.id : null}
               draggingId={drag && drag.from === 'pond' ? drag.id : null}
               width={availPanelW}
               onSelect={(id) => guardedSelect(id)}
-              onRelease={(id) => void api.lotus(id, false)}
+              onRelease={(id) => void api.lotus(id, false).catch(noticeLotusFailure)}
               onRowPointerDown={(e, id) => {
                 const p = lotusPriests.find((x) => x.id === id)
-                if (p) startDrag(e, id, 'pond', robeOfAgent(p.agent), agentTitle(p, projects), { x: pond.x, y: pond.y })
+                if (p) startDrag(e, id, p.project, 'pond', robeOfAgent(p.agent), agentTitle(p, projects), panelAt)
               }}
-            />
-          </motion.g>
-        ) : (
-          <motion.g
-            key="pond-closed"
-            initial={reducedMotion ? false : { opacity: 0, scale: 0.86 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.86 }}
-            transition={{ duration: 0.22 }}
-            style={{ originX: `${pond.x}px`, originY: `${pond.y}px` }}
-          >
-            <PondClosed
-              x={pond.x}
-              y={pond.y}
-              priests={lotusPriests}
-              hiddenId={drag && drag.from === 'seat' ? drag.id : null}
-              needsAttention={pondNeedsAttention}
-              dropHover={!!drag && drag.from === 'seat' && drag.overTarget}
-              reducedMotion={reducedMotion}
-              onOpen={() => setPondOpen(true)}
             />
           </motion.g>
         )}

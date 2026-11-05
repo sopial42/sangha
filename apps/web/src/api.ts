@@ -12,6 +12,12 @@ export class ApiError extends Error {
   }
 }
 
+/** Why setting a priest aside in the lotus pond (or bringing him back) didn't save, in a word for you. */
+export const lotusFailure = (e: unknown) =>
+  e instanceof ApiError && e.status === 404
+    ? 'Ton serveur Sangha ne connaît pas encore le lotus : relance-le (make dev).'
+    : `Le lotus n'a pas pu être enregistré : ${e instanceof Error ? e.message : String(e)}.`
+
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { headers: { 'content-type': 'application/json' }, ...init })
   if (!res.ok) {

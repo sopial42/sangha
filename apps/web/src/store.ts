@@ -145,7 +145,8 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
 export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-project' } | { kind: 'dismiss'; id: string; working?: boolean }
   | { kind: 'remove-project'; name: string }
   | { kind: 'incense'; id: string }
-  | { kind: 'note'; id: string }
+  // `lotus`: asked on his way to the lotus pond, where his note is all you'll see of him on hover.
+  | { kind: 'note'; id: string; lotus?: boolean }
   | { kind: 'nirvana' }
   | { kind: 'costs' }
   | { kind: 'providers' }

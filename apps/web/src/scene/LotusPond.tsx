@@ -2,7 +2,8 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { SessionSummary } from '@sangha/shared'
 import { robeOfAgent, STATUS_LABEL } from '../priests'
 
-/** Hit radius of the closed pond (world units): both its click target and the seat→pond drop zone. */
+/** Hit radius of the closed pond (its own units, before `scale`): both its click target and the
+ *  seat→pond drop zone. */
 export const POND_HIT_R = 92
 /** Where the pond's own visual centers, relative to the anchor point passed in (the water sits a
  *  little below the anchor, the tree rises above it) — also the hit-test center used for drop-zone
@@ -101,14 +102,18 @@ export function PondDefs() {
 }
 
 /**
- * The lotus pond, closed: a cluster of lily pads under a Bodhi tree, up to three priests set aside
- * visible, a "+N" for the rest. Calm — no labels, no bubbles. Glows softly when one of them needs you,
- * and again (a brighter ring) while a dragged priest hovers, ready to be dropped in.
+ * A temple's lotus pond, closed: a cluster of lily pads under a Bodhi tree, up to three of its priests
+ * set aside visible, a "+N" for the rest. Calm — no labels, no bubbles: hovering one shows who he is
+ * and his note. Glows softly when one of them needs you, and again (a brighter ring) while a dragged
+ * priest of this temple hovers, ready to be dropped in. Empty, it fades back, there for a drop.
  */
 export function PondClosed({
   x,
   y,
+  scale,
+  project,
   priests,
+  resolveTitle,
   hiddenId,
   needsAttention,
   dropHover,
@@ -117,7 +122,10 @@ export function PondClosed({
 }: {
   x: number
   y: number
+  scale: number
+  project: string
   priests: SessionSummary[]
+  resolveTitle: (p: SessionSummary) => string
   /** A priest mid-drag out of the pond: he's drawn as the drag ghost instead, not doubled here. */
   hiddenId: string | null
   needsAttention: boolean
@@ -131,12 +139,12 @@ export function PondClosed({
   const count = visible.length
   const label =
     count === 0
-      ? 'Bassin aux lotus : vide pour l’instant. Glisse-y un prêtre, ou ouvre-le pour voir'
-      : `Bassin aux lotus : ${count} prêtre${count > 1 ? 's' : ''} de côté${needsAttention ? ', dont un t’attend' : ''}. Ouvrir`
+      ? `Bassin aux lotus de ${project} : vide pour l’instant. Glisse-y un de ses prêtres, ou ouvre-le pour voir`
+      : `Bassin aux lotus de ${project} : ${count} prêtre${count > 1 ? 's' : ''} de côté${needsAttention ? ', dont un t’attend' : ''}. Ouvrir`
   return (
     // Placed by an outer group: the hover grow (CSS `transform: scale`) on the clickable one would
     // otherwise replace its translate, throwing the pond to the scene's origin, off the pointer, back…
-    <g transform={`translate(${x} ${y})`}>
+    <g transform={`translate(${x} ${y}) scale(${scale})`} opacity={count === 0 && !dropHover ? 0.55 : 1}>
     <g
       className="lotus-pond clickable"
       role="button"
@@ -191,6 +199,7 @@ export function PondClosed({
       </g>
       {shown.map((p, i) => (
         <g key={p.id} transform={`translate(${(i - (shown.length - 1) / 2) * 24} ${2 - i * 3})`}>
+          <title>{`${resolveTitle(p)} : ${p.title}\n${p.note ?? 'Pas de note'}`}</title>
           <MiniPriest robe={robeOfAgent(p.agent)} bob={i * 0.6} />
         </g>
       ))}
@@ -295,12 +304,13 @@ export function pondPanelSize(count: number, maxW: number) {
 }
 
 /**
- * The pond, opened: grown into a panel over the courtyard, every priest set aside listed in a row —
+ * A temple's pond, opened: grown into a panel over the courtyard, each of its priests set aside in a row —
  * his name, branch, status and note — a « Sortir » button, or drag him back onto the courtyard.
  */
 export function PondOpen({
   x,
   y,
+  project,
   priests,
   resolveTitle,
   hiddenId,
@@ -312,6 +322,7 @@ export function PondOpen({
 }: {
   x: number
   y: number
+  project: string
   priests: SessionSummary[]
   resolveTitle: (p: SessionSummary) => string
   hiddenId: string | null
@@ -327,7 +338,7 @@ export function PondOpen({
     <g transform={`translate(${x - w / 2} ${y - h / 2})`}>
       <rect width={w} height={h} rx="16" fill="#1d1725ee" stroke="#e0b25a55" strokeWidth="1.3" />
       <text x={w / 2} y="24" textAnchor="middle" className="lotus-panel-title">
-        Bassin aux lotus
+        {`Bassin aux lotus · ${truncate(project, 28)}`}
       </text>
       <line x1="10" x2={w - 10} y1={HEADER_H - 6} y2={HEADER_H - 6} stroke="#3a2e40" />
       {shown.length === 0 && (
