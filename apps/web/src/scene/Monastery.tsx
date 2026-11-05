@@ -569,6 +569,7 @@ export function Monastery() {
               width={availPanelW}
               onSelect={(id) => guardedSelect(id)}
               onRelease={(id) => void api.lotus(id, false).catch(noticeLotusFailure)}
+              onNote={(id) => set({ dialog: { kind: 'note', id } })}
               onRowPointerDown={(e, id) => {
                 const p = lotusPriests.find((x) => x.id === id)
                 if (p) startDrag(e, id, p.project, 'pond', robeOfAgent(p.agent), agentTitle(p, projects), panelAt)

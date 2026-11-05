@@ -268,6 +268,7 @@ function PondRow({
   w,
   onSelect,
   onRelease,
+  onNote,
   onPointerDown,
   dragging,
 }: {
@@ -277,12 +278,16 @@ function PondRow({
   w: number
   onSelect: () => void
   onRelease: () => void
+  onNote: () => void
   onPointerDown: (e: React.PointerEvent) => void
   dragging: boolean
 }) {
   const robe = robeOfAgent(p.agent)
   const branch = p.branch ?? 'sans branche'
-  const meta = `⎇ ${truncate(branch, 26)} · ${STATUS_LABEL[p.status]}${p.note ? ` · ${truncate(p.note, 30)}` : ''}`
+  const meta = `${projectAgents} · ⎇ ${branch} · ${STATUS_LABEL[p.status]}`
+  // Room left of the two buttons (Note, Sortir), in characters of each line's font: a rough budget, no
+  // DOM measurement for SVG text here.
+  const chars = (px: number) => Math.max(12, Math.floor((w - 42 - 150) / px))
   const label = `${projectAgents} : ${p.title} (${STATUS_LABEL[p.status]}). Ouvrir sa conversation`
   return (
     // The row's own slide-in/out lives on this inner group: Framer Motion owns its transform once
@@ -301,13 +306,40 @@ function PondRow({
           style={{ touchAction: 'none' }}
         >
           <title>{label}</title>
-          <rect x="10" y="3" width={w - 20} height="50" rx="10" fill="#15101c66" />
-          <circle cx="28" cy="28" r="6" fill={robe} />
-          <text x="42" y="22" className="lotus-row-name">
-            {truncate(projectAgents, 30)}
+          <rect x="10" y="3" width={w - 20} height={ROW_H - 8} rx="10" fill="#15101c66" />
+          <circle cx="28" cy="20" r="6" fill={robe} />
+          {/* His note first: it is how you tell your priests apart (« RIB ET MAIL », « BUG CAROLINE »…). */}
+          <text x="42" y="24" className={p.note ? 'lotus-row-note' : 'lotus-row-note empty'}>
+            {p.note ? truncate(p.note, chars(8.5)) : 'Sans note'}
           </text>
-          <text x="42" y="40" className="lotus-row-meta">
-            {truncate(meta, 46)}
+          <text x="42" y="42" className="lotus-row-name">
+            {truncate(p.title, chars(7.5))}
+          </text>
+          <text x="42" y="58" className="lotus-row-meta">
+            {truncate(meta, chars(6.2))}
+          </text>
+        </g>
+        <g
+          className="lotus-sortir clickable"
+          role="button"
+          tabIndex={0}
+          aria-label={p.note ? `Modifier la note : ${p.note}` : 'Ajouter une note'}
+          transform={`translate(${w - 146} ${ROW_H / 2 - 14})`}
+          onClick={(e) => {
+            e.stopPropagation()
+            onNote()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              e.stopPropagation()
+              onNote()
+            }
+          }}
+        >
+          <rect width="62" height="24" rx="12" fill="transparent" stroke="#e0b25a88" strokeWidth="1.3" />
+          <text x="31" y="16" textAnchor="middle" className="lotus-sortir-text">
+            ✎ Note
           </text>
         </g>
         <g
@@ -315,7 +347,7 @@ function PondRow({
           role="button"
           tabIndex={0}
           aria-label={`Sortir ${projectAgents} du bassin`}
-          transform={`translate(${w - 78} 16)`}
+          transform={`translate(${w - 78} ${ROW_H / 2 - 14})`}
           onClick={(e) => {
             e.stopPropagation()
             onRelease()
@@ -338,13 +370,13 @@ function PondRow({
   )
 }
 
-const ROW_H = 58
+const ROW_H = 74
 const HEADER_H = 40
 const PANEL_PAD = 10
 
 /** Size the open panel needs for `count` priests, capped to `maxW` wide. */
 export function pondPanelSize(count: number, maxW: number) {
-  const w = Math.max(280, Math.min(560, maxW))
+  const w = Math.max(320, Math.min(620, maxW))
   const h = HEADER_H + Math.max(1, count) * ROW_H + PANEL_PAD
   return { w, h }
 }
@@ -364,6 +396,7 @@ export function PondOpen({
   width,
   onSelect,
   onRelease,
+  onNote,
   onRowPointerDown,
 }: {
   x: number
@@ -376,6 +409,7 @@ export function PondOpen({
   width: number
   onSelect: (id: string) => void
   onRelease: (id: string) => void
+  onNote: (id: string) => void
   onRowPointerDown: (e: React.PointerEvent, id: string) => void
 }) {
   const shown = priests.filter((p) => p.id !== hiddenId)
@@ -403,6 +437,7 @@ export function PondOpen({
             dragging={p.id === draggingId}
             onSelect={() => onSelect(p.id)}
             onRelease={() => onRelease(p.id)}
+            onNote={() => onNote(p.id)}
             onPointerDown={(e) => onRowPointerDown(e, p.id)}
           />
         ))}

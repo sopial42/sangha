@@ -2059,6 +2059,19 @@ input[type='range']:disabled::-moz-range-thumb {
   fill: var(--muted);
 }
 
+/* His note, the row's headline: the same gold as under him in the courtyard. */
+.lotus-row-note {
+  font: 700 15px var(--serif);
+  fill: #f2d590;
+  letter-spacing: 0.02em;
+}
+
+.lotus-row-note.empty {
+  font-weight: 500;
+  font-style: italic;
+  fill: var(--muted);
+}
+
 .lotus-row.clickable:hover rect,
 .lotus-row.clickable:focus-visible rect {
   fill: #2a2135aa;
