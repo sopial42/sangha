@@ -2,13 +2,14 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { SessionSummary } from '@sangha/shared'
 import { robeOfAgent, STATUS_LABEL } from '../priests'
 
-/** Hit radius of the closed pond (its own units, before `scale`): both its click target and the
- *  seat→pond drop zone. */
-export const POND_HIT_R = 84
+/** Half-axes of the closed pond's hit ellipse: both its click target and the seat→pond drop zone.
+ *  Flat enough not to reach up over its pavilion's door, which stays clickable just above. */
+export const POND_HIT_RX = 92
+export const POND_HIT_RY = 40
 /** Where the pond's own visual centers, relative to the anchor point passed in (the water lies on the
  *  anchor, the priests on its far bank rise a little above it) — also the hit-test center used for
  *  drop-zone detection, so it always matches what's actually drawn. */
-export const POND_CENTER_Y = -8
+export const POND_CENTER_Y = -4
 
 const truncate = (text: string, n: number) => (text.length > n ? `${text.slice(0, n - 1).trimEnd()}…` : text)
 
@@ -46,16 +47,17 @@ function ChillingPriest({ robe, delay, tea, still }: { robe: string; delay: numb
   )
 }
 
-/** Where priests sit around the water, in the order they arrive: the far bank first, facing you,
- *  then its two ends, then the near bank. */
+/** Where priests sit around the water, in the order they arrive: the far bank first, facing you, then
+ *  its two ends, then the near bank beside the burner; last, the middle of the far bank, right behind
+ *  the burner's sticks. */
 const BANK = [
-  { x: 0, y: -21 },
   { x: -36, y: -18 },
   { x: 36, y: -18 },
   { x: -76, y: -2 },
   { x: 76, y: -2 },
-  { x: -34, y: 27 },
-  { x: 34, y: 27 },
+  { x: -50, y: 22 },
+  { x: 50, y: 22 },
+  { x: 0, y: -21 },
 ]
 
 /** A paper lantern floating on the water, its candle flickering. */
@@ -138,7 +140,7 @@ export function PondDefs() {
 }
 
 /**
- * A temple's lotus pond, closed, at the foot of its pavilion: lily pads, a floating lantern, and its
+ * A temple's lotus basin, closed, right at the foot of its pavilion (its big burner on the near rim): lily pads, a floating lantern, and its
  * priests set aside sitting around the water like an evening off — up to seven on the bank, a "+N"
  * for the rest. Calm — no labels, no bubbles: hovering one shows who he is and his note. Glows softly when one of them needs you, and again (a brighter ring) while a dragged
  * priest of this temple hovers, ready to be dropped in. Empty, it fades back, there for a drop.
@@ -146,7 +148,6 @@ export function PondDefs() {
 export function PondClosed({
   x,
   y,
-  scale,
   project,
   priests,
   resolveTitle,
@@ -158,7 +159,6 @@ export function PondClosed({
 }: {
   x: number
   y: number
-  scale: number
   project: string
   priests: SessionSummary[]
   resolveTitle: (p: SessionSummary) => string
@@ -180,7 +180,7 @@ export function PondClosed({
   return (
     // Placed by an outer group: the hover grow (CSS `transform: scale`) on the clickable one would
     // otherwise replace its translate, throwing the pond to the scene's origin, off the pointer, back…
-    <g transform={`translate(${x} ${y}) scale(${scale})`} opacity={count === 0 && !dropHover ? 0.55 : 1}>
+    <g transform={`translate(${x} ${y})`} opacity={count === 0 && !dropHover ? 0.55 : 1}>
     <g
       className="lotus-pond clickable"
       role="button"
@@ -196,7 +196,7 @@ export function PondClosed({
     >
       <title>{label}</title>
       {/* generous invisible tap target, well past the drawing itself */}
-      <circle cy={POND_CENTER_Y} r={POND_HIT_R} fill="transparent" />
+      <ellipse cy={POND_CENTER_Y} rx={POND_HIT_RX} ry={POND_HIT_RY} fill="transparent" />
       {needsAttention && (
         <motion.ellipse
           cy={POND_CENTER_Y}
@@ -221,7 +221,10 @@ export function PondClosed({
         />
       )}
       <Mist reducedMotion={reducedMotion} />
-      <ellipse cy="3" rx="70" ry="25" fill="#2a2019" opacity="0.55" />
+      {/* a stone rim of the same wood-brown as the pavilion's platform: the basin is part of the temple */}
+      <ellipse cy="4" rx="73" ry="26" fill="#3d2f25" />
+      <ellipse rx="69" ry="23.5" fill="#6d5644" />
+      <ellipse cy="-1.5" rx="65" ry="21" fill="#2a2019" opacity="0.6" />
       <ellipse rx="62" ry="20" fill="url(#pondWater)" />
       <ellipse cy="-3" rx="46" ry="12" fill="none" stroke="#6fae8a" strokeOpacity="0.18" strokeWidth="1.5" />
       <LilyPad x={-34} y={6} r={14} tone="#3f7f6a" />
@@ -233,7 +236,8 @@ export function PondClosed({
           <ellipse key={i} rx="4" ry="6.5" fill={i === 1 ? '#fbd7e0' : '#e79bb0'} transform={`rotate(${(i - 1) * 55})`} />
         ))}
       </g>
-      <FloatingLantern x={2} y={2} reducedMotion={reducedMotion} />
+      {/* off-center: the big burner stands on the near rim, in the middle */}
+      <FloatingLantern x={-24} y={-2} reducedMotion={reducedMotion} />
       {shown
         .map((p, i) => ({ p, i, at: BANK[i]! }))
         .sort((a, b) => a.at.y - b.at.y)

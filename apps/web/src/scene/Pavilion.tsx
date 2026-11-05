@@ -1,5 +1,5 @@
 import { motion } from 'motion/react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { ProjectInfo } from '@sangha/shared'
 import { Incense } from './Incense'
 
@@ -18,6 +18,7 @@ export function Pavilion({
   working,
   onClick,
   onRemove,
+  foot,
 }: {
   project: ProjectInfo
   width: number
@@ -25,6 +26,8 @@ export function Pavilion({
   onClick: () => void
   /** Snuffing out the big burner removes the project. Resolves false if it stays (cancelled). */
   onRemove?: () => Promise<boolean>
+  /** At its foot, between the building and the big burner: its lotus basin. */
+  foot?: ReactNode
 }) {
   const [snuffed, setSnuffed] = useState(false)
   const w = Math.max(90, width)
@@ -63,6 +66,7 @@ export function Pavilion({
         {clip(project.name, Math.floor(Math.min(w * 0.84, 140) / 9))}
       </text>
     </g>
+    {foot}
     {/* the big burner before the steps */}
     {onRemove && (
       <g transform="translate(0 52)">
