@@ -4,21 +4,77 @@ import { robeOfAgent, STATUS_LABEL } from '../priests'
 
 /** Hit radius of the closed pond (its own units, before `scale`): both its click target and the
  *  seat→pond drop zone. */
-export const POND_HIT_R = 92
-/** Where the pond's own visual centers, relative to the anchor point passed in (the water sits a
- *  little below the anchor, the tree rises above it) — also the hit-test center used for drop-zone
- *  detection, so it always matches what's actually drawn. */
-export const POND_CENTER_Y = -18
+export const POND_HIT_R = 84
+/** Where the pond's own visual centers, relative to the anchor point passed in (the water lies on the
+ *  anchor, the priests on its far bank rise a little above it) — also the hit-test center used for
+ *  drop-zone detection, so it always matches what's actually drawn. */
+export const POND_CENTER_Y = -8
 
 const truncate = (text: string, n: number) => (text.length > n ? `${text.slice(0, n - 1).trimEnd()}…` : text)
 
-/** A priest at rest, simplified to a small silhouette: no face, no bubbles — he's set aside, at peace. */
-function MiniPriest({ robe, bob }: { robe: string; bob: number }) {
+/**
+ * A priest at rest on the bank, an evening off: sitting cross-legged, leaning back a little, swaying
+ * slowly; every other one holds a bowl of tea. A small silhouette — no face, no bubbles, he's at peace.
+ */
+function ChillingPriest({ robe, delay, tea, still }: { robe: string; delay: number; tea: boolean; still: boolean }) {
   return (
-    <motion.g animate={{ y: [0, -2.5, 0] }} transition={{ duration: 3.4, repeat: Infinity, ease: 'easeInOut', delay: bob }}>
-      <ellipse cy="3" rx="13" ry="3.4" fill="#00000040" />
-      <path d="M-11 0 L-10 -13 Q0 -22 10 -13 L11 0 Z" fill={robe} />
-      <circle cy="-18" r="5.6" fill="#d9a577" />
+    <motion.g
+      style={{ originX: '0px', originY: '0px' }}
+      animate={still ? undefined : { rotate: [-3, 3, -3] }}
+      transition={{ duration: 5.2, repeat: Infinity, ease: 'easeInOut', delay }}
+    >
+      <ellipse cy="2" rx="15" ry="3.6" fill="#00000045" />
+      {/* crossed legs, then the robe leaning back */}
+      <path d="M-14 1 Q-13 -6 0 -6 Q13 -6 14 1 Z" fill={robe} opacity="0.85" />
+      <path d="M-9 -4 L-8 -17 Q1 -25 9 -16 L10 -4 Z" fill={robe} />
+      <circle cx="1.5" cy="-22" r="6" fill="#d9a577" />
+      {tea && (
+        <g transform="translate(6 -9)">
+          <path d="M-3.5 0 L3.5 0 L2.5 3.5 L-2.5 3.5 Z" fill="#e8dccb" />
+          <motion.path
+            d="M0 -2 Q-2 -6 0 -9 Q2 -12 0 -15"
+            fill="none"
+            stroke="#e8dccb"
+            strokeOpacity="0.45"
+            strokeWidth="1"
+            animate={still ? undefined : { opacity: [0, 0.8, 0] }}
+            transition={{ duration: 3, repeat: Infinity, delay }}
+          />
+        </g>
+      )}
+    </motion.g>
+  )
+}
+
+/** Where priests sit around the water, in the order they arrive: the far bank first, facing you,
+ *  then its two ends, then the near bank. */
+const BANK = [
+  { x: 0, y: -21 },
+  { x: -36, y: -18 },
+  { x: 36, y: -18 },
+  { x: -76, y: -2 },
+  { x: 76, y: -2 },
+  { x: -34, y: 27 },
+  { x: 34, y: 27 },
+]
+
+/** A paper lantern floating on the water, its candle flickering. */
+function FloatingLantern({ x, y, reducedMotion }: { x: number; y: number; reducedMotion: boolean }) {
+  return (
+    <motion.g
+      transform={`translate(${x} ${y})`}
+      animate={reducedMotion ? undefined : { x: [x - 3, x + 3, x - 3] }}
+      transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
+    >
+      <motion.ellipse
+        rx="16"
+        ry="7"
+        fill="url(#pondGlow)"
+        animate={reducedMotion ? { opacity: 0.6 } : { opacity: [0.45, 0.85, 0.55, 0.8, 0.45] }}
+        transition={{ duration: 2.6, repeat: Infinity }}
+      />
+      <path d="M-5 0 L-4 -8 L4 -8 L5 0 Z" fill="#f2c46d" opacity="0.92" />
+      <rect x="-5.5" y="-1" width="11" height="2" rx="1" fill="#8a5a2b" />
     </motion.g>
   )
 }
@@ -61,26 +117,6 @@ function Mist({ reducedMotion }: { reducedMotion: boolean }) {
   )
 }
 
-/** A slender Bodhi tree over the pond: a dark trunk, a canopy of soft rounded, heart-leaning leaves. */
-function BodhiTree() {
-  const leaves = [
-    { x: -18, y: -118, r: 30 },
-    { x: 14, y: -128, r: 34 },
-    { x: 36, y: -102, r: 24 },
-    { x: -2, y: -96, r: 26 },
-    { x: -32, y: -92, r: 20 },
-  ]
-  return (
-    <g>
-      <path d="M-4 0 Q-10 -40 -2 -78 Q2 -92 10 -100" fill="none" stroke="#3a2a1c" strokeWidth="7" strokeLinecap="round" />
-      <path d="M-2 -30 Q-16 -42 -22 -58" fill="none" stroke="#3a2a1c" strokeWidth="4" strokeLinecap="round" />
-      {leaves.map((l, i) => (
-        <ellipse key={i} cx={l.x} cy={l.y} rx={l.r} ry={l.r * 0.82} fill={i % 2 ? '#3e5631' : '#4d6b3f'} opacity="0.92" />
-      ))}
-    </g>
-  )
-}
-
 export function PondDefs() {
   return (
     <defs>
@@ -102,9 +138,9 @@ export function PondDefs() {
 }
 
 /**
- * A temple's lotus pond, closed: a cluster of lily pads under a Bodhi tree, up to three of its priests
- * set aside visible, a "+N" for the rest. Calm — no labels, no bubbles: hovering one shows who he is
- * and his note. Glows softly when one of them needs you, and again (a brighter ring) while a dragged
+ * A temple's lotus pond, closed, at the foot of its pavilion: lily pads, a floating lantern, and its
+ * priests set aside sitting around the water like an evening off — up to seven on the bank, a "+N"
+ * for the rest. Calm — no labels, no bubbles: hovering one shows who he is and his note. Glows softly when one of them needs you, and again (a brighter ring) while a dragged
  * priest of this temple hovers, ready to be dropped in. Empty, it fades back, there for a drop.
  */
 export function PondClosed({
@@ -134,7 +170,7 @@ export function PondClosed({
   onOpen: () => void
 }) {
   const visible = priests.filter((p) => p.id !== hiddenId)
-  const shown = visible.slice(-3)
+  const shown = visible.slice(0, BANK.length)
   const extra = visible.length - shown.length
   const count = visible.length
   const label =
@@ -163,9 +199,9 @@ export function PondClosed({
       <circle cy={POND_CENTER_Y} r={POND_HIT_R} fill="transparent" />
       {needsAttention && (
         <motion.ellipse
-          cy={POND_CENTER_Y - 10}
-          rx="78"
-          ry="66"
+          cy={POND_CENTER_Y}
+          rx="96"
+          ry="50"
           fill="url(#pondGlow)"
           animate={{ opacity: [0.4, 0.9, 0.4] }}
           transition={{ duration: 1.6, repeat: Infinity }}
@@ -174,8 +210,8 @@ export function PondClosed({
       {dropHover && (
         <motion.ellipse
           cy={POND_CENTER_Y}
-          rx="86"
-          ry="40"
+          rx="90"
+          ry="38"
           fill="none"
           stroke="#ffe9a8"
           strokeWidth="3"
@@ -184,31 +220,39 @@ export function PondClosed({
           transition={{ duration: 1, repeat: Infinity }}
         />
       )}
-      <BodhiTree />
       <Mist reducedMotion={reducedMotion} />
-      <ellipse cy="8" rx="80" ry="30" fill="url(#pondWater)" />
-      <ellipse cy="2" rx="60" ry="18" fill="none" stroke="#6fae8a" strokeOpacity="0.18" strokeWidth="1.5" />
-      <LilyPad x={-46} y={14} r={22} tone="#3f7f6a" />
-      <LilyPad x={-6} y={20} r={26} tone="#4f8f6f" />
-      <LilyPad x={38} y={12} r={20} tone="#3a6f5c" />
-      {/* a lotus flower or two among the pads, echoing Buddha's own throne */}
-      <g transform="translate(-46 5)">
+      <ellipse cy="3" rx="70" ry="25" fill="#2a2019" opacity="0.55" />
+      <ellipse rx="62" ry="20" fill="url(#pondWater)" />
+      <ellipse cy="-3" rx="46" ry="12" fill="none" stroke="#6fae8a" strokeOpacity="0.18" strokeWidth="1.5" />
+      <LilyPad x={-34} y={6} r={14} tone="#3f7f6a" />
+      <LilyPad x={22} y={9} r={16} tone="#4f8f6f" />
+      <LilyPad x={44} y={-2} r={11} tone="#3a6f5c" />
+      {/* a lotus flower among the pads, echoing Buddha's own throne */}
+      <g transform="translate(-34 0)">
         {[0, 1, 2].map((i) => (
-          <ellipse key={i} rx="6" ry="9" fill={i === 1 ? '#fbd7e0' : '#e79bb0'} transform={`rotate(${(i - 1) * 55})`} />
+          <ellipse key={i} rx="4" ry="6.5" fill={i === 1 ? '#fbd7e0' : '#e79bb0'} transform={`rotate(${(i - 1) * 55})`} />
         ))}
       </g>
-      {shown.map((p, i) => (
-        <g key={p.id} transform={`translate(${(i - (shown.length - 1) / 2) * 24} ${2 - i * 3})`}>
-          <title>{`${resolveTitle(p)} : ${p.title}\n${p.note ?? 'Pas de note'}`}</title>
-          <MiniPriest robe={robeOfAgent(p.agent)} bob={i * 0.6} />
-        </g>
-      ))}
+      <FloatingLantern x={2} y={2} reducedMotion={reducedMotion} />
+      {shown
+        .map((p, i) => ({ p, i, at: BANK[i]! }))
+        .sort((a, b) => a.at.y - b.at.y)
+        .map(({ p, i, at }) => (
+          <g key={p.id} transform={`translate(${at.x} ${at.y})`}>
+            <title>{`${resolveTitle(p)} : ${p.title}\n${p.note ?? 'Pas de note'}`}</title>
+            <g transform="scale(1.2)">
+              <ChillingPriest robe={robeOfAgent(p.agent)} delay={i * 0.7} tea={i % 2 === 1} still={reducedMotion} />
+            </g>
+            {((p.status === 'waiting' && !p.silenced) || p.status === 'error') && (
+              <circle cy="-42" r="4.5" fill="#ffb347" stroke="#2a2019" strokeWidth="1.5" />
+            )}
+          </g>
+        ))}
       {extra > 0 && (
-        <text x={(shown.length / 2) * 24 + 16} y="-8" textAnchor="start" className="lotus-extra">
+        <text x="92" y="-14" textAnchor="start" className="lotus-extra">
           +{extra}
         </text>
       )}
-      {needsAttention && <circle cx="66" cy={POND_CENTER_Y - 48} r="6" fill="#ffb347" stroke="#2a2019" strokeWidth="1.5" />}
     </g>
     </g>
   )

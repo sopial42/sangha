@@ -36,17 +36,16 @@ const ROW_GAP = 225
 const MOBILE_ROW_GAP = 260
 // Courtyard kept free at each side of the scene: the bubble of a priest at the far end opens outward.
 const EDGE = 100
-// Each temple keeps its own lotus pond, at the left of its pavilion, a little apart from its roof
-// (which overhangs the body by 22 on each side); smaller on mobile, where the column is narrow.
-const ROOF_HALF = PAVILION_W / 2 + 22
-const POND_WATER_RX = 80 // the pond's water, before scaling (see LotusPond)
-const POND_SCALE = 0.55
-const MOBILE_POND_SCALE = 0.45
-const pondOffset = (scale: number) => -(ROOF_HALF + 8 + POND_WATER_RX * scale)
+// Each temple keeps its own lotus pond at its foot, left of the big burner on the steps, between the
+// pavilion and its priests; a little smaller on mobile, where the column is narrow.
+const POND_HALF_W = 92 // the pond with its priests on the bank, before scaling (see LotusPond)
+const POND_SCALE = 1
+const MOBILE_POND_SCALE = 0.8
+const pondOffset = (scale: number) => ({ x: -(40 + POND_HALF_W * scale), y: 50 })
 // Courtyard a pavilion's slot gains on its left for that pond; the pavilion shifts right by half of it.
 const POND_ROOM = 90
 // On mobile, the leftmost a pavilion may stand for its pond to stay on screen.
-const MOBILE_PAVILION_MIN_X = -pondOffset(MOBILE_POND_SCALE) + POND_WATER_RX * MOBILE_POND_SCALE + 4
+const MOBILE_PAVILION_MIN_X = -pondOffset(MOBILE_POND_SCALE).x + POND_HALF_W * MOBILE_POND_SCALE + 4
 
 /** Rows of priests in front of a pavilion, filled evenly (7 sit 4 + 3, not 6 + 1). */
 const rowsFor = (priests: number) => Math.max(1, Math.ceil(priests / PER_ROW))
@@ -261,7 +260,7 @@ export function Monastery() {
   // lies. On mobile, priests stay centered on the column; only the pavilion moves aside if it must.
   const pondScale = mobile ? MOBILE_POND_SCALE : POND_SCALE
   const pavilionAt = places.map((pl) => ({ x: mobile ? Math.max(pl.x, MOBILE_PAVILION_MIN_X) : pl.x + POND_ROOM / 2, y: pl.y }))
-  const ponds = pavilionAt.map((pl) => ({ x: pl.x + pondOffset(pondScale), y: pl.y }))
+  const ponds = pavilionAt.map((pl) => ({ x: pl.x + pondOffset(pondScale).x, y: pl.y + pondOffset(pondScale).y }))
   // The add-project marker sits just right of the last pavilion on desktop, or as one more row on mobile.
   const last = pavilionAt.at(-1)
   const marker = mobile
@@ -511,7 +510,7 @@ export function Monastery() {
         <AddProjectMarker onClick={() => set({ dialog: { kind: 'add-project' } })} />
       </g>
 
-      {/* Each temple's closed pond, beside its pavilion: a calm stack under a Bodhi tree, drawn
+      {/* Each temple's closed pond, at the foot of its pavilion: a calm stack under a Bodhi tree, drawn
           before the priests so their bubbles pass over it. */}
       {pavilions.map((p, i) => {
         const mine = lotusOf(p.name)
