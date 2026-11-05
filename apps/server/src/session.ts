@@ -29,6 +29,7 @@ import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState,
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
 import { library } from './library'
+import { startRemote, type RemoteControl } from './remote'
 import { enabledExtras, mcpList, nativeMcp, mcpLogin, mcpReady, mcpSettle, readCatalog, type Catalog } from './mcp'
 import { readTailLines } from './files'
 import { Normalizer } from './normalize'
@@ -298,6 +299,7 @@ export class Sessions {
   private live = new Map<string, LiveSession>()
   /** MCP servers met in a priest, for the list of all of Sangha (native: he loads it himself, so on by default). */
   private seenMcp = new Map<string, { scope: string; native: boolean }>()
+  private remotes = new Map<string, RemoteControl>()
   private listeners = new Map<string, Set<Listener>>()
   private globalListeners = new Set<GlobalListener>()
   private observer: Observer | null = null
@@ -465,8 +467,8 @@ export class Sessions {
     if (id.startsWith(EXTERNAL_PREFIX)) throw new UserError('utilise reply() pour une session externe')
     const row = this.store.getSession(id)
     if (!row || row.archivedAt) throw new UserError('session inconnue')
-    // He is in the middle of a turn, or the quota reserve holds him: the message waits, editable.
-    if (this.reserve.reached || this.live.get(id)?.turning) {
+    // In a turn, held by the quota reserve, or driven from claude.ai: the message waits, editable.
+    if (this.reserve.reached || this.live.get(id)?.turning || this.remotes.has(id)) {
       this.store.addQueued(id, { id: crypto.randomUUID(), text, at: Date.now() })
       this.broadcastSession(id)
       return
@@ -482,7 +484,7 @@ export class Sessions {
   /** His turn ended (or his process did): what you wrote meanwhile leaves, as one message. Held while the reserve bites. */
   private flushQueued(id: string) {
     const row = this.store.getSession(id)
-    if (!row || row.archivedAt || this.reserve.reached || this.live.get(id)?.turning) return
+    if (!row || row.archivedAt || this.reserve.reached || this.live.get(id)?.turning || this.remotes.has(id)) return
     const queued = this.store.takeQueued(id)
     if (queued.length) this.deliver(row, queued.map((m) => m.text).join('\n\n'))
   }
@@ -505,6 +507,43 @@ export class Sessions {
     const [m] = this.store.takeQueued(id, [messageId])
     if (!row || !m) throw new UserError('déjà parti : il l’a reçu')
     this.deliver(row, m.text)
+  }
+
+  /**
+   * Hands his conversation to an interactive `claude --remote-control`, to drive from claude.ai or the phone.
+   * Never two processes on one conversation: his own stops first, and nothing restarts it until the remote ends.
+   */
+  async remoteControl(id: string): Promise<{ url: string }> {
+    const running = this.remotes.get(id)
+    if (running) return { url: running.url }
+    const row = this.priestRow(id)
+    if (!row.claudeSessionId) throw new UserError('pas encore de conversation à reprendre')
+    const old = this.live.get(id)
+    if (old?.turning) throw new UserError('il travaille : attends la fin de son tour (ou interromps-le), puis réessaie')
+    if (old) {
+      old.close()
+      await Promise.race([old.closed, new Promise((r) => setTimeout(r, 15_000))])
+      if (this.live.get(id) === old) this.live.delete(id)
+    }
+    const cwd = this.cwdOf(row) ?? config.workspacesDir
+    const env = this.withGit({}, id).env as Record<string, string>
+    try {
+      const rc = await startRemote(cwd, row.claudeSessionId, row.title, env, () => {
+        this.remotes.delete(id)
+        this.broadcastSession(id)
+        this.flushQueued(id)
+      })
+      this.remotes.set(id, rc)
+      this.broadcastSession(id)
+      return { url: rc.url }
+    } catch (e) {
+      throw new UserError(`Remote Control impossible : ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  /** Ends the remote: Sangha takes his conversation back with the next message (queued ones leave now). */
+  stopRemote(id: string) {
+    this.remotes.get(id)?.stop()
   }
 
   /** Relaunch a session the server stopped mid-work. */
@@ -1457,6 +1496,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
 
   closeAll() {
     for (const s of this.live.values()) s.close()
+    for (const r of this.remotes.values()) r.stop()
   }
 
   /** The folder a session works in: its worktree, or the project itself. Null for Buddha (not project-bound). */
@@ -1509,6 +1549,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       cwd,
       pr: cwd ? this.pulls.of(cwd) : null,
       scripts: live?.scripts ?? [],
+      remote: this.remotes.get(row.id)?.url ?? null,
     }
   }
 
@@ -1560,6 +1601,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
   }
 
   private ensureLive(row: SessionRow): LiveSession {
+    if (this.remotes.has(row.id)) throw new UserError('il est en Remote Control : arrête-le d’abord')
     let s = this.live.get(row.id)
     if (!s) {
       const isBuddha = row.id === BUDDHA_SESSION_ID

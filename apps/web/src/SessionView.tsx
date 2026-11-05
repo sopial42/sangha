@@ -524,6 +524,7 @@ export function SessionView() {
 
   // "Mettre au lotus" / "Sortir du lotus" failed to save: why, until the next try or a switch of session.
   const [lotusError, setLotusError] = useState<string | null>(null)
+  const [remoteBusy, setRemoteBusy] = useState(false)
   useEffect(() => setLotusError(null), [s?.id])
 
   useEffect(() => {
@@ -764,6 +765,42 @@ export function SessionView() {
                   >
                     Relancer
                   </button>
+                  {s.remote ? (
+                    <>
+                      <a className="btn btn-ghost active" href={s.remote} target="_blank" rel="noopener" title="Sa conversation se pilote depuis claude.ai ou l'app Claude">
+                        Remote Control ↗
+                      </a>
+                      <button className="btn btn-ghost" onClick={() => void api.stopRemote(s.id)} title="Sangha reprend la conversation ; tes messages en attente partent">
+                        Arrêter le remote
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className="btn btn-ghost"
+                      disabled={remoteBusy}
+                      onClick={() => {
+                        setRemoteBusy(true)
+                        setLotusError(null)
+                        api
+                          .remoteControl(s.id)
+                          .then(({ url }) => {
+                            void navigator.clipboard?.writeText(url).catch(() => {})
+                            window.open(url, '_blank', 'noopener')
+                          })
+                          .catch((e: unknown) =>
+                            setLotusError(
+                              e instanceof ApiError && e.status === 404
+                                ? 'Ton serveur Sangha ne connaît pas encore le Remote Control : relance-le (make dev).'
+                                : e instanceof Error ? e.message : String(e),
+                            ),
+                          )
+                          .finally(() => setRemoteBusy(false))
+                      }}
+                      title="Continuer cette conversation depuis claude.ai ou ton téléphone : Sangha lui passe la main (lien copié et ouvert)"
+                    >
+                      {remoteBusy ? 'Remote Control…' : 'Remote Control'}
+                    </button>
+                  )}
                   <McpPanel sessionId={s.id} open={mcpOpen} onToggleOpen={() => setMcpOpen((o) => !o)} onClose={() => setMcpOpen(false)} />
                 </div>
               )}

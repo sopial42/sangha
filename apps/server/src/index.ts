@@ -228,6 +228,11 @@ app.put('/api/sessions/:id/env', async (c) => {
   await sessions.setEnv(c.req.param('id'), env, !!restart)
   return c.body(null, 204)
 })
+app.post('/api/sessions/:id/remote-control', async (c) => c.json(await sessions.remoteControl(c.req.param('id'))))
+app.post('/api/sessions/:id/remote-control/stop', (c) => {
+  sessions.stopRemote(c.req.param('id'))
+  return c.body(null, 204)
+})
 app.post('/api/sessions/:id/restart', async (c) => {
   await sessions.restart(c.req.param('id'))
   return c.body(null, 204)
