@@ -1257,16 +1257,20 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     return { ...readCatalog(this.projects.dir(row.project)), ...library.catalog() }
   }
 
-  /** Switch a library server on or off for every priest: live ones load or drop it if their project wants it. */
+  /**
+   * Activate or drop a library server. Activating it switches it on for all of Sangha too (a priest can still
+   * switch it off for himself): live priests load or drop it.
+   */
   setLibraryMcp(name: string, change: { active?: boolean; values?: Record<string, string> }) {
     try {
       library.set(name, change)
     } catch (e) {
       throw new UserError(`${name} : ${e instanceof Error ? e.message : String(e)}`)
     }
+    if (change.active) this.store.setMcpPref(name, true)
     for (const [id, s] of this.live) {
       const row = this.store.getSession(id)
-      if (row && id !== BUDDHA_SESSION_ID) void s.setExtraMcp(this.mcpPlan(row).extras).catch(() => undefined)
+      if (row && id !== BUDDHA_SESSION_ID && !id.startsWith(EXTERNAL_PREFIX)) void s.setExtraMcp(this.mcpPlan(row).extras).catch(() => undefined)
     }
     return library.list()
   }

@@ -854,7 +854,7 @@ function McpLibraryDialog({ onClose }: { onClose: () => void }) {
     <Modal title="Bibliothèque de MCP" onClose={onClose}>
       {!editing ? (
         <div className="form">
-          <p className="hint">Des serveurs MCP connus de Sangha, à activer pour qu’ils rejoignent le catalogue de chaque prêtre.</p>
+          <p className="hint">Des serveurs MCP connus de Sangha, activés, ils sont allumés chez tous les prêtres (chacun peut l’éteindre pour lui).</p>
           {error && (
             <p className="form-error" role="alert">
               {error}
