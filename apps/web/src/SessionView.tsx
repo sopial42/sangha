@@ -486,9 +486,15 @@ export function SessionView() {
   const lastRef = useRef<SessionSummary | undefined>(undefined)
   if (live) lastRef.current = live
   const s = live ?? (closing?.id === selectedId ? lastRef.current : undefined)
-  const [novicesClosed, setNovicesClosed] = useState(() => localStorage.getItem(NOVICES_CLOSED_KEY) === '1')
+  // On a narrow screen the sub-agents stack under the conversation and squeezed it until its composer
+  // spilled out: there they start folded (a choice remembered apart from the wide screen's).
+  const novicesKey = window.innerWidth <= 900 ? `${NOVICES_CLOSED_KEY}.narrow` : NOVICES_CLOSED_KEY
+  const [novicesClosed, setNovicesClosed] = useState(() => {
+    const saved = localStorage.getItem(novicesKey)
+    return saved === null ? novicesKey !== NOVICES_CLOSED_KEY : saved === '1'
+  })
   const foldNovices = (close: boolean) => {
-    localStorage.setItem(NOVICES_CLOSED_KEY, close ? '1' : '0')
+    localStorage.setItem(novicesKey, close ? '1' : '0')
     setNovicesClosed(close)
   }
 

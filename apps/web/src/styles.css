@@ -2943,15 +2943,17 @@ input[type='range']:disabled::-moz-range-thumb {
     padding-top: 8px;
   }
 
+  /* The conversation first: it never shrinks below a readable height (its composer used to spill
+     out of a squeezed row, under the sub-agents), and the sub-agents keep to a short strip below. */
   .sv-body {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: minmax(300px, 1fr) auto;
   }
 
   .sv-novices {
     border-left: 0;
     border-top: 1px solid var(--line);
-    max-height: 35dvh;
+    max-height: 25dvh;
   }
 
   .sv-body.novices-closed {
@@ -3479,59 +3481,58 @@ a.icon-btn.sv-newtab {
   opacity: 1;
 }
 
-/* A panel too narrow for his details and the actions side by side: the actions drop to their own
-   full-width line under his details (which keep the whole width), the header gets tighter, so the
-   conversation keeps most of the height. Last in the file: it overrides the narrow-window rules. */
-@container sv (max-width: 1150px) {
-  .sv-head {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    row-gap: 8px;
-    padding: 10px 16px;
-  }
+/* His actions always sit on their own full-width line under his details, never beside them: the row of
+   buttons keeps growing (autonomy, lotus, remote…) and, side by side, it crushed his title and branch to
+   one word per line even on a wide screen. The header stays tight so the conversation keeps the height.
+   Last in the file: it overrides the narrow-window rules. */
+.sv-head {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  row-gap: 8px;
+  padding: 10px 16px;
+}
 
-  .sv-nav {
-    grid-row: 1;
-    grid-column: 3;
-    align-self: start;
-  }
+.sv-nav {
+  grid-row: 1;
+  grid-column: 3;
+  align-self: start;
+}
 
-  .sv-act-col {
-    grid-row: 2;
-    grid-column: 1 / -1;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-  }
+.sv-act-col {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
 
-  .sv-reminder {
-    flex: 1 1 220px;
-  }
+.sv-reminder {
+  flex: 1 1 220px;
+}
 
-  .sv-actions,
-  .sv-act-group {
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-start;
-  }
+.sv-actions,
+.sv-act-group {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+}
 
-  .sv-act-settings {
-    padding: 0 0 0 10px;
-    border-top: 0;
-    border-left: 1px solid var(--line);
-  }
+.sv-act-settings {
+  padding: 0 0 0 10px;
+  border-top: 0;
+  border-left: 1px solid var(--line);
+}
 
-  .sv-act-danger {
-    margin-left: 0;
-    padding-top: 0;
-  }
+.sv-act-danger {
+  margin-left: 0;
+  padding-top: 0;
+}
 
-  .sv-id h2 {
-    font-size: 20px;
-  }
+.sv-id h2 {
+  font-size: 20px;
+}
 
-  .sv-tags {
-    margin-top: 4px;
-  }
+.sv-tags {
+  margin-top: 4px;
 }
 
 /* Phone-wide panel: his tags and the action buttons each hold to one line that scrolls sideways,
