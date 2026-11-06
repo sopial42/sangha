@@ -303,6 +303,91 @@ function ReminderBox({ id, saved }: { id: string; saved: string | null }) {
 }
 
 /**
+ * Your word on this whole conversation, for Ananda: a 👍/👎 lands the instant you click it (he only
+ * ever reads it later, in bulk — nothing happens right away), a comment is one click further and
+ * optional. Unlike a message's own 💬 (which opens a little form first), a thumb here is never a
+ * maybe: click it and it's sent.
+ */
+function ConversationFeedback({ sessionId }: { sessionId: string }) {
+  const [rating, setRating] = useState<'up' | 'down' | null>(null)
+  const [sent, setSent] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [comment, setComment] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const vote = async (r: 'up' | 'down') => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.sendFeedback({ sessionId, rating: r })
+      setRating(r)
+      setSent(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const sendComment = async () => {
+    if (!comment.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.sendFeedback({ sessionId, comment: comment.trim(), rating: rating ?? undefined })
+      setComment('')
+      setOpen(false)
+      setSent(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="sv-feedback" role="group" aria-label="Ton avis sur cette conversation, pour Ananda">
+      <span className="sv-feedback-label">Pour Ananda</span>
+      <button type="button" className={`icon-btn${rating === 'up' ? ' active-up' : ''}`} disabled={busy} onClick={() => void vote('up')} aria-pressed={rating === 'up'} aria-label="Pouce levé pour cette conversation" title="👍 pour Ananda">
+        👍
+      </button>
+      <button type="button" className={`icon-btn${rating === 'down' ? ' active-down' : ''}`} disabled={busy} onClick={() => void vote('down')} aria-pressed={rating === 'down'} aria-label="Pouce baissé pour cette conversation" title="👎 pour Ananda">
+        👎
+      </button>
+      {!open && (
+        <button type="button" className="text-link" onClick={() => setOpen(true)}>
+          Commenter
+        </button>
+      )}
+      {open && (
+        <form
+          className="sv-feedback-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void sendComment()
+          }}
+        >
+          <input autoFocus value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Un mot pour Ananda…" disabled={busy} />
+          <button type="submit" className="text-link" disabled={busy || !comment.trim()}>
+            Envoyer
+          </button>
+          <button type="button" className="text-link" onClick={() => setOpen(false)} disabled={busy}>
+            Annuler
+          </button>
+        </form>
+      )}
+      {sent && !open && (
+        <span className="muted small" role="status">
+          Merci 🙏
+        </span>
+      )}
+      {error && <p className="form-error">{error}</p>}
+    </div>
+  )
+}
+
+/**
  * One MCP server row: name (claude.ai, plugin and Sangha ones get their own small tag), status, and this priest's
  * switch (marked, with a way back to the switch of all of Sangha, when he has his own).
  */
@@ -775,6 +860,7 @@ export function SessionView() {
                 </span>
               )}
             </div>
+            {!isBuddha && <ConversationFeedback key={s.id} sessionId={s.id} />}
           </div>
           <div className="sv-act-col">
             {/* His actions by family, one row each: how he works, his session, setting him aside. */}

@@ -875,6 +875,18 @@ input[type='range']:disabled::-moz-range-thumb {
   color: var(--ink);
 }
 
+/* A vote for Ananda (a message's 👍/👎, a topic's, a conversation's): jade for up, vermilion for
+   down — the same pairing as elsewhere a choice reads as "good" or "bad" at a glance. */
+.icon-btn.active-up {
+  border-color: var(--jade);
+  color: var(--jade);
+}
+
+.icon-btn.active-down {
+  border-color: var(--vermilion);
+  color: var(--vermilion);
+}
+
 .top-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1006,6 +1018,48 @@ input[type='range']:disabled::-moz-range-thumb {
 /* What he is (status, context, cost…), right under his details. */
 .sv-tags {
   margin-top: 6px;
+}
+
+/* A 👍/👎 (sent the instant you click it) and an optional comment, for Ananda, about this whole
+   conversation — right under his tags, same quiet register as the reminder below. */
+.sv-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.sv-feedback-label {
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.sv-feedback-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+.sv-feedback-form input {
+  flex: 1;
+  min-width: 100px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.sv-feedback .form-error {
+  flex-basis: 100%;
+  margin: 2px 0 0;
 }
 
 /* The actions' column, beside his details: the reminder on top, exactly as wide as the buttons' row below it. */
@@ -3472,6 +3526,85 @@ input[type='range']:disabled::-moz-range-thumb {
 .msg-reply:hover {
   color: var(--gold);
   border-color: var(--gold);
+}
+
+/* A quiet note for Ananda on one exact message: 💬 beside ↩, same corner, one step further in —
+   hidden until you point at the message, except once it already carries a comment, where it stays
+   lit (dimly) so you can tell at a glance which messages you've already flagged for him. */
+.msg-feedback {
+  position: absolute;
+  top: 6px;
+  right: 38px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.msg-user .msg-feedback {
+  right: auto;
+  left: -72px;
+}
+
+.msg:hover .msg-feedback,
+.msg-feedback:focus-visible {
+  opacity: 1;
+}
+
+.msg-feedback.commented {
+  opacity: 0.65;
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.msg:hover .msg-feedback.commented,
+.msg-feedback.commented:focus-visible {
+  opacity: 1;
+}
+
+.msg-feedback:hover {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+/* The comment form itself: never a floating popover (the panel clips one past its edge, and a short
+   message leaves no room to anchor it) — an inline card, above the message's own words, that the
+   bubble simply grows to fit. */
+.msg-feedback-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  background: #00000030;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  white-space: normal;
+}
+
+.msg-feedback-form input {
+  flex: 1 1 140px;
+  min-width: 120px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.msg-feedback-form .form-error {
+  flex-basis: 100%;
+  margin: 2px 0 0;
 }
 
 .quote {

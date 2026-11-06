@@ -62,6 +62,80 @@ function QuoteBlock({ quote, onClick, onClear }: { quote: Quote; onClick?: () =>
   )
 }
 
+/**
+ * Appears on a message you point at, next to « répondre » : a quiet note for Ananda — a 👍/👎, a
+ * comment, or both — about this exact message. Already commented, it stays lit so you can tell at a
+ * glance which ones you've already flagged for him. The corner button only ever toggles a small form
+ * that opens inline, above the message's own words (never a floating popover: the panel clips those
+ * past its edge, and a short message leaves too little room beside it to anchor one safely).
+ */
+export function FeedbackControl({ sessionId, eventSeq, commented, onDone }: { sessionId: string; eventSeq?: number; commented: boolean; onDone: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [rating, setRating] = useState<'up' | 'down' | null>(null)
+  const [comment, setComment] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const submit = async () => {
+    if (!rating && !comment.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.sendFeedback({ sessionId, eventSeq, rating: rating ?? undefined, comment: comment.trim() || undefined })
+      setOpen(false)
+      setRating(null)
+      setComment('')
+      onDone()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`msg-feedback${commented ? ' commented' : ''}`}
+        // Keeps your text selection alive until the click reads it, same as « répondre ».
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-label={commented ? 'Déjà commenté pour Ananda : ajouter un mot de plus' : 'Commenter pour Ananda'}
+        title={commented ? 'Déjà commenté pour Ananda' : 'Commenter ce message pour Ananda'}
+      >
+        💬
+      </button>
+      {open && (
+        <form
+          className="msg-feedback-form"
+          aria-label="Commenter pour Ananda"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void submit()
+          }}
+        >
+          <button type="button" className={`icon-btn${rating === 'up' ? ' active-up' : ''}`} onClick={() => setRating((r) => (r === 'up' ? null : 'up'))} aria-pressed={rating === 'up'} aria-label="Pouce levé" title="👍 pour Ananda">
+            👍
+          </button>
+          <button type="button" className={`icon-btn${rating === 'down' ? ' active-down' : ''}`} onClick={() => setRating((r) => (r === 'down' ? null : 'down'))} aria-pressed={rating === 'down'} aria-label="Pouce baissé" title="👎 pour Ananda">
+            👎
+          </button>
+          <input autoFocus value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Un mot pour Ananda…" disabled={busy} />
+          <button type="submit" className="text-link" disabled={busy || (!rating && !comment.trim())}>
+            Envoyer
+          </button>
+          <button type="button" className="text-link" onClick={() => setOpen(false)} disabled={busy}>
+            Annuler
+          </button>
+          {error && <p className="form-error">{error}</p>}
+        </form>
+      )}
+    </>
+  )
+}
+
 function Queued({ sessionId, m }: { sessionId: string; m: QueuedMessage }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(m.text)
@@ -187,6 +261,15 @@ const screenshotContext = (path: string) =>
 export function Chat({ author, external = null }: { author: string; external?: { alive: boolean } | null }) {
   const { view, selectedId: sessionId, profiles, dialog, set } = useApp()
   const queued = useApp((s) => (sessionId ? s.sessions[sessionId]?.queued : undefined)) ?? NO_QUEUED
+  // Which messages already carry a word for Ananda, so their 💬 stays lit: his eventSeqs, fetched once per session.
+  const [commented, setCommented] = useState<Set<number>>(new Set())
+  useEffect(() => {
+    if (!sessionId) return void setCommented(new Set())
+    api.sessionFeedback(sessionId).then(
+      (list) => setCommented(new Set(list.map((f) => f.eventSeq).filter((seq): seq is number => seq != null))),
+      () => setCommented(new Set()),
+    )
+  }, [sessionId])
   const [text, setText] = useState(() => (sessionId ? draftOf(sessionId) : ''))
   useEffect(() => setText(sessionId ? draftOf(sessionId) : ''), [sessionId])
   const [sending, setSending] = useState(false)
@@ -407,6 +490,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
         return (
           <div key={i} data-i={i} className="msg msg-user">
             <ReplyButton onReply={(el) => replyRef.current('toi', item.text, el)} />
+            {sessionId && <FeedbackControl sessionId={sessionId} eventSeq={item.seq} commented={commented.has(item.seq)} onDone={() => setCommented((s) => new Set(s).add(item.seq))} />}
             <Time at={item.at} />
             <Said text={item.text} onQuote={(q) => goRef.current(q)} />
           </div>
@@ -415,6 +499,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
         return (
           <div key={i} data-i={i} className="msg msg-buddha">
             <ReplyButton onReply={(el) => replyRef.current(author, item.text, el)} />
+            {sessionId && <FeedbackControl sessionId={sessionId} eventSeq={item.seq} commented={commented.has(item.seq)} onDone={() => setCommented((s) => new Set(s).add(item.seq))} />}
             <span className="msg-author">
               {author} <Time at={item.at} />
             </span>
@@ -495,7 +580,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
   // markdown would otherwise be parsed again for each letter typed.
   const log = useMemo(
     () => view.chat.slice(start).map((item, i) => render(item, start + i)),
-    [view.chat, start, view.monks, author, profiles],
+    [view.chat, start, view.monks, author, profiles, sessionId, commented],
   )
   const hiddenOlder = useMemo(() => view.chat.slice(0, start).filter(visible).length, [view.chat, start])
 
