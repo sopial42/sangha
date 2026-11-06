@@ -6,6 +6,7 @@ import { agentTitle, priestsOf, robeOfAgent } from '../priests'
 import { useApp } from '../store'
 import { Backdrop, FLOOR_Y, HALL_SCALE, hallTransform } from './Backdrop'
 import { Buddha } from './Buddha'
+import { Elder, elderPosition } from './Elder'
 import { IncenseDefs } from './Incense'
 import { LotusDragGhost, PondClosed, PondDefs, PondOpen, pondPanelSize, POND_CENTER_Y, POND_HIT_RX, POND_HIT_RY } from './LotusPond'
 import { moonPosition, Moon } from './Moon'
@@ -201,7 +202,7 @@ function resolveBubbleSides(seated: Seated[]): Record<string, 1 | -1> {
 }
 
 export function Monastery() {
-  const { sessions, projects, profiles, selectedId, view, set, moonArrivals, closing, closingAck } = useApp()
+  const { sessions, projects, profiles, selectedId, view, set, moonArrivals, closing, closingAck, elderBadge } = useApp()
   const priests: SessionSummary[] = priestsOf(sessions)
   const buddha = sessions[BUDDHA_SESSION_ID]
   const reducedMotion = !!useReducedMotion()
@@ -466,6 +467,7 @@ export function Monastery() {
   // Tall panels (many priests set aside) can reach below the courtyard's usual bottom: grow the
   // viewBox to fit rather than let it clip.
   const effectiveHeight = panelAt && openSize ? Math.max(height, panelAt.y + openSize.h / 2 + 60) : height
+  const elderSpot = elderPosition(width, mobile, effectiveHeight)
 
   return (
     <>
@@ -544,6 +546,12 @@ export function Monastery() {
       </AnimatePresence>
 
       <Moon x={moon.x} y={moon.y} r={moon.r} arrivalTick={moonArrivals} onOpen={() => set({ dialog: { kind: 'nirvana' } })} />
+
+      {/* Ananda, in the courtyard's free corner: a wrapping translate (no transform of his own), same
+          pattern as a pavilion, so his hover-grow can scale him directly. */}
+      <g transform={`translate(${elderSpot.x} ${elderSpot.y})`}>
+        <Elder proposed={elderBadge?.proposed ?? 0} running={elderBadge?.running ?? false} onOpen={() => set({ dialog: { kind: 'elder' } })} />
+      </g>
 
       {/* An open pond, last of all: a panel over the whole courtyard — nothing beneath should catch a
           click meant to close it. */}

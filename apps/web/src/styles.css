@@ -2349,6 +2349,29 @@ input[type='range']:disabled::-moz-range-thumb {
   outline: none;
 }
 
+/* Ananda, under the Bodhi tree: carries no transform of his own (a wrapping `<g>` in Monastery
+   positions him), so the hover-grow below scales him directly, like a pavilion. */
+.elder.clickable {
+  cursor: pointer;
+  outline: none;
+}
+
+.elder:hover .scene-name,
+.elder:focus-visible .scene-name {
+  fill: var(--gold);
+}
+
+.elder:focus-visible .scene-name {
+  text-decoration: underline;
+}
+
+/* The number of his suggestions waiting for a vote, white-on-vermilion so it reads as "something
+   awaits you", same register as a priest's own attention dot. */
+.elder-badge-text {
+  font: 700 12px var(--sans);
+  fill: #fdf6e3;
+}
+
 .incense-hint {
   font: 600 11.5px var(--sans);
   fill: #f3e9d8;
@@ -2641,6 +2664,7 @@ input[type='range']:disabled::-moz-range-thumb {
   .pavilion.clickable,
   .add-project.clickable,
   .lotus-pond.clickable,
+  .elder.clickable,
   .buddha.clickable .hover-grow,
   .novice.clickable .hover-grow,
   .pr-chip.clickable .hover-grow {
@@ -2658,6 +2682,8 @@ input[type='range']:disabled::-moz-range-thumb {
   .add-project.clickable:focus-visible,
   .lotus-pond.clickable:hover,
   .lotus-pond.clickable:focus-visible,
+  .elder.clickable:hover,
+  .elder.clickable:focus-visible,
   .buddha.clickable:hover .hover-grow,
   .buddha.clickable:focus-visible .hover-grow,
   .novice.clickable:hover .hover-grow,
