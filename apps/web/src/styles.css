@@ -906,6 +906,9 @@ input[type='range']:disabled::-moz-range-thumb {
 .session-view {
   display: grid;
   grid-template-rows: auto 1fr;
+  /* Held to the panel's width: an auto column would grow to its widest content and push the header's
+     ✕ off a phone's screen. */
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -1026,23 +1029,11 @@ input[type='range']:disabled::-moz-range-thumb {
   row-gap: 10px;
 }
 
-/* Three quiet clusters, not a flat row: working with him, this session's settings (set off by a
-   hairline), and — held apart by its own margin — the one action that ends it. */
 .sv-act-group {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-}
-
-.sv-act-settings {
-  padding-left: 10px;
-  border-left: 1px solid var(--line);
-}
-
-/* The destructive action: pushed clear of the rest, quieter until it matters. */
-.sv-act-danger {
-  margin-left: 10px;
 }
 
 .btn-quiet {
@@ -3322,18 +3313,6 @@ input[type='range']:disabled::-moz-range-thumb {
     justify-content: flex-end;
   }
 
-  .sv-act-settings {
-    padding-left: 0;
-    border-left: 0;
-    padding-top: 8px;
-    border-top: 1px solid var(--line);
-  }
-
-  .sv-act-danger {
-    margin-left: 0;
-    padding-top: 8px;
-  }
-
   /* The conversation first: it never shrinks below a readable height (its composer used to spill
      out of a squeezed row, under the sub-agents), and the sub-agents keep to a short strip below. */
   .sv-body {
@@ -3872,50 +3851,96 @@ a.icon-btn.sv-newtab {
   opacity: 1;
 }
 
-/* His actions always sit on their own full-width line under his details, never beside them: the row of
-   buttons keeps growing (autonomy, lotus, remote…) and, side by side, it crushed his title and branch to
-   one word per line even on a wide screen. The header stays tight so the conversation keeps the height.
+/* His actions, by family, stacked one row per family in the top right corner beside his details: how he
+   works (autonomy, env, MCP), his session (Buddha, restart, remote), setting him aside (lotus, nirvana).
+   Each row stays short, so his title keeps its room; the reminder takes its own line under them all.
    Last in the file: it overrides the narrow-window rules. */
 .sv-head {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   row-gap: 8px;
   padding: 10px 16px;
+  align-items: start;
 }
 
 .sv-nav {
   grid-row: 1;
-  grid-column: 3;
+  grid-column: 4;
   align-self: start;
 }
 
 .sv-act-col {
+  grid-row: 1;
+  grid-column: 3;
+  align-items: flex-end;
+}
+
+.sv-head > .sv-reminder {
   grid-row: 2;
   grid-column: 1 / -1;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
 }
 
-.sv-reminder {
-  flex: 1 1 220px;
+.sv-actions {
+  flex-direction: column;
+  align-items: flex-end;
+  flex-wrap: nowrap;
+  gap: 6px;
 }
 
-.sv-actions,
 .sv-act-group {
   flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  margin: 0;
 }
 
-.sv-act-settings {
-  padding: 0 0 0 10px;
-  border-top: 0;
-  border-left: 1px solid var(--line);
+.sv-act-group .btn {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  white-space: nowrap;
 }
 
-.sv-act-danger {
-  margin-left: 0;
-  padding-top: 0;
+/* The family's name, quiet, before its row. */
+.sv-act-label {
+  min-width: 52px;
+  text-align: right;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Not much room beside his details: the families drop under them, still one row each. */
+@container sv (max-width: 900px) {
+  .sv-head {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .sv-nav {
+    grid-column: 3;
+  }
+
+  .sv-act-col {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    align-items: stretch;
+  }
+
+  .sv-head > .sv-reminder {
+    grid-row: 3;
+  }
+
+  .sv-actions {
+    align-items: stretch;
+  }
+
+  .sv-act-group {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
 }
 
 .sv-id h2 {
@@ -3926,49 +3951,35 @@ a.icon-btn.sv-newtab {
   margin-top: 4px;
 }
 
-/* Phone-wide panel: his tags and the action buttons each hold to one line that scrolls sideways,
-   instead of stacking rows of buttons above the conversation. */
+/* Phone-wide panel: his tags hold to one line that scrolls sideways; his actions keep one short row
+   per family, wrapping if they must. */
 @container sv (max-width: 640px) {
   /* Without min-width: 0 the flex item keeps its content's width, so the row never scrolls: it gets clipped. */
   .sv-act-col {
     min-width: 0;
   }
 
-  .sv-tags,
-  .sv-actions {
+  .sv-tags {
     flex-wrap: nowrap;
     overflow-x: auto;
     min-width: 0;
     scrollbar-width: thin;
   }
 
-  .sv-tags > *,
-  .sv-act-group {
+  .sv-tags > * {
     flex: none;
   }
 
-  .sv-act-group {
-    flex-wrap: nowrap;
-  }
-
-  .sv-actions .btn {
-    flex-shrink: 0;
-    white-space: nowrap;
-  }
-
   /* Firefox gets scrollbar-width: thin above; Chrome/Safari need their own thin, discreet bar. */
-  .sv-tags::-webkit-scrollbar,
-  .sv-actions::-webkit-scrollbar {
+  .sv-tags::-webkit-scrollbar {
     height: 4px;
   }
 
-  .sv-tags::-webkit-scrollbar-track,
-  .sv-actions::-webkit-scrollbar-track {
+  .sv-tags::-webkit-scrollbar-track {
     background: transparent;
   }
 
-  .sv-tags::-webkit-scrollbar-thumb,
-  .sv-actions::-webkit-scrollbar-thumb {
+  .sv-tags::-webkit-scrollbar-thumb {
     background: var(--line);
     border-radius: 2px;
   }
