@@ -295,7 +295,9 @@ export function Priest({
   // A heavy context tires him: from 200K he starts to slump, fully at 800K.
   const level = contextLevel(session.context)
   const tired = session.context == null ? 0 : Math.max(0, Math.min(1, (session.context - 200_000) / 600_000))
-  const label = `${title} sur ${session.project}${session.branch ? ` (${session.branch})` : ''} : ${session.title} (${status})${session.external ? ', lancé hors de Sangha' : ''}`
+  // His note first — already visible under him once written, but the tooltip and screen-reader label
+  // say it too, so hovering or focusing him alone is enough to tell him apart.
+  const label = `${session.note ? `${session.note} — ` : ''}${title} sur ${session.project}${session.branch ? ` (${session.branch})` : ''} : ${session.title} (${status})${session.external ? ', lancé hors de Sangha' : ''}`
   // Once he has a pull request, its branch is the real one checked out (may differ from session.branch,
   // the one Sangha created for him). The chip rides the same line when it fits, else drops just below —
   // char-budget heuristic, no DOM measurement available for centered SVG text.

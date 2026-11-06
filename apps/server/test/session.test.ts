@@ -532,3 +532,83 @@ describe('Sessions remote control', () => {
     expect(sent.at(-1)).toBe('/goal continue')
   })
 })
+
+describe('Sessions nirvana', () => {
+  let store: Store
+  let sessions: Sessions
+
+  beforeEach(() => {
+    mockQuery([])
+    store = new Store(':memory:')
+    sessions = new Sessions(store, fakeProjects, () => ({}), new QuotaReserveSetting(() => null, () => undefined))
+  })
+
+  it('keeps a note across a dismissal: it still shows on the nirvana entry', () => {
+    store.createSession({ ...baseRow(), id: 'p1', title: 'RIB ET MAIL' })
+    store.setSessionNote('p1', 'je veux developper deux écrans de paiement')
+    store.archive('p1')
+    expect(sessions.nirvana().find((e) => e.id === 'p1')?.note).toBe('je veux developper deux écrans de paiement')
+  })
+
+  it('reports null when he never had a note', () => {
+    store.createSession({ ...baseRow(), id: 'p2' })
+    store.archive('p2')
+    expect(sessions.nirvana().find((e) => e.id === 'p2')?.note).toBeNull()
+  })
+
+  it('lists archived sessions by worktree, with their note and title, for an orphan worktree lookup', () => {
+    store.createSession({ ...baseRow(), id: 'p3', title: 'je corrige le panier', worktree: '/w/.worktrees/p/old' })
+    store.setSessionNote('p3', 'RIB ET MAIL')
+    store.archive('p3')
+    expect(sessions.archivedWorktrees()).toEqual([{ path: '/w/.worktrees/p/old', title: 'je corrige le panier', note: 'RIB ET MAIL', archivedAt: expect.any(Number) }])
+  })
+
+  it('excludes archived sessions that never had a worktree', () => {
+    store.createSession({ ...baseRow(), id: 'p4', worktree: null })
+    store.archive('p4')
+    expect(sessions.archivedWorktrees()).toEqual([])
+  })
+})
+
+describe('Sessions nirvana search', () => {
+  let store: Store
+  let sessions: Sessions
+
+  beforeEach(() => {
+    store = new Store(':memory:')
+    sessions = new Sessions(store, fakeProjects, () => ({}), new QuotaReserveSetting(() => null, () => undefined))
+  })
+
+  it('refuses an empty or whitespace-only question', async () => {
+    await expect(sessions.searchNirvana('')).rejects.toThrow(UserError)
+    await expect(sessions.searchNirvana('   ')).rejects.toThrow(UserError)
+  })
+
+  it('refuses while the quota reserve is reached', async () => {
+    sessions.reserve = { enabled: true, pct: 10, reached: true, window: 'sevenDay' }
+    await expect(sessions.searchNirvana('le panier ?')).rejects.toThrow(UserError)
+  })
+
+  it('asks the model a compact line per archived session, with the note, and returns its filtered matches', async () => {
+    store.createSession({ ...baseRow(), id: 'p1', title: 'je corrige le panier' })
+    store.setSessionNote('p1', 'RIB ET MAIL')
+    store.archive('p1')
+    let seenPrompt = ''
+    vi.mocked(query).mockImplementation(({ prompt }) => {
+      if (typeof prompt !== 'string') return { [Symbol.asyncIterator]: async function* () {} } as unknown as Query
+      seenPrompt = prompt
+      return {
+        [Symbol.asyncIterator]: async function* () {
+          yield { type: 'result', subtype: 'success', structured_output: { results: [{ id: 'p1', reason: 'corrige le panier' }, { id: 'ghost', reason: 'inventé' }] } }
+        },
+      } as unknown as Query
+    })
+
+    const out = await sessions.searchNirvana('qui a touché au panier ?')
+
+    expect(seenPrompt).toContain('id=p1')
+    expect(seenPrompt).toContain('note=RIB ET MAIL')
+    expect(seenPrompt).toContain('QUESTION: qui a touché au panier ?')
+    expect(out).toEqual({ results: [{ id: 'p1', reason: 'corrige le panier' }] }) // "ghost" filtered out: not a real id
+  })
+})

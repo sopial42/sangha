@@ -13,9 +13,11 @@ import {
   formatSince,
   formatTime,
   formatTokens,
+  neighbourOf,
   PR_COLOR,
   PR_STATE_WORD,
   prFullLabel,
+  priestLabel,
   robeOf,
   robeOfAgent,
   STATUS_LABEL,
@@ -241,7 +243,7 @@ function ModelPick({ session: s }: { session: SessionSummary }) {
   const change = (id: string) => {
     const next = models.find((m) => m.id === id)
     const relaunch = next && next.engine !== (s.engine ?? 'claude')
-    if (relaunch && s.status === 'working' && !confirm('Changer de fournisseur le relance : son tour en cours sera interrompu. Continuer ?')) return
+    if (relaunch && s.status === 'working' && !confirm(`${priestLabel(s)} : changer de fournisseur le relance, son tour en cours sera interrompu. Continuer ?`)) return
     api.setModel(s.id, id).then(
       () => setError(null),
       (e: Error) => setError(e.message),
@@ -555,6 +557,11 @@ export function SessionView() {
   if (!s) return null
   const isBuddha = s.id === BUDDHA_SESSION_ID
   const title = agentTitle(s, projects)
+  // Who ← and → actually lead to: named here (his note first) rather than left as a bare direction.
+  const prevNeighbour = neighbourOf(sessions, projects, s.id, -1)
+  const nextNeighbour = neighbourOf(sessions, projects, s.id, 1)
+  const prevSession = prevNeighbour ? sessions[prevNeighbour] : null
+  const nextSession = nextNeighbour ? sessions[nextNeighbour] : null
   const novices = view.monkOrder.map((id) => view.monks[id]!).filter(Boolean)
   const scripts = s.scripts ?? [] // a server older than the web sends none
   const envCount = Object.keys(s.env ?? {}).length // same: an older server sends no env
@@ -760,7 +767,7 @@ export function SessionView() {
                   <button
                     className="btn btn-ghost"
                     onClick={() => {
-                      if (s.status === 'working' && !confirm('Il travaille : relancer interrompt son tour en cours. Relancer quand même ?')) return
+                      if (s.status === 'working' && !confirm(`${priestLabel(s)} travaille : relancer interrompt son tour en cours. Relancer quand même ?`)) return
                       void api.restart(s.id)
                     }}
                     title="Relancer la session : même conversation, mais il relit son agent, ses outils et ses MCP"
@@ -832,10 +839,20 @@ export function SessionView() {
             >
               ↗
             </a>
-            <button className="icon-btn big" onClick={() => goToNeighbour(-1)} aria-label="Moine précédent (←)" title="Moine précédent (←) · les silencieux sont sautés">
+            <button
+              className="icon-btn big"
+              onClick={() => goToNeighbour(-1)}
+              aria-label={prevSession ? `Moine précédent : ${priestLabel(prevSession)} (←)` : 'Moine précédent (←)'}
+              title={prevSession ? `Moine précédent : ${priestLabel(prevSession)} (←) · les silencieux sont sautés` : 'Moine précédent (←) · les silencieux sont sautés'}
+            >
               ‹
             </button>
-            <button className="icon-btn big" onClick={() => goToNeighbour(1)} aria-label="Moine suivant (→)" title="Moine suivant (→) · les silencieux sont sautés">
+            <button
+              className="icon-btn big"
+              onClick={() => goToNeighbour(1)}
+              aria-label={nextSession ? `Moine suivant : ${priestLabel(nextSession)} (→)` : 'Moine suivant (→)'}
+              title={nextSession ? `Moine suivant : ${priestLabel(nextSession)} (→) · les silencieux sont sautés` : 'Moine suivant (→) · les silencieux sont sautés'}
+            >
               ›
             </button>
             <button className="icon-btn big" onClick={closeSession} aria-label="Fermer (Échap)" title="Fermer (Échap)">

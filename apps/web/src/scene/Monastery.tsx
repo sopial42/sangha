@@ -536,7 +536,7 @@ export function Monastery() {
               onNote={() => set({ dialog: { kind: 'note', id: s.id } })}
               moon={moon}
               ackToken={closingAck?.id === s.id ? closingAck.token : undefined}
-              onDragStart={(e) => startDrag(e, s.id, s.project, 'seat', robeOfAgent(s.agent), agentTitle(s, projects), { x: spots[j]!.x, y: spots[j]!.y })}
+              onDragStart={(e) => startDrag(e, s.id, s.project, 'seat', robeOfAgent(s.agent), s.note ?? agentTitle(s, projects), { x: spots[j]!.x, y: spots[j]!.y })}
               beingDragged={drag?.id === s.id && drag.from === 'seat'}
             />
           )),
@@ -572,7 +572,7 @@ export function Monastery() {
               onNote={(id) => set({ dialog: { kind: 'note', id } })}
               onRowPointerDown={(e, id) => {
                 const p = lotusPriests.find((x) => x.id === id)
-                if (p) startDrag(e, id, p.project, 'pond', robeOfAgent(p.agent), agentTitle(p, projects), panelAt)
+                if (p) startDrag(e, id, p.project, 'pond', robeOfAgent(p.agent), p.note ?? agentTitle(p, projects), panelAt)
               }}
             />
           </motion.g>

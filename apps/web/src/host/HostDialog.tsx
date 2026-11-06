@@ -1,7 +1,7 @@
 import type { HostMetric, HostSample, HostSuggestion } from '@sangha/shared'
 import { openSession } from '../api'
 import { Modal, ShellSnippet } from '../Dialogs'
-import { formatAge, formatBytes, formatSince, STATUS_LABEL } from '../priests'
+import { formatAge, formatBytes, formatSince, PriestName, STATUS_LABEL } from '../priests'
 import { useApp } from '../store'
 import { LEVEL_COLOR } from './level'
 import { SuggestionChat } from './SuggestionChat'
@@ -48,10 +48,19 @@ function Metric({ metric, history }: { metric: HostMetric; history: HostSample[]
 /** Something to do about a metric stuck red: what, why, the command to run yourself, and the priest it concerns (if any). */
 function Suggestion({ s, onClose }: { s: HostSuggestion; onClose: () => void }) {
   const set = useApp((st) => st.set)
+  const session = useApp((st) => (s.sessionId ? st.sessions[s.sessionId] : undefined))
+  // The title or detail may already carry his note (written in from the server): no point saying it twice.
+  const note = session?.note
+  const noteAlreadyShown = !!note && (s.title.includes(note) || s.detail.includes(note))
   return (
     <li className="host-suggestion">
       <b>{s.title}</b>
       <p className="host-suggestion-detail">{s.detail}</p>
+      {note && !noteAlreadyShown && (
+        <p className="host-suggestion-note">
+          Prêtre concerné : <PriestName note={note} title={session!.title} />
+        </p>
+      )}
       {s.command && <ShellSnippet title="À lancer toi-même : Sangha n'exécute jamais cette commande" text={s.command} />}
       {s.sessionId && (
         <div className="host-suggestion-actions">
@@ -82,6 +91,7 @@ function Suggestion({ s, onClose }: { s: HostSuggestion; onClose: () => void }) 
  */
 export function HostDialog({ onClose }: { onClose: () => void }) {
   const host = useApp((s) => s.host)
+  const sessions = useApp((s) => s.sessions)
   if (!host) return null // the chip that opens this dialog is itself hidden until a report lands
 
   return (
@@ -202,7 +212,10 @@ export function HostDialog({ onClose }: { onClose: () => void }) {
                       <td>
                         {w.sessionId ? (
                           <>
-                            {w.sessionTitle} <span className="muted small">({w.status ? STATUS_LABEL[w.status] : '?'})</span>
+                            {/* His note first: a worktree id or a first message means nothing — his note is
+                                what tells you whether this is the one safe to clear out. */}
+                            <PriestName note={sessions[w.sessionId]?.note} title={w.sessionTitle ?? ''} />{' '}
+                            <span className="muted small">({w.status ? STATUS_LABEL[w.status] : '?'})</span>
                           </>
                         ) : (
                           <span className="muted small">aucun prêtre</span>

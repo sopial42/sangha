@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { providerEnv, shellExports, type CostReport, type GlobalMcp, type LibraryMcp, type NirvanaEntry, type ProjectSuggestion, type Provider, envText, parseEnvText } from '@sangha/shared'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { providerEnv, shellExports, type CostReport, type GlobalMcp, type LibraryMcp, type NirvanaEntry, type NirvanaSearchResult, type ProjectSuggestion, type Provider, envText, parseEnvText } from '@sangha/shared'
 import { ApiError, api, lotusFailure, openSession } from './api'
-import { agentTitle, formatCost, formatTime, robeOf, robeOfAgent } from './priests'
+import { agentTitle, formatCost, formatTime, priestLabel, PriestName, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
 import { useBackdropClose } from './backdrop'
 import { draftOf, NEW_PRIEST_DRAFT, saveDraft } from './drafts'
@@ -275,7 +275,7 @@ function Dismiss({ id, working, onClose }: { id: string; working?: boolean; onCl
     <Modal title={external ? 'Renvoyer cette session de la cour ?' : 'Envoyer ce prêtre au nirvana ?'} onClose={onClose}>
       <div className="form">
         <p>
-          <b>{session?.title}</b>
+          {session && <PriestName note={session.note} title={session.title} />}
           <br />
           {external ? (
             <>Elle disparaît de la cour mais son terminal continue ; elle reviendra si elle se remet à travailler.</>
@@ -340,7 +340,7 @@ function IncenseChoice({ id, onClose }: { id: string; onClose: () => void }) {
     <Modal title={silent ? 'Son encens est éteint' : 'Son encens brûle'} onClose={onClose}>
       <div className="form">
         <p>
-          <b>{session.title}</b>
+          <PriestName note={session.note} title={session.title} />
         </p>
         <div className="choice-grid">
           <button className="choice" onClick={() => void toggle()} autoFocus>
@@ -464,7 +464,7 @@ function NoteEditor({ id, lotus, onClose }: { id: string; lotus?: boolean; onClo
 /** Confirm taking a project out of the monastery (after its big burner was snuffed out). */
 function RemoveProject({ name, onClose }: { name: string; onClose: () => void }) {
   const project = useApp((s) => s.projects.find((p) => p.name === name))
-  const priests = useApp((s) => Object.values(s.sessions).filter((x) => x.project === name && !x.external).length)
+  const priests = useApp((s) => Object.values(s.sessions).filter((x) => x.project === name && !x.external))
   const [dirty, setDirty] = useState<{ title: string; files: number }[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -486,9 +486,16 @@ function RemoveProject({ name, onClose }: { name: string; onClose: () => void })
     <Modal title={`Retirer ${name} du monastère ?`} onClose={onClose}>
       <div className="form">
         <p>
-          {priests > 0 && (
+          {priests.length > 0 && (
             <>
-              Ses {priests} prêtre(s) seront envoyés au nirvana et leurs worktrees supprimés (les branches avec des commits restent).{' '}
+              Ses {priests.length} prêtre(s) seront envoyés au nirvana et leurs worktrees supprimés (les branches avec des commits restent) :
+              <ul className="dialog-priest-list">
+                {priests.map((p) => (
+                  <li key={p.id}>
+                    <PriestName note={p.note} title={p.title} />
+                  </li>
+                ))}
+              </ul>
             </>
           )}
           {project?.local ? (
@@ -531,13 +538,68 @@ function RemoveProject({ name, onClose }: { name: string; onClose: () => void })
   )
 }
 
-/** The moon's history: every priest sent to nirvana, and a way to bring one back. */
+/**
+ * For case/accent-insensitive matching: one normalized character per original character, so a match's
+ * position in the normalized string always lines up with the same position in the original text (so
+ * highlighting can slice the original, diacritics and casing intact).
+ */
+function normChar(ch: string): string {
+  const stripped = ch.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  return (stripped || ch).toLowerCase()
+}
+const normAligned = (s: string): string => Array.from(s).map(normChar).join('')
+
+/** `text` with every stretch matching one of `words` (already normalized) wrapped in a `<mark>`. */
+function highlightWords(text: string, words: string[]): ReactNode {
+  if (!text || words.length === 0) return text
+  const norm = normAligned(text)
+  const ranges: [number, number][] = []
+  for (const w of words) {
+    if (!w) continue
+    for (let from = 0; ; ) {
+      const idx = norm.indexOf(w, from)
+      if (idx < 0) break
+      ranges.push([idx, idx + w.length])
+      from = idx + 1
+    }
+  }
+  if (ranges.length === 0) return text
+  ranges.sort((a, b) => a[0] - b[0])
+  const merged: [number, number][] = [ranges[0]!]
+  for (const r of ranges.slice(1)) {
+    const last = merged[merged.length - 1]!
+    if (r[0] <= last[1]) last[1] = Math.max(last[1], r[1])
+    else merged.push(r)
+  }
+  const parts: ReactNode[] = []
+  let cursor = 0
+  merged.forEach(([s, e], i) => {
+    if (s > cursor) parts.push(text.slice(cursor, s))
+    parts.push(<mark key={i}>{text.slice(s, e)}</mark>)
+    cursor = e
+  })
+  if (cursor < text.length) parts.push(text.slice(cursor))
+  return parts
+}
+
+/**
+ * The moon's history: every priest sent to nirvana, searchable by words (instant, in your own text) or
+ * by a question put to a model, and a way to bring one back.
+ */
 function Nirvana({ onClose }: { onClose: () => void }) {
   const projects = useApp((s) => s.projects)
   const nirvanaTick = useApp((s) => s.nirvanaTick)
   const [entries, setEntries] = useState<NirvanaEntry[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+
+  // Texte (instant, word-by-word) or IA (a question, sent on demand). An empty field always means both
+  // modes show the full list.
+  const [query, setQuery] = useState('')
+  const [mode, setMode] = useState<'text' | 'ai'>('text')
+  const [aiResults, setAiResults] = useState<NirvanaSearchResult['results'] | null>(null)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState<string | null>(null)
 
   const load = () => api.nirvana().then(setEntries, (err) => setError(message(err)))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -547,6 +609,45 @@ function Nirvana({ onClose }: { onClose: () => void }) {
     if (entries !== null) void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nirvanaTick])
+  useEffect(() => {
+    if (!query.trim()) {
+      setMode('text')
+      setAiResults(null)
+      setAiError(null)
+    }
+  }, [query])
+
+  const haystack = (e: NirvanaEntry) => normAligned([e.title, e.project, agentTitle(e, projects), e.branch ?? '', e.summary ?? '', e.note ?? ''].join(' \u0000 '))
+  const words = useMemo(() => normAligned(query).trim().split(/\s+/).filter(Boolean), [query])
+  const filtered = useMemo(() => {
+    if (!entries) return []
+    if (words.length === 0) return entries
+    return entries.filter((e) => words.every((w) => haystack(e).includes(w)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, words, projects])
+  const aiList = useMemo(() => {
+    if (!entries || !aiResults) return []
+    return aiResults
+      .map((r) => ({ r, e: entries.find((x) => x.id === r.id) }))
+      .filter((x): x is { r: NirvanaSearchResult['results'][number]; e: NirvanaEntry } => !!x.e)
+  }, [entries, aiResults])
+
+  const runAiSearch = async () => {
+    const q = query.trim()
+    if (!q) return
+    setMode('ai')
+    setAiBusy(true)
+    setAiError(null)
+    try {
+      const res = await api.nirvanaSearch(q)
+      setAiResults(res.results)
+    } catch (err) {
+      setAiError(message(err))
+      setAiResults(null)
+    } finally {
+      setAiBusy(false)
+    }
+  }
 
   const reincarnate = async (id: string) => {
     setBusyId(id)
@@ -562,6 +663,62 @@ function Nirvana({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const renderEntry = (e: NirvanaEntry, opts?: { words?: string[]; reason?: string }) => {
+    const hl = (s: string) => (opts?.words?.length ? highlightWords(s, opts.words) : s)
+    return (
+      <li key={e.id} className="nirvana-entry">
+        {/* His own note, more prominent than his title: how you tell this one apart at a glance. */}
+        {e.note && <p className="nirvana-note">{hl(e.note)}</p>}
+        <div className="nirvana-entry-head">
+          <span className="robe-dot small-dot" style={{ background: robeOfAgent(e.agent) }} aria-hidden />
+          <b>{hl(e.title)}</b>
+          <span className="project-tag" style={{ borderColor: robeOf(e.project, projects) }}>
+            {hl(e.project)}
+          </span>
+        </div>
+        <p className="muted small nirvana-meta">
+          {hl(agentTitle(e, projects))}
+          {e.branch && (
+            <>
+              {' · '}
+              <code>⎇ {hl(e.branch)}</code>
+            </>
+          )}
+          {' · '}
+          {formatTime(e.archivedAt)}
+          {e.cost != null && e.cost >= 0.01 && <> · {formatCost(e.cost)}</>}
+        </p>
+        <p className="nirvana-summary">{e.summary ? hl(e.summary) : <span className="muted small">résumé en cours…</span>}</p>
+        {opts?.reason && <p className="nirvana-reason muted small">{opts.reason}</p>}
+        <div className="nirvana-entry-actions">
+          {e.renewed && e.continuedIn ? (
+            <button
+              className="btn btn-ghost"
+              onClick={() => {
+                onClose()
+                openSession(e.continuedIn!)
+              }}
+              title="Son travail continue dans une session neuve : l'ouvrir"
+            >
+              Continué dans une session neuve →
+            </button>
+          ) : e.renewed ? (
+            <span className="badge">continué dans une session neuve, partie au nirvana elle aussi</span>
+          ) : null}
+          {/* Even renewed, his own conversation can come back (to read it, or to pick up from there). */}
+          <button
+            className="btn btn-ghost"
+            disabled={busyId === e.id}
+            onClick={() => void reincarnate(e.id)}
+            title={e.renewed ? 'Le faire revenir avec son ancienne conversation, à côté de la session neuve (même dossier : ne les fais pas travailler en même temps)' : undefined}
+          >
+            {busyId === e.id ? 'Réincarnation…' : 'Réincarner'}
+          </button>
+        </div>
+      </li>
+    )
+  }
+
   return (
     <Modal title="Nirvana" onClose={onClose}>
       <div className="form">
@@ -573,57 +730,63 @@ function Nirvana({ onClose }: { onClose: () => void }) {
         )}
         {entries?.length === 0 && <p className="hint">Personne n’a encore rejoint le nirvana. Ceux que tu y enverras attendront ici, en paix.</p>}
         {entries && entries.length > 0 && (
-          <ul className="nirvana-list">
-            {entries.map((e) => (
-              <li key={e.id} className="nirvana-entry">
-                <div className="nirvana-entry-head">
-                  <span className="robe-dot small-dot" style={{ background: robeOfAgent(e.agent) }} aria-hidden />
-                  <b>{e.title}</b>
-                  <span className="project-tag" style={{ borderColor: robeOf(e.project, projects) }}>
-                    {e.project}
-                  </span>
-                </div>
-                <p className="muted small nirvana-meta">
-                  {agentTitle(e, projects)}
-                  {e.branch && (
-                    <>
-                      {' · '}
-                      <code>⎇ {e.branch}</code>
-                    </>
-                  )}
-                  {' · '}
-                  {formatTime(e.archivedAt)}
-                  {e.cost != null && e.cost >= 0.01 && <> · {formatCost(e.cost)}</>}
-                </p>
-                <p className="nirvana-summary">{e.summary ?? <span className="muted small">résumé en cours…</span>}</p>
-                <div className="nirvana-entry-actions">
-                  {e.renewed && e.continuedIn ? (
-                    <button
-                      className="btn btn-ghost"
-                      onClick={() => {
-                        onClose()
-                        openSession(e.continuedIn!)
-                      }}
-                      title="Son travail continue dans une session neuve : l'ouvrir"
-                    >
-                      Continué dans une session neuve →
-                    </button>
-                  ) : e.renewed ? (
-                    <span className="badge">continué dans une session neuve, partie au nirvana elle aussi</span>
-                  ) : null}
-                  {/* Even renewed, his own conversation can come back (to read it, or to pick up from there). */}
-                  <button
-                    className="btn btn-ghost"
-                    disabled={busyId === e.id}
-                    onClick={() => void reincarnate(e.id)}
-                    title={e.renewed ? 'Le faire revenir avec son ancienne conversation, à côté de la session neuve (même dossier : ne les fais pas travailler en même temps)' : undefined}
-                  >
-                    {busyId === e.id ? 'Réincarnation…' : 'Réincarner'}
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <>
+            <label className="nirvana-search">
+              Chercher
+              <div className="nirvana-search-field">
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      if (mode === 'ai') void runAiSearch()
+                    } else if (e.key === 'Escape' && query) {
+                      // Vide le champ d'abord ; un deuxième Échap (champ déjà vide) ferme le nirvana.
+                      e.preventDefault()
+                      setQuery('')
+                    }
+                  }}
+                  placeholder="Titre, projet, branche, note…"
+                />
+                <button
+                  type="button"
+                  className={`btn btn-ghost${mode === 'ai' ? ' active' : ''}`}
+                  disabled={aiBusy || !query.trim()}
+                  onClick={() => void runAiSearch()}
+                  aria-pressed={mode === 'ai'}
+                  title="Chercher avec l’IA : pose ta question en une phrase"
+                >
+                  {aiBusy ? '✦ Il cherche…' : '✦'}
+                </button>
+              </div>
+            </label>
+            {mode === 'text' && query.trim() && (
+              <p className="nirvana-search-count muted small">
+                {filtered.length} sur {entries.length}
+              </p>
+            )}
+            {mode === 'ai' && aiError && (
+              <p className="form-error" role="alert">
+                {aiError}
+              </p>
+            )}
+            {mode === 'ai' ? (
+              !aiBusy &&
+              !aiError &&
+              aiResults !== null &&
+              (aiList.length === 0 ? (
+                <p className="hint">Rien ne correspond à cette question.</p>
+              ) : (
+                <ul className="nirvana-list">{aiList.map(({ e, r }) => renderEntry(e, { reason: r.reason }))}</ul>
+              ))
+            ) : filtered.length === 0 ? (
+              <p className="hint">Rien ne correspond à ces mots.</p>
+            ) : (
+              <ul className="nirvana-list">{filtered.map((e) => renderEntry(e, { words }))}</ul>
+            )}
+          </>
         )}
       </div>
     </Modal>
@@ -633,6 +796,7 @@ function Nirvana({ onClose }: { onClose: () => void }) {
 /** What every session would have cost at API prices, since monitoring began, one block per month. */
 function Costs({ onClose }: { onClose: () => void }) {
   const projects = useApp((s) => s.projects)
+  const sessions = useApp((s) => s.sessions)
   const [report, setReport] = useState<CostReport | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -686,7 +850,9 @@ function Costs({ onClose }: { onClose: () => void }) {
                     </ul>
                     {m.record && (
                       <p className="costs-record muted small">
-                        <b>{m.record.title}</b> ({m.record.project}) · {formatCost(m.record.cost)} · record du mois
+                        {/* He may have left since (his cost record outlives the session): his note only
+                            shows if he's still in the courtyard to carry it. */}
+                        <PriestName note={sessions[m.record.id]?.note} title={m.record.title} /> ({m.record.project}) · {formatCost(m.record.cost)} · record du mois
                       </p>
                     )}
                   </li>
@@ -967,7 +1133,7 @@ function EnvDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const count = Object.keys(env).length
 
   const save = async (restart: boolean) => {
-    if (restart && session.status === 'working' && !confirm('Il travaille : relancer interrompt son tour en cours. Relancer quand même ?')) return
+    if (restart && session.status === 'working' && !confirm(`${priestLabel(session)} travaille : relancer interrompt son tour en cours. Relancer quand même ?`)) return
     setBusy(true)
     setError(null)
     try {
@@ -989,7 +1155,7 @@ function EnvDialog({ id, onClose }: { id: string; onClose: () => void }) {
         }}
       >
         <p className="muted">
-          Propres à <b>{session.title}</b> : son process démarre avec, ses commandes et ses novices en héritent. Une par ligne, comme un fichier <code>.env</code>.
+          Propres à <PriestName note={session.note} title={session.title} /> : son process démarre avec, ses commandes et ses novices en héritent. Une par ligne, comme un fichier <code>.env</code>.
         </p>
         <textarea
           autoFocus
@@ -1057,7 +1223,7 @@ function ShepherdDialog({ id, onClose }: { id: string; onClose: () => void }) {
     <Modal title="Confier à Bouddha" onClose={onClose}>
       <form className="form" onSubmit={confide}>
         <p className="muted">
-          Bouddha fera passer <b>{session.title}</b> dans une session neuve au moment qui lui convient, avec la passation qu'il écrira. Ajoute ici tout le contexte
+          Bouddha fera passer <PriestName note={session.note} title={session.title} /> dans une session neuve au moment qui lui convient, avec la passation qu'il écrira. Ajoute ici tout le contexte
           que la nouvelle session doit avoir, même très long : il sera mis dans un fichier temporaire (sous <code>/tmp</code>) qu'elle lira en premier, comme un skill.
         </p>
         <label>
@@ -1164,6 +1330,9 @@ function AutonomyDialog({ id, onClose }: { id: string; onClose: () => void }) {
   return (
     <Modal title="Autonomie" onClose={onClose}>
       <div className="form">
+        <p className="muted">
+          Pour <PriestName note={session.note} title={session.title} />.
+        </p>
         {current?.active && (
           <div className="autonomy-current">
             <p className="muted">

@@ -1,4 +1,4 @@
-import type { CostReport, Envelope, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, GlobalMcp, LibraryMcp, McpServer, MonkProfile, NirvanaEntry, ProjectInfo, ProjectSuggestion, QuotaReserve, QuotaReserveState, SessionSummary } from '@sangha/shared'
+import type { CostReport, Envelope, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, GlobalMcp, LibraryMcp, McpServer, MonkProfile, NirvanaEntry, NirvanaSearchResult, ProjectInfo, ProjectSuggestion, QuotaReserve, QuotaReserveState, SessionSummary } from '@sangha/shared'
 import { yeet } from './notify'
 import { emptyView, useApp } from './store'
 
@@ -82,6 +82,8 @@ export const api = {
   archive: (id: string, force = false) => json<void>(`/api/sessions/${id}${force ? '?force=1' : ''}`, { method: 'DELETE' }),
   /** The moon's history: every priest sent to nirvana, newest first. */
   nirvana: () => json<NirvanaEntry[]>('/api/nirvana'),
+  /** Ask a model to find, among the moon's history, the sessions matching a question: best first, each with why it matches. */
+  nirvanaSearch: (q: string) => json<NirvanaSearchResult>('/api/nirvana/search', post({ q })),
   /** Bring him back to the courtyard, in a fresh session. */
   /** Relaunch his Claude process on the same conversation, so it rereads his agent file, tools and MCP. */
   restart: (id: string) => json<void>(`/api/sessions/${id}/restart`, post()),

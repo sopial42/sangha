@@ -45,7 +45,7 @@ observer.start()
 sessions.startDoingLoop()
 sessions.startRenewalLoop()
 sessions.startPullsLoop()
-const host = new HostMonitor(config.workspacesDir, () => sessions.summaries())
+const host = new HostMonitor(config.workspacesDir, () => sessions.summaries(), () => sessions.archivedWorktrees())
 host.start()
 
 const app = new Hono()
@@ -272,6 +272,11 @@ app.post('/api/sessions/:id/reincarnate', async (c) => c.json(await sessions.rei
 
 // The moon: priests sent to nirvana, newest dismissal first.
 app.get('/api/nirvana', (c) => c.json(sessions.nirvana()))
+// A small model's best guess at which nirvana sessions answer a question, best first.
+app.post('/api/nirvana/search', async (c) => {
+  const { q } = await c.req.json<{ q?: string }>()
+  return c.json(await sessions.searchNirvana(q ?? ''))
+})
 
 // What the monastery has cost at API prices since monitoring began.
 app.get('/api/costs', (c) => c.json(sessions.costReport()))

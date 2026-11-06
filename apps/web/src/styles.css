@@ -45,6 +45,14 @@ textarea {
   outline-offset: 2px;
 }
 
+/* A search match, highlighted in place (e.g. in the nirvana): a gold wash, not the browser's default yellow. */
+mark {
+  background: #e0b25a33;
+  color: var(--gold);
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
 .app {
   display: flex;
   flex-direction: column;
@@ -186,6 +194,12 @@ textarea {
 
 .bell-item-body {
   color: var(--muted);
+}
+
+/* His note, standing in for his name wherever one is: the same gold as under him in the courtyard. */
+.priest-name-note,
+.bell-item-note {
+  color: #f2d590;
 }
 
 .bell-clear {
@@ -608,6 +622,12 @@ input[type='range']:disabled::-moz-range-thumb {
 }
 
 .host-suggestion-detail {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--muted);
+}
+
+.host-suggestion-note {
   margin: 0;
   font-size: 13.5px;
   color: var(--muted);
@@ -1603,6 +1623,14 @@ input[type='range']:disabled::-moz-range-thumb {
   color: var(--muted);
 }
 
+/* A handful of priests named inside a dialog's own text (e.g. before removing their project). */
+.dialog-priest-list {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 2px;
+}
+
 .form input,
 .form textarea,
 .form select {
@@ -1868,6 +1896,30 @@ input[type='range']:disabled::-moz-range-thumb {
 }
 
 /* nirvana dialog */
+/* Chercher dans le nirvana : le champ (texte instantané ou IA) et son décompte. */
+.nirvana-search {
+  display: grid;
+  gap: 6px;
+}
+
+.nirvana-search-field {
+  display: flex;
+  gap: 8px;
+}
+
+.nirvana-search-field input {
+  flex: 1;
+}
+
+.nirvana-search-count {
+  margin: 0;
+}
+
+.nirvana-reason {
+  margin: 0;
+  font-style: italic;
+}
+
 .nirvana-list {
   list-style: none;
   margin: 0;
@@ -1885,6 +1937,14 @@ input[type='range']:disabled::-moz-range-thumb {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel-2);
+}
+
+/* Sa note, avant son titre : la même touche d'or que sous lui dans la cour. */
+.nirvana-note {
+  margin: 0;
+  font: 700 15px var(--serif);
+  color: #f2d590;
+  letter-spacing: 0.02em;
 }
 
 .nirvana-entry-head {
@@ -2796,6 +2856,87 @@ input[type='range']:disabled::-moz-range-thumb {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* The pile of messages set aside for later ("De côté"): a button in the actions row, its popover
+   opening upward, above the composer. */
+.stash-wrap {
+  position: relative;
+}
+
+.stash-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  max-height: 60vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 -12px 32px #0008;
+  text-align: left;
+}
+
+.stash-current {
+  width: 100%;
+  text-align: left;
+  padding: 0 0 10px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--gold);
+  font: 600 13.5px var(--sans);
+  cursor: pointer;
+}
+
+.stash-current:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.stash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.stash-item {
+  display: grid;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff06;
+}
+
+.stash-time {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.stash-preview {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink);
+  white-space: pre-wrap;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.stash-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .form-error {

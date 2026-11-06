@@ -1,5 +1,5 @@
-import type { RecapState, SessionStatus, SessionSummary } from '@sangha/shared'
-import { agentTitle } from './priests'
+import { BUDDHA_SESSION_ID, type RecapState, type SessionStatus, type SessionSummary } from '@sangha/shared'
+import { agentTitle, priestLabel } from './priests'
 import { useApp } from './store'
 
 const ATTENTION: SessionStatus[] = ['waiting', 'error']
@@ -131,8 +131,9 @@ export function watchPriests() {
     const who = agentTitle(s, projects)
     const what = s.status === 'error' ? 'est en difficulté' : NOTIFY_TITLE[state ?? 'fini']
     const body = s.recap && s.status !== 'error' ? s.recap.next : s.project ? `${s.project} · ${s.title}` : s.title
-    // Every ring lands in the bell's list, so you can tell afterwards who called.
-    notify({ sessionId: s.id, who, what, body })
+    // Every ring lands in the bell's list, so you can tell afterwards who called — his note travels
+    // with it, as it stood right then, so it still reads true even if he's since left the courtyard.
+    notify({ sessionId: s.id, who, what, body, note: s.note })
   }
 
   const settle = (id: string) => {
@@ -141,10 +142,14 @@ export function watchPriests() {
   }
 
   const unsubscribe = useApp.subscribe((state) => {
-    const { sessions, interruptedIds, clearInterrupted } = state
+    const { sessions, selectedId, interruptedIds, clearInterrupted } = state
     // Silenced priests (incense out) never call for you.
     const waiting = Object.values(sessions).filter((s) => ATTENTION.includes(s.status) && !s.silenced)
-    document.title = waiting.length ? `(${waiting.length}) Sangha` : 'Sangha'
+    // The tab itself says who you're looking at — his note first — so a pile of tabs, one per
+    // priest, still reads apart from the outside, exactly like everywhere else he's named.
+    const openLabel = selectedId === BUDDHA_SESSION_ID ? 'Bouddha' : selectedId && sessions[selectedId] ? priestLabel(sessions[selectedId]!) : null
+    const base = openLabel ? `${openLabel} · Sangha` : 'Sangha'
+    document.title = waiting.length ? `(${waiting.length}) ${base}` : base
 
     const now = Object.fromEntries(Object.values(sessions).map((s) => [s.id, s.status]))
     if (previous) {

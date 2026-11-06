@@ -15,6 +15,7 @@ import {
   type McpServer,
   type MonasteryEvent,
   type NirvanaEntry,
+  type NirvanaSearchResult,
   type NoviceSummary,
   type Quota,
   type QuotaReserve,
@@ -24,6 +25,7 @@ import {
   type SessionSummary,
 } from '@sangha/shared'
 import { config } from './config'
+import type { HostNirvanaWorktree } from './host'
 import { Providers } from './providers'
 import { LOOP_STOP_MESSAGE, type SessionRow, type Shepherd, type Store } from './db'
 import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState, type WorktreeState } from './git'
@@ -38,12 +40,16 @@ import { relayToPeer } from './messenger'
 import { PullRequests } from './pulls'
 import { BusySettle } from './settle'
 import { carriedOnIn } from './chain'
-import { doing, lifeSummary, progress, recap, scriptSummary, type Progress } from './recap'
+import { doing, lifeSummary, nirvanaSearch, progress, recap, scriptSummary, type NirvanaSearchEntry, type Progress } from './recap'
 import { priestOptions } from './roles'
 import { ScriptSummaries, trackScripts } from './scripts'
 import { contextTokens, parseLine, TranscriptReader } from './transcript'
 import { buildCostReport, CostMeter } from './cost'
 import { isHandoff, nextDelay, parseAnswer, readDecision, renewalMessage, shepherdPrompt, writeHandoffContext, type ShepherdAnswer } from './shepherd'
+import { withTimeout } from './timeout'
+
+/** A search through the nirvana must answer in a reasonable time, or hold its priest for nothing. */
+const NIRVANA_SEARCH_TIMEOUT_MS = 60_000
 
 type Listener = (env: Envelope) => void
 type GlobalListener = (ev: GlobalEvent) => void
@@ -754,6 +760,31 @@ export class Sessions {
   }
 
   /**
+   * Which past (nirvana) sessions best answer a question of yours, a small model's best guess (never
+   * the exact words of a search box): refused while empty, or while the quota reserve holds every
+   * priest, same as a recap would be. Times out rather than holding you forever.
+   */
+  async searchNirvana(q: string): Promise<NirvanaSearchResult> {
+    if (!q.trim()) throw new UserError('Question vide.')
+    if (this.blocked()) throw new UserError(reserveMessage(this.reserve, this.quota))
+    const notes = this.store.notes()
+    const entries: NirvanaSearchEntry[] = this.store
+      .archivedSessions()
+      .filter((r) => r.id !== BUDDHA_SESSION_ID)
+      .map((r) => ({
+        id: r.id,
+        date: new Date(r.archivedAt!).toISOString().slice(0, 10),
+        project: r.project,
+        branch: r.branch,
+        agent: r.agent,
+        note: notes.get(r.id) ?? null,
+        title: r.title,
+        summary: this.nirvanaSummaryOf(r),
+      }))
+    return withTimeout(nirvanaSearch(entries, q.trim()), NIRVANA_SEARCH_TIMEOUT_MS, () => new UserError('La recherche a pris trop de temps : réessaie.'))
+  }
+
+  /**
    * What the monastery has cost at API prices since monitoring began: every session's own transcript
    * cost (never a predecessor's carried-over cost, or it would be counted twice), archived sessions
    * included. Buddha counts too, under project "Bouddha" — his transcript sits under his fixed cwd.
@@ -786,12 +817,16 @@ export class Sessions {
   }
 
   private hasNirvanaSummary(row: SessionRow): boolean {
+    return this.nirvanaSummaryOf(row) !== null
+  }
+
+  /** The whole-life summary a small model wrote when he was sent to nirvana, null until it is (see `generateNirvanaSummary`). */
+  private nirvanaSummaryOf(row: SessionRow): string | null {
     const note = this.store.note<{ summary: string }>(row.id, 'nirvana')
-    return note !== null && note.key === String(row.archivedAt)
+    return note && note.key === String(row.archivedAt) ? note.value.summary : null
   }
 
   private nirvanaEntry(row: SessionRow): NirvanaEntry {
-    const note = this.store.note<{ summary: string }>(row.id, 'nirvana')
     const renewal = this.store.renewal(row.id)
     return {
       id: row.id,
@@ -802,10 +837,20 @@ export class Sessions {
       createdAt: row.createdAt,
       archivedAt: row.archivedAt!,
       cost: this.costOf(row.id),
-      summary: note && note.key === String(row.archivedAt) ? note.value.summary : null,
+      summary: this.nirvanaSummaryOf(row),
+      note: this.store.notes().get(row.id) ?? null,
       renewed: renewal?.state === 'done',
       continuedIn: renewal?.state === 'done' ? carriedOnIn(this.store, row.id) : null,
     }
+  }
+
+  /** Archived sessions that had a worktree, so an orphan one can be named after who left it behind (see `host.ts`). */
+  archivedWorktrees(): HostNirvanaWorktree[] {
+    const notes = this.store.notes()
+    return this.store
+      .archivedSessions()
+      .filter((r) => r.worktree)
+      .map((r) => ({ path: r.worktree!, title: r.title, note: notes.get(r.id) ?? null, archivedAt: r.archivedAt! }))
   }
 
   private nirvanaBusy = false

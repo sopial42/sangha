@@ -1,5 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { RecapState, SessionRecap } from '@sangha/shared'
+import type { NirvanaSearchResult, RecapState, SessionRecap } from '@sangha/shared'
 import { cleanScriptSummary, scriptPrompt } from './scripts'
 
 const RECAP_MODEL = process.env.SANGHA_RECAP_MODEL ?? 'haiku'
@@ -156,4 +156,78 @@ ${STYLE}`
 export async function scriptSummary(command: string, title: string): Promise<string | null> {
   const out = await ask<{ summary: string }>(SCRIPT_SYSTEM, SCRIPT_SCHEMA, scriptPrompt(command, title), 2_000)
   return typeof out?.summary === 'string' ? cleanScriptSummary(out.summary) : null
+}
+
+/** One nirvana entry, as fed to the model: enough to judge whether it answers the question. */
+export type NirvanaSearchEntry = {
+  id: string
+  /** archivedAt, "YYYY-MM-DD". */
+  date: string
+  project: string
+  branch: string | null
+  agent: string
+  note: string | null
+  /** His first message, already truncated. */
+  title: string
+  summary: string | null
+}
+
+const NIRVANA_SEARCH_SCHEMA = {
+  type: 'object',
+  properties: {
+    results: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          reason: { type: 'string', description: 'One short sentence in French saying why this session answers the question.' },
+        },
+        required: ['id', 'reason'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['results'],
+  additionalProperties: false,
+}
+
+const NIRVANA_SEARCH_SYSTEM = `You search a list of a user's past agent sessions (dismissed ones, kept in Sangha's
+"nirvana") to answer a question of his. Each line below is one session: its id, the date it was dismissed, the
+project and git branch it worked on, which agent ran it, the user's own short note about it if he left one, its
+title (his first message, truncated) and a one- or two-sentence summary of what happened in it.
+Pick the sessions that best answer the question, best match first, at most 15; skip anything irrelevant. Only use
+ids that appear below: never invent one.
+Answer with strict JSON only: {"results":[{"id":"...","reason":"..."}]}.
+Write every "reason" as one short sentence in French explaining why that session matches — in French even though
+everything else here is in English.`
+
+function nirvanaSearchLine(e: NirvanaSearchEntry): string {
+  return `id=${e.id} date=${e.date} project=${e.project} branch=${e.branch ?? '-'} agent=${e.agent} note=${e.note ?? '-'} title=${e.title} summary=${e.summary ?? '-'}`
+}
+
+/** The model's whole input: one compact line per entry, then the question — in that order, so a
+ * truncation from the tail (see `ask`) drops the oldest entries rather than the question itself. */
+export function buildNirvanaSearchPrompt(entries: NirvanaSearchEntry[], question: string): string {
+  return [...entries.map(nirvanaSearchLine), '', `QUESTION: ${question}`].join('\n')
+}
+
+/** The model's raw answer, filtered down to known ids, well-shaped entries, at most 15, order kept. */
+export function parseNirvanaSearchResult(raw: unknown, validIds: Set<string>): NirvanaSearchResult {
+  const list = raw && typeof raw === 'object' && Array.isArray((raw as { results?: unknown }).results) ? (raw as { results: unknown[] }).results : []
+  const results = list
+    .filter((r): r is { id: string; reason: string } => {
+      const rec = r as Record<string, unknown> | null
+      return !!rec && typeof rec === 'object' && typeof rec.id === 'string' && typeof rec.reason === 'string'
+    })
+    .filter((r) => validIds.has(r.id))
+    .slice(0, 15)
+  return { results }
+}
+
+/** Which past (nirvana) sessions best answer a question, best first — a small model reads a compact line per session. */
+export async function nirvanaSearch(entries: NirvanaSearchEntry[], question: string): Promise<NirvanaSearchResult> {
+  const prompt = buildNirvanaSearchPrompt(entries, question)
+  const out = await ask<{ results: unknown }>(NIRVANA_SEARCH_SYSTEM, NIRVANA_SEARCH_SCHEMA, prompt, 40_000)
+  return parseNirvanaSearchResult(out, new Set(entries.map((e) => e.id)))
 }

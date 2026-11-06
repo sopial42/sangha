@@ -151,6 +151,9 @@ export class RedTracker {
 
 // ── Suggestions ─────────────────────────────────────────────────────────────
 
+/** An archived session that once worked in a worktree: enough to name it when it is now orphaned. */
+export type HostNirvanaWorktree = { path: string; title: string; note: string | null; archivedAt: number }
+
 export type SuggestInput = {
   metrics: HostMetric[]
   now: number
@@ -158,10 +161,27 @@ export type SuggestInput = {
   containers: HostContainer[] | null
   worktrees: HostWorktree[]
   sessions: Pick<SessionSummary, 'id' | 'title' | 'status' | 'external'>[]
+  /** Archived sessions, to name an orphan worktree after who left it behind (see `disk:orphan:`). */
+  nirvana?: HostNirvanaWorktree[]
 }
 
+/** Shortens a title kept to the word boundary, for a priest named beside his note. */
+function shorten(s: string, max = 24): string {
+  if (s.length <= max) return s
+  const cut = s.slice(0, max)
+  const i = cut.lastIndexOf(' ')
+  return `${(i > 0 ? cut.slice(0, i) : cut).trimEnd()}…`
+}
+
+/** How a priest is named in a suggestion: his own note first (how you call him), his title alongside, shortened. */
+function namePriest(note: string | null, title: string): string {
+  return note ? `« ${note} » (${shorten(title)})` : `« ${title} »`
+}
+
+const dateFr = (ms: number) => new Date(ms).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+
 /** What to do about each metric red for longer than RED_AFTER_MS. Sangha only suggests: you run the commands. */
-export function suggest({ metrics, now, processes, containers, worktrees, sessions }: SuggestInput): HostSuggestion[] {
+export function suggest({ metrics, now, processes, containers, worktrees, sessions, nirvana = [] }: SuggestInput): HostSuggestion[] {
   const out: HostSuggestion[] = []
   const long = (key: HostMetricKey) => {
     const m = metrics.find((x) => x.key === key)
@@ -237,19 +257,22 @@ export function suggest({ metrics, now, processes, containers, worktrees, sessio
       out.push({
         id: `disk:worktree:${idle.path}`,
         metric: 'disk',
-        title: `Disque plein depuis ${minutes('disk')} min : le worktree de « ${idle.sessionTitle} » pèse ${bytes(idle.bytes)}`,
+        title: `Disque plein depuis ${minutes('disk')} min : le worktree de ${namePriest(idle.sessionNote, idle.sessionTitle ?? '')} pèse ${bytes(idle.bytes)}`,
         detail: 'Congédier ce prêtre supprime son worktree (Sangha refuse si du travail serait perdu).',
         sessionId: idle.sessionId!,
       })
     const orphan = worktrees.find((w) => !w.sessionId)
-    if (orphan)
+    if (orphan) {
+      const left = nirvana.find((n) => n.path === orphan.path)
+      const who = left ? `${namePriest(left.note, left.title)}, parti au nirvana le ${dateFr(left.archivedAt)}` : `${orphan.project}/${orphan.name}`
       out.push({
         id: `disk:orphan:${orphan.path}`,
         metric: 'disk',
-        title: `Worktree sans prêtre : ${orphan.project}/${orphan.name} (${bytes(orphan.bytes)})`,
+        title: `Worktree sans prêtre : ${who} (${bytes(orphan.bytes)})`,
         detail: 'Plus aucun prêtre n’y travaille. Vérifie qu’il n’y reste rien à garder, puis retire-le toi-même.',
-        command: `git -C "${orphan.path}" status --short && git worktree remove "${orphan.path}"`,
+        command: `git -C "${orphan.path}" status --short && git -C "${orphan.path}" worktree remove "${orphan.path}"`,
       })
+    }
     if (containers)
       out.push({
         id: 'disk:docker',
@@ -294,6 +317,8 @@ export class HostMonitor {
   constructor(
     private workspacesDir: string,
     private sessions: () => SessionSummary[],
+    /** Archived sessions, so an orphan worktree can be named after who left it behind (see `suggest`). */
+    private nirvana: () => HostNirvanaWorktree[] = () => [],
   ) {}
 
   start() {
@@ -406,7 +431,16 @@ export class HostMonitor {
       .map(([path, size]) => {
         const s = sessions.find((x) => x.cwd === path)
         const [project, ...rest] = path.slice(root.length + 1).split('/')
-        return { path, project: project ?? '', name: rest.join('/'), bytes: size, sessionId: s?.id ?? null, sessionTitle: s?.title ?? null, status: s?.status ?? null }
+        return {
+          path,
+          project: project ?? '',
+          name: rest.join('/'),
+          bytes: size,
+          sessionId: s?.id ?? null,
+          sessionTitle: s?.title ?? null,
+          sessionNote: s?.note ?? null,
+          status: s?.status ?? null,
+        }
       })
       .sort((a, b) => b.bytes - a.bytes)
   }
@@ -448,7 +482,7 @@ export class HostMonitor {
       worktrees,
       worktreesSizedAt: this.sizedAt,
       redAfterMs: RED_AFTER_MS,
-      suggestions: suggest({ metrics, now, processes, containers, worktrees, sessions }),
+      suggestions: suggest({ metrics, now, processes, containers, worktrees, sessions, nirvana: this.nirvana() }),
     }
     for (const fn of this.listeners) fn(this.report)
   }

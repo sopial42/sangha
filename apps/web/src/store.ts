@@ -212,8 +212,9 @@ type AppState = {
   toggleMuted: () => void
 }
 
-/** One ring of the bowl: who, why, and what he waits for. */
-export type Notice = { id: string; sessionId: string; who: string; what: string; body: string; at: number; read: boolean }
+/** One ring of the bowl: who, why, and what he waits for. `note`: his, as it was when he rang —
+ *  kept here too so the bell's list still shows it once he's long gone from the courtyard. */
+export type Notice = { id: string; sessionId: string; who: string; what: string; body: string; note: string | null; at: number; read: boolean }
 
 const NOTICES_KEY = 'sangha.notifications'
 const MAX_NOTICES = 50

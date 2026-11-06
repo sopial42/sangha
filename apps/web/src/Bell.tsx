@@ -77,7 +77,10 @@ export function Bell() {
                       }}
                     >
                       <span className="bell-item-head">
-                        <b>{n.who}</b> {n.what}
+                        {/* His note first — it's how you tell him apart; who (his agent) only follows,
+                            in parentheses, when there is one. Just "who" otherwise, as before. */}
+                        <b className={n.note ? 'bell-item-note' : undefined}>{n.note ?? n.who}</b>
+                        {n.note && <span className="muted small">({n.who})</span>} {n.what}
                         <time className="bell-time">{formatTime(n.at)}</time>
                       </span>
                       <span className="bell-item-body">{n.body}</span>

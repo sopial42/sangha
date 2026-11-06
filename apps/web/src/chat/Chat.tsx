@@ -6,6 +6,7 @@ import { formatTime } from '../priests'
 import { profileFor, toolIcon } from '../profiles'
 import { useApp, type ChatItem } from '../store'
 import { draftOf, saveDraft } from '../drafts'
+import { addToStash, removeFromStash, stashOf, type StashItem } from '../stash'
 
 const NO_QUEUED: QueuedMessage[] = []
 
@@ -196,6 +197,63 @@ export function Chat({ author, external = null }: { author: string; external?: {
   // « Dernière capture » switched on: your latest screenshot goes with the next message (then it switches off).
   const [withShot, setWithShot] = useState(false)
   useEffect(() => setWithShot(false), [sessionId])
+
+  // What you set aside instead of sending right away: his own pile, popover closed until you open it.
+  const [stash, setStash] = useState<StashItem[]>(() => (sessionId ? stashOf(sessionId) : []))
+  useEffect(() => setStash(sessionId ? stashOf(sessionId) : []), [sessionId])
+  const [stashOpen, setStashOpen] = useState(false)
+  useEffect(() => setStashOpen(false), [sessionId])
+  const [stashBusyId, setStashBusyId] = useState<string | null>(null)
+  const [stashError, setStashError] = useState<string | null>(null)
+  const stashRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!stashOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (stashRef.current && !stashRef.current.contains(e.target as Node)) setStashOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setStashOpen(false)
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('pointerdown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [stashOpen])
+
+  /** Puts the text you are writing on his pile and clears the composer. */
+  const stashCurrent = () => {
+    if (!sessionId || !text.trim()) return
+    setStash(addToStash(sessionId, text))
+    setText('')
+    saveDraft(sessionId, '')
+  }
+  /** Brings a stashed message back into the composer (appended, if you were already writing something). */
+  const resumeStashed = (item: StashItem) => {
+    if (!sessionId) return
+    const next = text.trim() ? `${text}\n${item.text}` : item.text
+    setText(next)
+    saveDraft(sessionId, next)
+    setStash(removeFromStash(sessionId, item.id))
+    inputRef.current?.focus()
+  }
+  /** Sends a stashed message straight through the same path as the composer: queued if he still works. */
+  const sendStashed = async (item: StashItem) => {
+    if (!sessionId) return
+    setStashBusyId(item.id)
+    setStashError(null)
+    try {
+      await api.send(sessionId, item.text)
+      setStash(removeFromStash(sessionId, item.id))
+    } catch (err) {
+      setStashError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setStashBusyId(null)
+    }
+  }
+  const deleteStashed = (item: StashItem) => {
+    if (!sessionId) return
+    setStash(removeFromStash(sessionId, item.id))
+  }
 
   // Opening him (or switching to him while the panel stays open) puts the caret straight in the
   // textarea, at the end of any restored draft — never while a dialog sits on top, and never on a
@@ -504,6 +562,10 @@ export function Chat({ author, external = null }: { author: string; external?: {
               const next = histIndex - 1
               setHistIndex(next)
               setText(next === -1 ? '' : (sentMessages[sentMessages.length - 1 - next] ?? ''))
+            } else if (e.key.toLowerCase() === 's' && (e.ctrlKey || e.metaKey)) {
+              // Mets de côté ce que j'écris, sans laisser le navigateur ouvrir sa boîte "Enregistrer".
+              e.preventDefault()
+              stashCurrent()
             }
           }}
           placeholder={
@@ -546,6 +608,54 @@ export function Chat({ author, external = null }: { author: string; external?: {
           >
             {withShot ? '📷 Capture jointe ✓' : '📷 Dernière capture'}
           </button>
+          <div className="stash-wrap" ref={stashRef}>
+            <button
+              type="button"
+              className={`btn btn-ghost${stashOpen ? ' active' : ''}`}
+              disabled={!sessionId}
+              aria-haspopup="true"
+              aria-expanded={stashOpen}
+              onClick={() => setStashOpen((o) => !o)}
+              title="Les messages que tu as mis de côté pour plus tard"
+            >
+              📥 De côté{stash.length > 0 ? ` · ${stash.length}` : ''}
+            </button>
+            {stashOpen && (
+              <div className="stash-popover" role="menu" aria-label="Messages de côté">
+                <button type="button" className="stash-current" disabled={!text.trim()} onClick={stashCurrent}>
+                  Mettre de côté ce que j’écris
+                </button>
+                {stashError && (
+                  <p className="form-error" role="alert">
+                    {stashError}
+                  </p>
+                )}
+                {stash.length === 0 ? (
+                  <p className="muted small">Rien de côté pour l’instant.</p>
+                ) : (
+                  <ul className="stash-list">
+                    {stash.map((it) => (
+                      <li key={it.id} className="stash-item">
+                        <time className="stash-time">{formatTime(it.at)}</time>
+                        <p className="stash-preview">{it.text}</p>
+                        <div className="stash-item-actions">
+                          <button type="button" className="text-link" onClick={() => resumeStashed(it)}>
+                            Reprendre
+                          </button>
+                          <button type="button" className="text-link" disabled={stashBusyId === it.id} onClick={() => void sendStashed(it)}>
+                            {stashBusyId === it.id ? 'Envoi…' : 'Envoyer'}
+                          </button>
+                          <button type="button" className="icon-btn" aria-label="Supprimer ce message de côté" title="Supprimer" onClick={() => deleteStashed(it)}>
+                            🗑
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
           <button type="submit" className="btn btn-primary" disabled={!sessionId || sending || !text.trim()}>
             Envoyer
           </button>

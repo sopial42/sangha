@@ -24,6 +24,31 @@ export function robeOfAgent(agent: string): string {
 
 const pretty = (id: string) => id.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase())
 
+/**
+ * How a priest is named in plain text, everywhere one is: his note first — it's your own word for
+ * him, the one way you actually tell sessions apart (a title is only his first message, a branch only
+ * an id) — his title kept alongside for context. Just the title, as before, once he has none. For
+ * aria-labels, tooltips, `confirm()`s, `document.title`: anywhere markup isn't an option.
+ */
+export function priestLabel(s: { note?: string | null; title: string }): string {
+  return s.note ? `${s.note} — ${s.title}` : s.title
+}
+
+/**
+ * Same pairing as `priestLabel`, as markup: his note in the same gold the courtyard and his own
+ * session already show it in, his title secondary and muted right after. Just the title, plain, once
+ * he has none — so every dialog that names a priest reads the same way.
+ */
+export function PriestName({ note, title }: { note?: string | null; title: string }) {
+  return note ? (
+    <>
+      <b className="priest-name-note">{note}</b> <span className="muted small">({title})</span>
+    </>
+  ) : (
+    <b>{title}</b>
+  )
+}
+
 /** Context weight: fine under 200K, heavy from 200K, rotting from 400K. */
 export const contextLevel = (tokens: number | null) => (tokens == null ? null : tokens >= 400_000 ? 'rotting' : tokens >= 200_000 ? 'heavy' : 'fine')
 export const CONTEXT_COLOR = { fine: '#6fae8a', heavy: '#e0a33a', rotting: '#c0392b' } as const

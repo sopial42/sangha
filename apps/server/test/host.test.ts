@@ -81,12 +81,56 @@ describe('suggest', () => {
 
   it('offers to dismiss the priest with the heaviest idle worktree, and to remove an orphan one', () => {
     const worktrees = [
-      { path: '/w/.worktrees/p/busy', project: 'p', name: 'busy', bytes: 9 * GB, sessionId: 's1', sessionTitle: 'Busy', status: 'working' as const },
-      { path: '/w/.worktrees/p/done', project: 'p', name: 'done', bytes: 4 * GB, sessionId: 's2', sessionTitle: 'Done', status: 'idle' as const },
-      { path: '/w/.worktrees/p/old', project: 'p', name: 'old', bytes: GB, sessionId: null, sessionTitle: null, status: null },
+      { path: '/w/.worktrees/p/busy', project: 'p', name: 'busy', bytes: 9 * GB, sessionId: 's1', sessionTitle: 'Busy', sessionNote: null, status: 'working' as const },
+      { path: '/w/.worktrees/p/done', project: 'p', name: 'done', bytes: 4 * GB, sessionId: 's2', sessionTitle: 'Done', sessionNote: null, status: 'idle' as const },
+      { path: '/w/.worktrees/p/old', project: 'p', name: 'old', bytes: GB, sessionId: null, sessionTitle: null, sessionNote: null, status: null },
     ]
     const s = suggest({ ...base, worktrees, metrics: [metric('disk', 0)] })
     expect(s.map((x) => x.id)).toEqual(['disk:worktree:/w/.worktrees/p/done', 'disk:orphan:/w/.worktrees/p/old'])
     expect(s[0]?.sessionId).toBe('s2')
+    expect(s[0]?.title).toContain('« Done »')
+  })
+
+  it('scopes both git calls of the orphan command to the worktree, so it works from any cwd', () => {
+    const worktrees = [{ path: '/w/.worktrees/p/old', project: 'p', name: 'old', bytes: GB, sessionId: null, sessionTitle: null, sessionNote: null, status: null }]
+    const s = suggest({ ...base, worktrees, metrics: [metric('disk', 0)] })
+    expect(s[0]?.command).toBe('git -C "/w/.worktrees/p/old" status --short && git -C "/w/.worktrees/p/old" worktree remove "/w/.worktrees/p/old"')
+  })
+
+  it('names the idle priest by his note first, title shortened alongside, when he has one', () => {
+    const worktrees = [
+      {
+        path: '/w/.worktrees/p/done',
+        project: 'p',
+        name: 'done',
+        bytes: 2 * GB,
+        sessionId: 's2',
+        sessionTitle: 'je veux developper deux écrans de paiement',
+        sessionNote: 'RIB ET MAIL',
+        status: 'idle' as const,
+      },
+    ]
+    const s = suggest({ ...base, worktrees, metrics: [metric('disk', 0)] })
+    expect(s[0]?.title).toBe('Disque plein depuis 50 min : le worktree de « RIB ET MAIL » (je veux developper deux…) pèse 2.0 Go')
+  })
+
+  it('names an orphan worktree after the nirvana entry that used it, note first', () => {
+    const worktrees = [{ path: '/w/.worktrees/p/old', project: 'p', name: 'old', bytes: GB, sessionId: null, sessionTitle: null, sessionNote: null, status: null }]
+    const nirvana = [{ path: '/w/.worktrees/p/old', title: 'je corrige le panier', note: 'RIB ET MAIL', archivedAt: new Date(2026, 2, 7).getTime() }]
+    const s = suggest({ ...base, worktrees, nirvana, metrics: [metric('disk', 0)] })
+    expect(s[0]?.title).toBe('Worktree sans prêtre : « RIB ET MAIL » (je corrige le panier), parti au nirvana le 07/03 (1.0 Go)')
+  })
+
+  it('falls back to the title alone when the nirvana match has no note', () => {
+    const worktrees = [{ path: '/w/.worktrees/p/old', project: 'p', name: 'old', bytes: GB, sessionId: null, sessionTitle: null, sessionNote: null, status: null }]
+    const nirvana = [{ path: '/w/.worktrees/p/old', title: 'je corrige le panier', note: null, archivedAt: new Date(2026, 2, 7).getTime() }]
+    const s = suggest({ ...base, worktrees, nirvana, metrics: [metric('disk', 0)] })
+    expect(s[0]?.title).toBe('Worktree sans prêtre : « je corrige le panier », parti au nirvana le 07/03 (1.0 Go)')
+  })
+
+  it('keeps naming it by path when no nirvana entry ever used it', () => {
+    const worktrees = [{ path: '/w/.worktrees/p/old', project: 'p', name: 'old', bytes: GB, sessionId: null, sessionTitle: null, sessionNote: null, status: null }]
+    const s = suggest({ ...base, worktrees, nirvana: [], metrics: [metric('disk', 0)] })
+    expect(s[0]?.title).toBe('Worktree sans prêtre : p/old (1.0 Go)')
   })
 })

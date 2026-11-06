@@ -301,6 +301,8 @@ export type NirvanaEntry = {
   cost: number | null
   /** The whole session in one or two sentences (a small model writes it; null until written). */
   summary: string | null
+  /** Your own note about him (« RIB ET MAIL »…), as it was when he left: how you tell sessions apart. */
+  note: string | null
   /** He moved on to a fresh session: his work goes on there, nothing to reincarnate. */
   renewed: boolean
   /** The session still carrying his work on, through his fresh sessions (null when they left too). */
@@ -353,6 +355,8 @@ export type HostWorktree = {
   bytes: number
   sessionId: string | null
   sessionTitle: string | null
+  /** The priest's own note (see `SessionSummary.note`), null when he has none or there is no live priest. */
+  sessionNote: string | null
   status: SessionStatus | null
 }
 
@@ -360,6 +364,9 @@ export type HostWorktree = {
  * Something to do because a metric stayed red too long. `command`: to copy and run yourself (Sangha never
  * runs it). `sessionId`: the priest concerned, e.g. to dismiss him and free his worktree.
  */
+/** An AI search through the nirvana: the matching sessions, best first, each with why it matches. */
+export type NirvanaSearchResult = { results: { id: string; reason: string }[] }
+
 export type HostSuggestion = {
   id: string
   metric: HostMetricKey
