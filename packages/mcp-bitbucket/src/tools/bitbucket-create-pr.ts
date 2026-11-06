@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getBitbucketEnv, isBitbucketEnvError } from "../lib/bitbucket";
+import { normalizeRef } from "../lib/refs";
 import { logger } from "../logger";
 
 export const bitbucketCreatePrSchema = {
@@ -37,10 +38,6 @@ export const bitbucketCreatePrSchema = {
 			.describe("If true, create the PR as a draft."),
 	},
 } as const;
-
-function normalizeRef(ref: string): string {
-	return ref.startsWith("refs/") ? ref : `refs/heads/${ref}`;
-}
 
 export function bitbucketCreatePrTool(server: McpServer): void {
 	const schema = bitbucketCreatePrSchema;

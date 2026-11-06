@@ -6,7 +6,7 @@ import { logger } from "../logger";
 export const bitbucketAddPrCommentSchema = {
 	name: "bitbucket_add_pr_comment",
 	description:
-		"Add a comment to a Bitbucket Data Center pull request. The comment can be global (top-level) or inline, targeting a specific file and line.",
+		"Add a comment to a Bitbucket Data Center pull request. The comment can be global (top-level) or inline, targeting a specific file and line. Set `parentCommentId` to reply to an existing comment instead.",
 	args: {
 		projectKey: z.string().describe('Bitbucket project key (e.g. "MYPROJ")'),
 		repositorySlug: z.string().describe('Repository slug (e.g. "my-repo")'),
@@ -38,6 +38,14 @@ export const bitbucketAddPrCommentSchema = {
 			.describe(
 				"Whether the line is in the source (FROM) or destination (TO) file (default: TO).",
 			),
+		parentCommentId: z
+			.number()
+			.int()
+			.positive()
+			.optional()
+			.describe(
+				"If set, post this as a reply to an existing comment (its id, from bitbucket_get_pr_activities) instead of a new top-level comment.",
+			),
 	},
 } as const;
 
@@ -56,6 +64,7 @@ export function bitbucketAddPrCommentTool(server: McpServer): void {
 			line,
 			lineType,
 			fileType,
+			parentCommentId,
 		}) => {
 			const env = getBitbucketEnv();
 			if (isBitbucketEnvError(env)) return env;
@@ -89,6 +98,7 @@ export function bitbucketAddPrCommentTool(server: McpServer): void {
 					fileType: "FROM" | "TO";
 					path: string;
 				};
+				parent?: { id: number };
 			};
 
 			const body: CommentBody = { text };
@@ -99,6 +109,9 @@ export function bitbucketAddPrCommentTool(server: McpServer): void {
 					fileType: fileType,
 					path: filePath,
 				};
+			}
+			if (parentCommentId !== undefined) {
+				body.parent = { id: parentCommentId };
 			}
 
 			logger.log(`[mcp-bitbucket] POST ${url}`);

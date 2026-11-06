@@ -14,13 +14,34 @@ import { logger } from "./logger";
 import {
 	bitbucketAddPrCommentTool,
 	bitbucketApprovePrTool,
+	bitbucketCompareTool,
 	bitbucketCreateBranchTool,
 	bitbucketCreatePrTool,
+	bitbucketCreatePrTaskTool,
 	bitbucketDeclinePrTool,
+	bitbucketEditPrCommentTool,
 	bitbucketFindTicketsInReleasePrsTool,
+	bitbucketFindUserTool,
+	bitbucketGetBuildStatusTool,
+	bitbucketGetFileContentTool,
+	bitbucketGetPrTool,
+	bitbucketGetPrActivitiesTool,
+	bitbucketGetPrCommitsTool,
 	bitbucketGetPrDiffTool,
 	bitbucketGetPrFilesTool,
+	bitbucketListBranchesTool,
+	bitbucketListCommitsTool,
+	bitbucketListFilesTool,
+	bitbucketListMyPrsTool,
+	bitbucketListPrsTool,
+	bitbucketListReposTool,
+	bitbucketListTagsTool,
+	bitbucketMergePrTool,
+	bitbucketReopenPrTool,
 	bitbucketRequestChangesPrTool,
+	bitbucketResolvePrCommentTool,
+	bitbucketUnapprovePrTool,
+	bitbucketUpdatePrTool,
 } from "./tools";
 
 const PORT = parseInt(process.env.PORT || "3001", 10);
@@ -59,6 +80,27 @@ function createMcpServer(): McpServer {
 	bitbucketDeclinePrTool(server);
 	bitbucketCreateBranchTool(server);
 	bitbucketCreatePrTool(server);
+	bitbucketGetPrTool(server);
+	bitbucketUpdatePrTool(server);
+	bitbucketListPrsTool(server);
+	bitbucketListMyPrsTool(server);
+	bitbucketGetPrActivitiesTool(server);
+	bitbucketEditPrCommentTool(server);
+	bitbucketResolvePrCommentTool(server);
+	bitbucketCreatePrTaskTool(server);
+	bitbucketUnapprovePrTool(server);
+	bitbucketMergePrTool(server);
+	bitbucketReopenPrTool(server);
+	bitbucketGetPrCommitsTool(server);
+	bitbucketListReposTool(server);
+	bitbucketListBranchesTool(server);
+	bitbucketListTagsTool(server);
+	bitbucketGetFileContentTool(server);
+	bitbucketListFilesTool(server);
+	bitbucketListCommitsTool(server);
+	bitbucketCompareTool(server);
+	bitbucketGetBuildStatusTool(server);
+	bitbucketFindUserTool(server);
 	return server;
 }
 

@@ -25,7 +25,7 @@ function bitbucket(v: Record<string, string>): McpServerConfig {
 export const LIBRARY: Entry[] = [
   {
     name: 'bitbucket-stdio',
-    description: 'Pull requests Bitbucket Data Center (fichiers, diff, commentaires, approbation, branches), avec ton PAT.',
+    description: 'Bitbucket Data Center avec ton PAT : pull requests de bout en bout (lire, créer, modifier titre et description, relecteurs, commentaires et tâches, approuver, fusionner, rouvrir), et parcours des dépôts (branches, tags, fichiers, commits, comparaisons, builds). Aucune suppression.',
     fields: [
       { key: 'BITBUCKET_MCP_API_BASE_URL', label: 'URL de Bitbucket', placeholder: 'https://stash.ovhcloud.tools' },
       { key: 'BITBUCKET_MCP_TOKEN', label: 'Token (PAT Bitbucket)', secret: true },

@@ -1,6 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getBitbucketEnv, isBitbucketEnvError } from "../lib/bitbucket";
+import {
+	type BitbucketDiffResponse,
+	parseDiff,
+} from "../lib/diff";
 import { logger } from "../logger";
 
 export const bitbucketGetPrDiffSchema = {
@@ -27,102 +31,6 @@ export const bitbucketGetPrDiffSchema = {
 			),
 	},
 } as const;
-
-// ── Bitbucket DC diff response types ─────────────────────────────────────────
-
-type BitbucketDiffLine = {
-	source: number;
-	destination: number;
-	line: string;
-	truncated: boolean;
-};
-
-type BitbucketSegment = {
-	type: "ADDED" | "REMOVED" | "CONTEXT";
-	lines: BitbucketDiffLine[];
-	truncated: boolean;
-};
-
-type BitbucketHunk = {
-	segments: BitbucketSegment[];
-	truncated: boolean;
-};
-
-type BitbucketFileDiff = {
-	source?: { toString: string };
-	destination?: { toString: string };
-	hunks: BitbucketHunk[];
-	truncated: boolean;
-};
-
-type BitbucketDiffResponse = {
-	diffs: BitbucketFileDiff[];
-	truncated: boolean;
-};
-
-// ── Parsed output types ───────────────────────────────────────────────────────
-
-type DiffLine = {
-	lineNumber: number;
-	fileType: "FROM" | "TO";
-	lineType: "ADDED" | "REMOVED" | "CONTEXT";
-	content: string;
-};
-
-type FileDiff = {
-	path: string;
-	lines: DiffLine[];
-	truncated: boolean;
-};
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function parseDiff(raw: BitbucketDiffResponse): {
-	files: FileDiff[];
-	truncated: boolean;
-} {
-	let anyTruncated = raw.truncated;
-
-	const files = raw.diffs.map((fileDiff) => {
-		const path =
-			fileDiff.destination?.toString ??
-			fileDiff.source?.toString ??
-			"(unknown)";
-		const lines: DiffLine[] = [];
-		let fileTruncated = fileDiff.truncated;
-
-		for (const hunk of fileDiff.hunks) {
-			if (hunk.truncated) fileTruncated = true;
-			for (const segment of hunk.segments) {
-				if (segment.truncated) fileTruncated = true;
-				for (const line of segment.lines) {
-					if (line.truncated) fileTruncated = true;
-					if (segment.type === "REMOVED") {
-						lines.push({
-							lineNumber: line.source,
-							fileType: "FROM",
-							lineType: "REMOVED",
-							content: line.line,
-						});
-					} else {
-						// ADDED or CONTEXT — both live in the destination file
-						lines.push({
-							lineNumber: line.destination,
-							fileType: "TO",
-							lineType: segment.type,
-							content: line.line,
-						});
-					}
-				}
-			}
-		}
-
-		if (fileTruncated) anyTruncated = true;
-		return { path, lines, truncated: fileTruncated };
-	});
-
-	return { files, truncated: anyTruncated };
-}
 
 // ── Tool registration ─────────────────────────────────────────────────────────
 

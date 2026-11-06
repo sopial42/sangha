@@ -4,8 +4,16 @@
   "private": true,
   "type": "module",
   "description": "Bitbucket Data Center pull-request tools over MCP, from ~/job/agentic/mcp-bitbucket; Sangha runs it in stdio.",
+  "scripts": {
+    "test": "vitest run"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.20.2",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
   }
 }

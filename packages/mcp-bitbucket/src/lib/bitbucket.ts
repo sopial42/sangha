@@ -95,7 +95,8 @@ export async function fetchPrVersion(
 
 /**
  * Update the current user's participant status on a pull request.
- * Used by bitbucket_approve_pr (APPROVED) and bitbucket_request_changes_pr (NEEDS_WORK).
+ * Used by bitbucket_approve_pr (APPROVED), bitbucket_request_changes_pr (NEEDS_WORK),
+ * and bitbucket_unapprove_pr (UNAPPROVED, resetting a previous approval/review).
  * Automatically fetches the current PR version for optimistic locking.
  */
 export async function updateParticipantStatus(
@@ -105,7 +106,7 @@ export async function updateParticipantStatus(
 	repositorySlug: string,
 	pullRequestId: number,
 	userSlug: string,
-	status: "APPROVED" | "NEEDS_WORK",
+	status: "APPROVED" | "NEEDS_WORK" | "UNAPPROVED",
 ): Promise<unknown> {
 	const version = await fetchPrVersion(
 		baseUrl,
@@ -125,6 +126,95 @@ export async function updateParticipantStatus(
 			Authorization: `Bearer ${token}`,
 		},
 		body: JSON.stringify({ status, user: { slug: userSlug }, version }),
+	});
+
+	if (!response.ok) {
+		const errorText = await response.text();
+		throw new Error(
+			`Bitbucket API error: ${response.status} ${response.statusText} – ${errorText.substring(0, 500)}`,
+		);
+	}
+
+	return response.json();
+}
+
+// ── Comment helpers ───────────────────────────────────────────────────────────
+
+export type BitbucketCommentDetails = {
+	id: number;
+	version: number;
+	text: string;
+	severity?: "NORMAL" | "BLOCKER";
+	state?: "OPEN" | "RESOLVED";
+};
+
+/** Fetch a single comment's current representation (needed for optimistic locking). */
+export async function fetchPrComment(
+	baseUrl: string,
+	token: string,
+	projectKey: string,
+	repositorySlug: string,
+	pullRequestId: number,
+	commentId: number,
+): Promise<BitbucketCommentDetails> {
+	const url = `${baseUrl}/rest/api/latest/projects/${encodeURIComponent(projectKey)}/repos/${encodeURIComponent(repositorySlug)}/pull-requests/${pullRequestId}/comments/${commentId}`;
+	logger.log(`[mcp-bitbucket] GET ${url}`);
+
+	const response = await fetch(url, {
+		headers: { Authorization: `Bearer ${token}` },
+	});
+
+	if (!response.ok) {
+		const errorText = await response.text();
+		throw new Error(
+			`Failed to fetch comment: ${response.status} ${response.statusText} – ${errorText.substring(0, 300)}`,
+		);
+	}
+
+	return (await response.json()) as BitbucketCommentDetails;
+}
+
+/**
+ * Update a comment's text and/or severity and/or resolution state. Fields not
+ * passed in `overrides` are read back from the comment first and resent
+ * unchanged — Bitbucket DC's comment PUT is a full representation, so sending
+ * only the field you meant to change would wipe out the others.
+ */
+export async function updatePrComment(
+	baseUrl: string,
+	token: string,
+	projectKey: string,
+	repositorySlug: string,
+	pullRequestId: number,
+	commentId: number,
+	overrides: { text?: string; severity?: "NORMAL" | "BLOCKER"; state?: "OPEN" | "RESOLVED" },
+): Promise<unknown> {
+	const current = await fetchPrComment(
+		baseUrl,
+		token,
+		projectKey,
+		repositorySlug,
+		pullRequestId,
+		commentId,
+	);
+
+	const url = `${baseUrl}/rest/api/latest/projects/${encodeURIComponent(projectKey)}/repos/${encodeURIComponent(repositorySlug)}/pull-requests/${pullRequestId}/comments/${commentId}`;
+	logger.log(`[mcp-bitbucket] PUT ${url}`);
+
+	const body = {
+		text: overrides.text ?? current.text,
+		severity: overrides.severity ?? current.severity,
+		state: overrides.state ?? current.state,
+		version: current.version,
+	};
+
+	const response = await fetch(url, {
+		method: "PUT",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Bearer ${token}`,
+		},
+		body: JSON.stringify(body),
 	});
 
 	if (!response.ok) {
