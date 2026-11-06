@@ -23,6 +23,7 @@ import {
   STATUS_LABEL,
 } from './priests'
 import { profileFor, toolIcon } from './profiles'
+import { QrCode } from './QrCode'
 import { useApp, type LogItem, type MonkInstance } from './store'
 import { useBackdropClose } from './backdrop'
 
@@ -476,6 +477,49 @@ function McpPanel({ sessionId, open, onToggleOpen, onClose }: { sessionId: strin
   )
 }
 
+/**
+ * While claude.ai (or the Claude app) holds the conversation: the link, always in view, not just
+ * copied once and forgotten — copy, open, a QR code for the phone in hand, and the one way back.
+ */
+function RemoteBanner({ url, busy, onStop }: { url: string; busy: boolean; onStop: () => void }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => setCopied(false), [url])
+  const copy = () => {
+    void navigator.clipboard
+      ?.writeText(url)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      })
+      .catch(() => undefined)
+  }
+  return (
+    <section className="remote-banner" aria-live="polite">
+      <div className="remote-banner-main">
+        <p className="remote-banner-title">📱 Remote Control actif : ce prêtre se pilote depuis claude.ai</p>
+        <a className="remote-banner-url" href={url} target="_blank" rel="noopener">
+          {url}
+        </a>
+        <div className="remote-banner-actions">
+          <button type="button" className="btn btn-ghost" onClick={copy}>
+            {copied ? 'Copié ✓' : 'Copier'}
+          </button>
+          <a className="btn btn-ghost" href={url} target="_blank" rel="noopener">
+            Ouvrir
+          </a>
+          <button type="button" className="btn btn-ghost" onClick={onStop} disabled={busy}>
+            Arrêter le remote
+          </button>
+        </div>
+        <p className="muted small remote-banner-note">Écrire ici à ce prêtre arrête le remote et lui rend la main dans Sangha.</p>
+      </div>
+      <div className="remote-banner-qr">
+        <QrCode value={url} size={104} title="Scanne pour continuer sur ton téléphone" />
+      </div>
+    </section>
+  )
+}
+
 // The novices panel, folded away or not: one choice for every session, remembered across reloads.
 const NOVICES_CLOSED_KEY = 'sangha.novicesClosed'
 
@@ -533,7 +577,16 @@ export function SessionView() {
   // "Mettre au lotus" / "Sortir du lotus" failed to save: why, until the next try or a switch of session.
   const [lotusError, setLotusError] = useState<string | null>(null)
   const [remoteBusy, setRemoteBusy] = useState(false)
-  useEffect(() => setLotusError(null), [s?.id])
+  // The link, shown the moment the API hands it over — not waiting on the session event that confirms
+  // it. Asked for mid-turn, it only comes back `{ pending: true }`: that too is remembered right away,
+  // rather than waiting for `s.remotePending` to catch up.
+  const [remoteStartedUrl, setRemoteStartedUrl] = useState<string | null>(null)
+  const [remotePendingLocal, setRemotePendingLocal] = useState(false)
+  useEffect(() => {
+    setLotusError(null)
+    setRemoteStartedUrl(null)
+    setRemotePendingLocal(false)
+  }, [s?.id])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -557,6 +610,42 @@ export function SessionView() {
   if (!s) return null
   const isBuddha = s.id === BUDDHA_SESSION_ID
   const title = agentTitle(s, projects)
+  // His link once it exists (the server's word on it, or — the instant it comes back — ours already);
+  // "pending" only matters when there's no link yet, e.g. right after it started for real.
+  const remoteUrl = s.remote ?? remoteStartedUrl
+  const remotePending = !remoteUrl && (s.remotePending || remotePendingLocal)
+  const startRemoteControl = () => {
+    setRemoteBusy(true)
+    setLotusError(null)
+    api
+      .remoteControl(s.id)
+      .then((res) => {
+        if ('pending' in res) return setRemotePendingLocal(true)
+        setRemoteStartedUrl(res.url)
+        void navigator.clipboard?.writeText(res.url).catch(() => {})
+        window.open(res.url, '_blank', 'noopener')
+      })
+      .catch((e: unknown) =>
+        setLotusError(
+          e instanceof ApiError && e.status === 404
+            ? 'Ton serveur Sangha ne connaît pas encore le Remote Control : relance-le (make dev).'
+            : e instanceof Error ? e.message : String(e),
+        ),
+      )
+      .finally(() => setRemoteBusy(false))
+  }
+  const stopRemoteControl = () => {
+    setRemoteBusy(true)
+    setLotusError(null)
+    api
+      .stopRemote(s.id)
+      .then(() => {
+        setRemoteStartedUrl(null)
+        setRemotePendingLocal(false)
+      })
+      .catch((e: unknown) => setLotusError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setRemoteBusy(false))
+  }
   // Who ← and → actually lead to: named here (his note first) rather than left as a bare direction.
   const prevNeighbour = neighbourOf(sessions, projects, s.id, -1)
   const nextNeighbour = neighbourOf(sessions, projects, s.id, 1)
@@ -774,37 +863,34 @@ export function SessionView() {
                   >
                     Relancer
                   </button>
-                  {s.remote ? (
+                  {remoteUrl ? (
                     <>
-                      <a className="btn btn-ghost active" href={s.remote} target="_blank" rel="noopener" title="Sa conversation se pilote depuis claude.ai ou l'app Claude">
+                      <a className="btn btn-ghost active" href={remoteUrl} target="_blank" rel="noopener" title="Sa conversation se pilote depuis claude.ai ou l'app Claude">
                         Remote Control ↗
                       </a>
-                      <button className="btn btn-ghost" onClick={() => void api.stopRemote(s.id)} title="Sangha reprend la conversation ; tes messages en attente partent">
+                      <button
+                        className="btn btn-ghost"
+                        disabled={remoteBusy}
+                        onClick={stopRemoteControl}
+                        title="Sangha reprend la conversation ; tes messages en attente partent"
+                      >
                         Arrêter le remote
                       </button>
                     </>
+                  ) : remotePending ? (
+                    <button
+                      className="btn btn-ghost sv-remote-pending"
+                      disabled={remoteBusy}
+                      onClick={stopRemoteControl}
+                      title="Il prendra la main dès qu'il aura fini son tour en cours ; annuler ne coupe rien"
+                    >
+                      📱 Remote Control dès qu'il a fini · annuler
+                    </button>
                   ) : (
                     <button
                       className="btn btn-ghost"
                       disabled={remoteBusy}
-                      onClick={() => {
-                        setRemoteBusy(true)
-                        setLotusError(null)
-                        api
-                          .remoteControl(s.id)
-                          .then(({ url }) => {
-                            void navigator.clipboard?.writeText(url).catch(() => {})
-                            window.open(url, '_blank', 'noopener')
-                          })
-                          .catch((e: unknown) =>
-                            setLotusError(
-                              e instanceof ApiError && e.status === 404
-                                ? 'Ton serveur Sangha ne connaît pas encore le Remote Control : relance-le (make dev).'
-                                : e instanceof Error ? e.message : String(e),
-                            ),
-                          )
-                          .finally(() => setRemoteBusy(false))
-                      }}
+                      onClick={startRemoteControl}
                       title="Continuer cette conversation depuis claude.ai ou ton téléphone : Sangha lui passe la main (lien copié et ouvert)"
                     >
                       {remoteBusy ? 'Remote Control…' : 'Remote Control'}
@@ -863,6 +949,10 @@ export function SessionView() {
 
         <div className={`sv-body ${hasColumn ? (novicesClosed ? 'novices-closed' : '') : 'no-novices'}`}>
           <div className="sv-main">
+            {!isBuddha && remoteUrl && <RemoteBanner url={remoteUrl} busy={remoteBusy} onStop={stopRemoteControl} />}
+            {!isBuddha && !remoteUrl && remotePending && (
+              <p className="remote-pending-note muted small">Remote Control demandé : il démarrera à la fin de son tour, rien n'est coupé.</p>
+            )}
             {!isBuddha && <ProgressCard session={s} />}
             <Chat author={isBuddha ? 'Bouddha' : title} external={s.external ? { alive: s.alive } : null} />
           </div>

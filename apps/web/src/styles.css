@@ -1579,6 +1579,93 @@ input[type='range']:disabled::-moz-range-thumb {
   color: var(--gold);
 }
 
+/* The banner over the conversation while claude.ai holds him: gold like `.progress`, but a shade
+   warmer and never foldable — he's elsewhere, that's worth more than a glance. */
+.remote-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  margin: 12px 24px 0;
+  padding: 14px 16px;
+  border: 1px solid var(--gold);
+  border-radius: 12px;
+  background: #332411;
+}
+
+.remote-banner-main {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.remote-banner-title {
+  margin: 0;
+  font: 700 15.5px var(--serif);
+  color: #f2d590;
+}
+
+.remote-banner-url {
+  color: var(--gold);
+  font-size: 13.5px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.remote-banner-url:hover,
+.remote-banner-url:focus-visible {
+  color: #f2d590;
+}
+
+.remote-banner-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.remote-banner-note {
+  margin: 0;
+}
+
+.remote-banner-qr {
+  flex: none;
+  display: inline-grid;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f3e9d8;
+  line-height: 0;
+}
+
+@container sv (max-width: 480px) {
+  .remote-banner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .remote-banner-qr {
+    align-self: center;
+  }
+}
+
+/* Asked mid-turn, no link yet: a quiet line, same spot the banner will take once he's done. */
+.remote-pending-note {
+  margin: 12px 24px 0;
+}
+
+/* The header's own stand-in while it waits: saffron, not gold (gold is reserved for an active
+   setting) — something is queued, not yet true. */
+.sv-remote-pending {
+  border-color: var(--saffron);
+  color: var(--saffron);
+}
+
+.sv-remote-pending:hover:not(:disabled),
+.sv-remote-pending:focus-visible {
+  border-color: var(--saffron);
+}
+
 .sv-novices {
   border-left: 1px solid var(--line);
   overflow-y: auto;

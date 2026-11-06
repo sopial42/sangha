@@ -223,6 +223,8 @@ export type SessionSummary = SessionInfo & {
   scripts: BackgroundScript[]
   /** While his conversation is driven from claude.ai: the Remote Control link (Sangha's own process stays off). */
   remote?: string | null
+  /** You asked for Remote Control while he worked: it starts by itself once his turn ends (nothing is cut). */
+  remotePending?: boolean
 }
 
 /** An MCP server of a priest: 'disabled' = loaded but switched off, 'off' = in your Claude config, not loaded. */

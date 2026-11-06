@@ -312,6 +312,8 @@ export class Sessions {
   /** MCP servers met in a priest, for the list of all of Sangha (native: he loads it himself, so on by default). */
   private seenMcp = new Map<string, { scope: string; native: boolean }>()
   private remotes = new Map<string, RemoteControl>()
+  /** A `remoteControl` asked for while he still worked: fires by itself once he actually settles (see `emit`'s 'busy' hook). */
+  private remotePending = new Set<string>()
   private listeners = new Map<string, Set<Listener>>()
   private globalListeners = new Set<GlobalListener>()
   private observer: Observer | null = null
@@ -531,16 +533,33 @@ export class Sessions {
   /**
    * Hands his conversation to an interactive `claude --remote-control`, to drive from claude.ai or the phone.
    * Never two processes on one conversation: his own stops first, and nothing restarts it until the remote ends.
+   * Nothing of his is ever cut: while he still works, the hand-off is only recorded (`remotePending`, see
+   * `summary`) and fires by itself once he actually settles (`emit`'s 'busy' hook calls `fireRemotePending`).
+   * A second request while pending is a no-op; `stopRemote` cancels it.
    */
-  async remoteControl(id: string): Promise<{ url: string }> {
+  async remoteControl(id: string): Promise<{ url: string } | { pending: true }> {
     const running = this.remotes.get(id)
     if (running) return { url: running.url }
+    if (this.remotePending.has(id)) return { pending: true }
     const row = this.priestRow(id)
     if (!row.claudeSessionId) throw new UserError('pas encore de conversation à reprendre')
     const old = this.live.get(id)
     // `busy` (not just `turning`): a turn just resumed and already ended counts too, through BusySettle's
     // short grace period — he may still be about to reschedule a loop or otherwise act right after it.
-    if (old?.busy) throw new UserError('il travaille : attends la fin de son tour (ou interromps-le), puis réessaie')
+    if (old?.busy) {
+      this.remotePending.add(id)
+      this.broadcastSession(id)
+      return { pending: true }
+    }
+    return this.startRemoteNow(id, row)
+  }
+
+  /**
+   * Actually stops his process and starts `claude --remote-control` on the same conversation: today's
+   * immediate path when he is idle, and what a pending hand-off runs once he settles (`fireRemotePending`).
+   */
+  private async startRemoteNow(id: string, row: SessionRow): Promise<{ url: string }> {
+    const old = this.live.get(id)
     if (old) {
       old.close()
       await Promise.race([old.closed, new Promise((r) => setTimeout(r, 15_000))])
@@ -549,7 +568,7 @@ export class Sessions {
     const cwd = this.cwdOf(row) ?? config.workspacesDir
     const env = this.withGit({}, id).env as Record<string, string>
     try {
-      const rc = await startRemote(cwd, row.claudeSessionId, row.title, env, () => {
+      const rc = await startRemote(cwd, row.claudeSessionId!, row.title, env, () => {
         this.remotes.delete(id)
         this.broadcastSession(id)
         this.flushQueued(id)
@@ -562,8 +581,25 @@ export class Sessions {
     }
   }
 
-  /** Ends the remote: Sangha takes his conversation back with the next message (queued ones leave now). */
+  /** A pending hand-off's wait is over (`emit`'s 'busy' hook, right as he settles): starts the remote now,
+   * exactly as an immediate request would. Logged rather than retried, should starting it fail. */
+  private async fireRemotePending(id: string) {
+    this.remotePending.delete(id)
+    const row = this.store.getSession(id)
+    if (row && !row.archivedAt) {
+      try {
+        await this.startRemoteNow(id, row)
+      } catch (e) {
+        console.error(`[remote-control ${id.slice(0, 8)}]`, e instanceof Error ? e.message : e)
+      }
+    }
+    this.broadcastSession(id)
+  }
+
+  /** Ends the remote: Sangha takes his conversation back with the next message (queued ones leave now).
+   * While a hand-off only waits for him to settle (never started), this cancels it instead. */
   stopRemote(id: string) {
+    if (this.remotePending.delete(id)) return this.broadcastSession(id)
     this.remotes.get(id)?.stop()
   }
 
@@ -1630,6 +1666,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
       pr: cwd ? this.pulls.of(cwd) : null,
       scripts: live?.scripts ?? [],
       remote: this.remotes.get(row.id)?.url ?? null,
+      remotePending: this.remotePending.has(row.id),
     }
   }
 
@@ -1744,6 +1781,7 @@ Si OUI, écris ensuite, sous le titre « PASSATION », tout ce dont la nouvelle 
     if (ev.t === 'busy' && !ev.busy && id !== BUDDHA_SESSION_ID) {
       void this.writeRecap(id, env.seq)
       this.pullSoonAfter(id) // he may just have run `gh pr create`
+      if (this.remotePending.has(id)) void this.fireRemotePending(id)
     }
     if ((ev.t === 'monk.tool' || ev.t === 'buddha.tool') && ev.summary.includes('gh pr')) this.pullSoonAfter(id)
   }

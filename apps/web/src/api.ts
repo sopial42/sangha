@@ -87,7 +87,8 @@ export const api = {
   /** Bring him back to the courtyard, in a fresh session. */
   /** Relaunch his Claude process on the same conversation, so it rereads his agent file, tools and MCP. */
   restart: (id: string) => json<void>(`/api/sessions/${id}/restart`, post()),
-  remoteControl: (id: string) => json<{ url: string }>(`/api/sessions/${id}/remote-control`, post()),
+  /** Starts right away with the link, or — mid-turn — marks it for the moment he stops (nothing is cut). */
+  remoteControl: (id: string) => json<{ url: string } | { pending: true }>(`/api/sessions/${id}/remote-control`, post()),
   stopRemote: (id: string) => json<void>(`/api/sessions/${id}/remote-control/stop`, post()),
   setEnv: (id: string, env: Record<string, string>, restart: boolean) => json<void>(`/api/sessions/${id}/env`, { method: 'PUT', body: JSON.stringify({ env, restart }) }),
   reincarnate: (id: string) => json<SessionSummary>(`/api/sessions/${id}/reincarnate`, post()),

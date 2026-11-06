@@ -493,14 +493,49 @@ describe('Sessions remote control', () => {
     vi.clearAllMocks()
   })
 
-  it('refuses while he is busy at all, even right after a turn just resumed (the settle grace period)', async () => {
+  it('goes pending while he is busy, then starts by itself once he actually settles', async () => {
     fakeRemote()
     vi.mocked(query).mock.results[0]!.value.push(resultMessage())
     await tick()
     // His turn is over, but BusySettle has not let settleMs elapse yet: still told busy.
     expect(sessions.summaryOf(row.id)?.status).toBe('working')
 
-    await expect(sessions.remoteControl(row.id)).rejects.toThrow(UserError)
+    const result = await sessions.remoteControl(row.id)
+    expect(result).toEqual({ pending: true })
+    expect(sessions.summaryOf(row.id)?.remotePending).toBe(true)
+    expect(startRemote).not.toHaveBeenCalled() // no close, no remote start while he still works
+
+    await new Promise((r) => setTimeout(r, 30)) // past the short settleMs: he settles, the hand-off fires
+    expect(startRemote).toHaveBeenCalledTimes(1)
+    expect(sessions.summaryOf(row.id)?.remotePending).toBe(false)
+    expect(sessions.summaryOf(row.id)?.remote).toBeTruthy()
+  })
+
+  it('a second remote-control request while pending is a no-op', async () => {
+    fakeRemote()
+    vi.mocked(query).mock.results[0]!.value.push(resultMessage())
+    await tick()
+
+    await sessions.remoteControl(row.id)
+    const second = await sessions.remoteControl(row.id)
+
+    expect(second).toEqual({ pending: true })
+    expect(startRemote).not.toHaveBeenCalled()
+    sessions.stopRemote(row.id) // cancel the hand-off: BusySettle's own timer still fires later, into other tests' shared mocks otherwise
+  })
+
+  it('remote-control/stop while pending cancels it: no remote starts once he settles', async () => {
+    fakeRemote()
+    vi.mocked(query).mock.results[0]!.value.push(resultMessage())
+    await tick()
+
+    await sessions.remoteControl(row.id)
+    sessions.stopRemote(row.id)
+    expect(sessions.summaryOf(row.id)?.remotePending).toBe(false)
+
+    await new Promise((r) => setTimeout(r, 30)) // past the short settleMs: he settles
+    expect(startRemote).not.toHaveBeenCalled()
+    expect(sessions.summaryOf(row.id)?.remote).toBeFalsy()
   })
 
   it('a plain message while a remote holds him takes him back, instead of queueing forever', async () => {
