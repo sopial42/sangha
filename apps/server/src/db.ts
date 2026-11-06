@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { AutonomyState, Engine, Envelope, MonasteryEvent, Provider, QueuedMessage, Quota, SessionInfo } from '@sangha/shared'
+import type { AutonomyState, Engine, Envelope, ElderChatTurn, ElderReport, ElderTopic, Feedback, MonasteryEvent, Provider, QueuedMessage, Quota, SessionInfo } from '@sangha/shared'
 
 /**
  * Sent straight to a session to end an active loop (see `Sessions.autonomy`): the exact words asked of him
@@ -164,6 +164,41 @@ export class Store {
         name TEXT PRIMARY KEY,
         path TEXT NOT NULL UNIQUE,
         added_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS feedback (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        event_seq INTEGER,
+        rating TEXT,
+        comment TEXT,
+        excerpt TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        processed_at INTEGER
+      );
+      CREATE TABLE IF NOT EXISTS elder_topics (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL,
+        title TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        evidence TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS elder_reports (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        text TEXT NOT NULL,
+        topic_ids TEXT NOT NULL,
+        cost_usd REAL,
+        tokens INTEGER,
+        created_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS elder_chat (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role TEXT NOT NULL,
+        text TEXT NOT NULL,
+        created_at INTEGER NOT NULL
       );
     `)
     this.migrate()
@@ -623,6 +658,105 @@ export class Store {
     this.db.prepare('INSERT INTO project_colors (name, color) VALUES (?, ?)').run(name, color)
     return color
   }
+
+  addFeedback(f: Feedback) {
+    this.db
+      .prepare('INSERT INTO feedback (id, session_id, event_seq, rating, comment, excerpt, created_at, processed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(f.id, f.sessionId, f.eventSeq, f.rating, f.comment, f.excerpt, f.createdAt, f.processedAt)
+  }
+
+  feedbackForSession(sessionId: string): Feedback[] {
+    return (this.db.prepare('SELECT * FROM feedback WHERE session_id = ? ORDER BY created_at').all(sessionId) as FeedbackRow[]).map(toFeedback)
+  }
+
+  pendingFeedback(): Feedback[] {
+    return (this.db.prepare('SELECT * FROM feedback WHERE processed_at IS NULL ORDER BY created_at').all() as FeedbackRow[]).map(toFeedback)
+  }
+
+  markFeedbackProcessed(ids: string[], at: number) {
+    const stmt = this.db.prepare('UPDATE feedback SET processed_at = ? WHERE id = ?')
+    for (const id of ids) stmt.run(at, id)
+  }
+
+  /** Contexte figé pour un retour : le message commenté et ses voisins (ou la fin de la conversation), tronqué. */
+  excerptAround(sessionId: string, eventSeq: number | null, maxChars = 1200): string {
+    const all = this.events(sessionId)
+    const line = (e: Envelope) => (e.ev.t === 'user.message' ? `Toi : ${e.ev.text}` : e.ev.t === 'buddha.text' ? `Lui : ${e.ev.text}` : null)
+    const picked =
+      eventSeq == null
+        ? all.slice(-6)
+        : (() => {
+            const i = all.findIndex((e) => e.seq === eventSeq)
+            return i < 0 ? [] : all.slice(Math.max(0, i - 2), i + 3)
+          })()
+    const text = picked.map(line).filter((t): t is string => !!t).join('\n\n')
+    return text.length > maxChars ? `…${text.slice(-maxChars)}` : text
+  }
+
+  elderTopics(): ElderTopic[] {
+    return (this.db.prepare('SELECT * FROM elder_topics ORDER BY updated_at DESC').all() as ElderTopicRow[]).map(toTopic)
+  }
+
+  elderTopic(id: string): ElderTopic | null {
+    const r = this.db.prepare('SELECT * FROM elder_topics WHERE id = ?').get(id) as ElderTopicRow | undefined
+    return r ? toTopic(r) : null
+  }
+
+  upsertElderTopic(t: ElderTopic) {
+    this.db
+      .prepare(
+        `INSERT INTO elder_topics (id, scope, title, detail, evidence, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET scope = excluded.scope, title = excluded.title, detail = excluded.detail, evidence = excluded.evidence, status = excluded.status, updated_at = excluded.updated_at`,
+      )
+      .run(t.id, t.scope, t.title, t.detail, JSON.stringify(t.evidence), t.status, t.createdAt, t.updatedAt)
+  }
+
+  elderReports(limit = 10): ElderReport[] {
+    return (this.db.prepare('SELECT * FROM elder_reports ORDER BY created_at DESC LIMIT ?').all(limit) as ElderReportRow[]).map(toReport)
+  }
+
+  addElderReport(r: ElderReport) {
+    this.db
+      .prepare('INSERT INTO elder_reports (id, kind, text, topic_ids, cost_usd, tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(r.id, r.kind, r.text, JSON.stringify(r.topicIds), r.costUsd, r.tokens, r.createdAt)
+  }
+
+  elderChat(limit = 20): ElderChatTurn[] {
+    return (this.db.prepare('SELECT * FROM elder_chat ORDER BY id DESC LIMIT ?').all(limit) as ElderChatRow[]).map(toChatTurn).reverse()
+  }
+
+  addElderChatMessage(role: 'user' | 'elder', text: string, at: number) {
+    this.db.prepare('INSERT INTO elder_chat (role, text, created_at) VALUES (?, ?, ?)').run(role, text, at)
+  }
+
+  /** Agrégats pour le bloc « Sangha » du contexte d'Ananda : échecs d'outils MCP, erreurs, interruptions, renouvellements, prêtres confiés à Bouddha, coût total, depuis `since`. */
+  elderSanghaStats(since: number): { toolErrorsByServer: Record<string, number>; sessionErrors: number; interruptions: number; renewals: number; shepherded: number; costUsd: number } {
+    const rows = this.db
+      .prepare(`SELECT session_id, ev FROM events WHERE at >= ? AND (ev LIKE '{"t":"tool.error"%' OR ev LIKE '{"t":"error"%' OR ev LIKE '{"t":"turn.done"%')`)
+      .all(since) as { session_id: string; ev: string }[]
+    const toolErrorsByServer: Record<string, number> = {}
+    let sessionErrors = 0
+    let costUsd = 0
+    for (const { ev: raw } of rows) {
+      const ev = JSON.parse(raw) as MonasteryEvent
+      if (ev.t === 'tool.error') toolErrorsByServer[ev.server] = (toolErrorsByServer[ev.server] ?? 0) + 1
+      else if (ev.t === 'error') sessionErrors++
+      else if (ev.t === 'turn.done') costUsd += ev.costUsdEquiv
+    }
+    const busySessions = new Set(
+      (this.db.prepare(`SELECT DISTINCT session_id FROM events WHERE at >= ? AND ev LIKE '{"t":"busy"%'`).all(since) as { session_id: string }[]).map((r) => r.session_id),
+    )
+    let interruptions = 0
+    for (const id of busySessions) {
+      const last = this.lastEvent(id, 'busy')
+      if (last && last.ev.busy && last.at >= since) interruptions++
+    }
+    const renewals = (
+      this.db.prepare('SELECT COUNT(*) AS n FROM successors s JOIN sessions sess ON sess.id = s.next_id WHERE sess.created_at >= ?').get(since) as { n: number }
+    ).n
+    const shepherded = (this.db.prepare('SELECT value FROM shepherds').all() as { value: string }[]).filter((r) => (JSON.parse(r.value) as Shepherd).seenAt >= since).length
+    return { toolErrorsByServer, sessionErrors, interruptions, renewals, shepherded, costUsd }
+  }
 }
 
 type Row = {
@@ -657,3 +791,41 @@ const toSession = (r: Row): SessionRow => ({
   engine: r.engine || 'claude',
   model: r.model,
 })
+
+type FeedbackRow = { id: string; session_id: string; event_seq: number | null; rating: string | null; comment: string | null; excerpt: string; created_at: number; processed_at: number | null }
+const toFeedback = (r: FeedbackRow): Feedback => ({
+  id: r.id,
+  sessionId: r.session_id,
+  eventSeq: r.event_seq,
+  rating: r.rating as Feedback['rating'],
+  comment: r.comment,
+  excerpt: r.excerpt,
+  createdAt: r.created_at,
+  processedAt: r.processed_at,
+})
+
+type ElderTopicRow = { id: string; scope: string; title: string; detail: string; evidence: string; status: string; created_at: number; updated_at: number }
+const toTopic = (r: ElderTopicRow): ElderTopic => ({
+  id: r.id,
+  scope: r.scope,
+  title: r.title,
+  detail: r.detail,
+  evidence: JSON.parse(r.evidence),
+  status: r.status as ElderTopic['status'],
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+})
+
+type ElderReportRow = { id: string; kind: string; text: string; topic_ids: string; cost_usd: number | null; tokens: number | null; created_at: number }
+const toReport = (r: ElderReportRow): ElderReport => ({
+  id: r.id,
+  kind: r.kind as ElderReport['kind'],
+  text: r.text,
+  topicIds: JSON.parse(r.topic_ids),
+  costUsd: r.cost_usd,
+  tokens: r.tokens,
+  createdAt: r.created_at,
+})
+
+type ElderChatRow = { id: number; role: string; text: string; created_at: number }
+const toChatTurn = (r: ElderChatRow): ElderChatTurn => ({ id: r.id, role: r.role as ElderChatTurn['role'], text: r.text, createdAt: r.created_at })

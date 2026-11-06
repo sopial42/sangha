@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ElderTopic } from '@sangha/shared'
 import { LOOP_STOP_MESSAGE, Store, type SessionRow } from '../src/db'
 
 const DONE = { t: 'turn.done' as const, ok: true, costUsdEquiv: 0, durationMs: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }
@@ -312,5 +313,71 @@ describe('Store', () => {
         expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'un objectif', active: true })
       })
     })
+  })
+})
+
+describe('feedback', () => {
+  it('keeps feedback pending until marked processed', () => {
+    const s = new Store(':memory:')
+    s.createSession(row('a'))
+    s.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: 3, rating: 'down', comment: 'trop verbeux', excerpt: 'Lui : ...', createdAt: 1, processedAt: null })
+    expect(s.pendingFeedback().map((f) => f.id)).toEqual(['f1'])
+    s.markFeedbackProcessed(['f1'], 99)
+    expect(s.pendingFeedback()).toEqual([])
+    expect(s.feedbackForSession('a')[0]!.processedAt).toBe(99)
+  })
+
+  it('freezes an excerpt around the commented message, or the conversation tail when none is given', () => {
+    const s = new Store(':memory:')
+    s.createSession(row('a'))
+    s.append('a', { t: 'user.message', text: 'un' })
+    s.append('a', { t: 'buddha.text', text: 'deux' })
+    s.append('a', { t: 'user.message', text: 'trois' })
+    expect(s.excerptAround('a', 2)).toContain('deux')
+    expect(s.excerptAround('a', null)).toContain('trois')
+  })
+})
+
+describe('elder topics, reports and chat', () => {
+  it('creates and updates a topic by id, reading it back', () => {
+    const s = new Store(':memory:')
+    const t: ElderTopic = { id: 't1', scope: 'sangha', title: 'MCP instable', detail: 'd', evidence: ['e1'], status: 'proposed', createdAt: 1, updatedAt: 1 }
+    s.upsertElderTopic(t)
+    s.upsertElderTopic({ ...t, status: 'accepted', updatedAt: 2 })
+    expect(s.elderTopic('t1')!.status).toBe('accepted')
+    expect(s.elderTopics()).toHaveLength(1)
+  })
+
+  it('keeps reports newest first', () => {
+    const s = new Store(':memory:')
+    s.addElderReport({ id: 'r1', kind: 'weekly', text: 'rien à signaler', topicIds: [], costUsd: 0.01, tokens: 500, createdAt: 1 })
+    s.addElderReport({ id: 'r2', kind: 'manual', text: 'un sujet', topicIds: ['t1'], costUsd: null, tokens: null, createdAt: 2 })
+    expect(s.elderReports().map((r) => r.id)).toEqual(['r2', 'r1'])
+  })
+
+  it('keeps the chat in order, oldest first, limited to the last N', () => {
+    const s = new Store(':memory:')
+    s.addElderChatMessage('user', 'un', 1)
+    s.addElderChatMessage('elder', 'deux', 2)
+    expect(s.elderChat(1).map((t) => t.text)).toEqual(['deux'])
+    expect(s.elderChat().map((t) => t.text)).toEqual(['un', 'deux'])
+  })
+})
+
+describe('elderSanghaStats', () => {
+  it('aggregates tool failures by server, session errors, cost and renewals since a date', () => {
+    const s = new Store(':memory:')
+    s.createSession(row('a'))
+    s.createSession(row('b'))
+    s.append('a', { t: 'tool.error', tool: 'mcp__bitbucket__get_pr', server: 'bitbucket', message: 'timeout' })
+    s.append('a', { t: 'tool.error', tool: 'mcp__bitbucket__list_prs', server: 'bitbucket', message: 'timeout' })
+    s.append('a', { t: 'error', message: 'oops' })
+    s.append('a', { t: 'turn.done', ok: true, costUsdEquiv: 1.5, durationMs: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } })
+    s.setSuccessor('a', 'b')
+    const stats = s.elderSanghaStats(0)
+    expect(stats.toolErrorsByServer).toEqual({ bitbucket: 2 })
+    expect(stats.sessionErrors).toBe(1)
+    expect(stats.costUsd).toBeCloseTo(1.5)
+    expect(stats.renewals).toBe(1)
   })
 })
