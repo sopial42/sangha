@@ -782,133 +782,139 @@ export function SessionView() {
               {!isBuddha && !s.external && (
                 <div className="sv-act-group" role="group" aria-label="Comment il travaille">
                   <span className="sv-act-label">Outils</span>
-                  <button
-                    className={`btn btn-ghost sv-autonomy-btn ${s.autonomy?.active ? 'sv-autonomy-active' : ''}`}
-                    onClick={() => set({ dialog: { kind: 'autonomy', id: s.id } })}
-                    title={
-                      s.autonomy?.active
-                        ? s.autonomy.mode === 'goal'
-                          ? 'Il enchaîne les tours tout seul vers cet objectif'
-                          : 'Il se réveille de lui-même pour recommencer, jusqu’à ce que tu l’arrêtes'
-                        : 'Lui donne un objectif ou une boucle : il continue tout seul, jusqu’à ce que ce soit atteint ou que tu l’arrêtes'
-                    }
-                  >
-                    {s.autonomy?.active && <span className="autonomy-dot" aria-hidden />}
-                    {!s.autonomy?.active
-                      ? 'Autonomie'
-                      : s.autonomy.mode === 'goal'
-                        ? '◎ Objectif en cours'
-                        : s.autonomy.nextAt
-                          ? `↻ Boucle · réveil ${formatTime(s.autonomy.nextAt)}`
-                          : '↻ Boucle en cours'}
-                  </button>
-                  <button
-                    className={`btn btn-ghost ${envCount ? 'active' : ''}`}
-                    onClick={() => set({ dialog: { kind: 'env', id: s.id } })}
-                    title="Ses variables d'environnement, propres à cette session"
-                  >
-                    Env{envCount ? ` · ${envCount}` : ''}
-                  </button>
-                  <McpPanel sessionId={s.id} open={mcpOpen} onToggleOpen={() => setMcpOpen((o) => !o)} onClose={() => setMcpOpen(false)} />
+                  <div className="sv-act-btns">
+                    <button
+                      className={`btn btn-ghost sv-autonomy-btn ${s.autonomy?.active ? 'sv-autonomy-active' : ''}`}
+                      onClick={() => set({ dialog: { kind: 'autonomy', id: s.id } })}
+                      title={
+                        s.autonomy?.active
+                          ? s.autonomy.mode === 'goal'
+                            ? 'Il enchaîne les tours tout seul vers cet objectif'
+                            : 'Il se réveille de lui-même pour recommencer, jusqu’à ce que tu l’arrêtes'
+                          : 'Lui donne un objectif ou une boucle : il continue tout seul, jusqu’à ce que ce soit atteint ou que tu l’arrêtes'
+                      }
+                    >
+                      {s.autonomy?.active && <span className="autonomy-dot" aria-hidden />}
+                      {!s.autonomy?.active
+                        ? 'Autonomie'
+                        : s.autonomy.mode === 'goal'
+                          ? '◎ Objectif en cours'
+                          : s.autonomy.nextAt
+                            ? `↻ Boucle · réveil ${formatTime(s.autonomy.nextAt)}`
+                            : '↻ Boucle en cours'}
+                    </button>
+                    <button
+                      className={`btn btn-ghost ${envCount ? 'active' : ''}`}
+                      onClick={() => set({ dialog: { kind: 'env', id: s.id } })}
+                      title="Ses variables d'environnement, propres à cette session"
+                    >
+                      Env{envCount ? ` · ${envCount}` : ''}
+                    </button>
+                    <McpPanel sessionId={s.id} open={mcpOpen} onToggleOpen={() => setMcpOpen((o) => !o)} onClose={() => setMcpOpen(false)} />
+                  </div>
                 </div>
               )}
               {!isBuddha && (
                 <div className="sv-act-group" role="group" aria-label="Sa session">
                   <span className="sv-act-label">Session</span>
-                  {s.status === 'interrupted' && (
-                    <button className="btn btn-primary" onClick={() => void api.resume(s.id)}>
-                      Reprendre
-                    </button>
-                  )}
-                  {(!s.external || s.alive) && (
-                    <button
-                      className="btn btn-ghost"
-                      onClick={() =>
-                        // Confiding opens a window for the context to hand over; taking him back is immediate.
-                        !s.shepherd || s.shepherd.state === 'refused' ? set({ dialog: { kind: 'shepherd', id: s.id } }) : void api.shepherd(s.id, false)
-                      }
-                      title={
-                        s.shepherd && s.shepherd.state !== 'refused'
-                          ? 'Bouddha arrête de le suivre'
-                          : 'Bouddha lui fera prendre une session neuve au moment qui lui convient, sans jamais l’interrompre, jusqu’à ce que ce soit fait'
-                      }
-                    >
-                      {s.shepherd && s.shepherd.state !== 'refused' ? 'Reprendre à Bouddha' : 'Confier à Bouddha'}
-                    </button>
-                  )}
-                  {!s.external && (
-                    <>
-                        <button
-                          className="btn btn-ghost"
-                          onClick={() => {
-                            if (s.status === 'working' && !confirm(`${priestLabel(s)} travaille : relancer interrompt son tour en cours. Relancer quand même ?`)) return
-                            void api.restart(s.id)
-                          }}
-                          title="Relancer la session : même conversation, mais il relit son agent, ses outils et ses MCP"
-                        >
-                          Relancer
-                        </button>
-                        {remoteUrl ? (
-                          <>
-                            <a className="btn btn-ghost active" href={remoteUrl} target="_blank" rel="noopener" title="Sa conversation se pilote depuis claude.ai ou l'app Claude">
-                              Remote Control ↗
-                            </a>
+                  <div className="sv-act-btns">
+                    {s.status === 'interrupted' && (
+                      <button className="btn btn-primary" onClick={() => void api.resume(s.id)}>
+                        Reprendre
+                      </button>
+                    )}
+                    {(!s.external || s.alive) && (
+                      <button
+                        className="btn btn-ghost"
+                        onClick={() =>
+                          // Confiding opens a window for the context to hand over; taking him back is immediate.
+                          !s.shepherd || s.shepherd.state === 'refused' ? set({ dialog: { kind: 'shepherd', id: s.id } }) : void api.shepherd(s.id, false)
+                        }
+                        title={
+                          s.shepherd && s.shepherd.state !== 'refused'
+                            ? 'Bouddha arrête de le suivre'
+                            : 'Bouddha lui fera prendre une session neuve au moment qui lui convient, sans jamais l’interrompre, jusqu’à ce que ce soit fait'
+                        }
+                      >
+                        {s.shepherd && s.shepherd.state !== 'refused' ? 'Reprendre à Bouddha' : 'Confier à Bouddha'}
+                      </button>
+                    )}
+                    {!s.external && (
+                      <>
+                          <button
+                            className="btn btn-ghost"
+                            onClick={() => {
+                              if (s.status === 'working' && !confirm(`${priestLabel(s)} travaille : relancer interrompt son tour en cours. Relancer quand même ?`)) return
+                              void api.restart(s.id)
+                            }}
+                            title="Relancer la session : même conversation, mais il relit son agent, ses outils et ses MCP"
+                          >
+                            Relancer
+                          </button>
+                          {remoteUrl ? (
+                            <>
+                              <a className="btn btn-ghost active" href={remoteUrl} target="_blank" rel="noopener" title="Sa conversation se pilote depuis claude.ai ou l'app Claude">
+                                Remote Control ↗
+                              </a>
+                              <button
+                                className="btn btn-ghost"
+                                disabled={remoteBusy}
+                                onClick={stopRemoteControl}
+                                title="Sangha reprend la conversation ; tes messages en attente partent"
+                              >
+                                Arrêter le remote
+                              </button>
+                            </>
+                          ) : remotePending ? (
+                            <button
+                              className="btn btn-ghost sv-remote-pending"
+                              disabled={remoteBusy}
+                              onClick={stopRemoteControl}
+                              title="Il prendra la main dès qu'il aura fini son tour en cours ; annuler ne coupe rien"
+                            >
+                              📱 Remote Control dès qu'il a fini · annuler
+                            </button>
+                          ) : (
                             <button
                               className="btn btn-ghost"
                               disabled={remoteBusy}
-                              onClick={stopRemoteControl}
-                              title="Sangha reprend la conversation ; tes messages en attente partent"
+                              onClick={startRemoteControl}
+                              title="Continuer cette conversation depuis claude.ai ou ton téléphone : Sangha lui passe la main (lien copié et ouvert)"
                             >
-                              Arrêter le remote
+                              {remoteBusy ? 'Remote Control…' : 'Remote Control'}
                             </button>
-                          </>
-                        ) : remotePending ? (
-                          <button
-                            className="btn btn-ghost sv-remote-pending"
-                            disabled={remoteBusy}
-                            onClick={stopRemoteControl}
-                            title="Il prendra la main dès qu'il aura fini son tour en cours ; annuler ne coupe rien"
-                          >
-                            📱 Remote Control dès qu'il a fini · annuler
-                          </button>
-                        ) : (
-                          <button
-                            className="btn btn-ghost"
-                            disabled={remoteBusy}
-                            onClick={startRemoteControl}
-                            title="Continuer cette conversation depuis claude.ai ou ton téléphone : Sangha lui passe la main (lien copié et ouvert)"
-                          >
-                            {remoteBusy ? 'Remote Control…' : 'Remote Control'}
-                          </button>
-                        )}
-                    </>
-                  )}
+                          )}
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
               {!isBuddha && (
                 <div className="sv-act-group sv-act-aside" role="group" aria-label="Le mettre de côté">
                   <span className="sv-act-label">De côté</span>
-                  <button
-                    className="btn btn-ghost"
-                    onClick={() => {
-                      setLotusError(null)
-                      // Without a note, a word first: in the pond, it's all you'll see of him on hover.
-                      if (!s.lotus && !s.note) return set({ dialog: { kind: 'note', id: s.id, lotus: true } })
-                      api.lotus(s.id, !s.lotus).catch((e: unknown) => setLotusError(lotusFailure(e)))
-                    }}
-                    title={
-                      s.lotus
-                        ? 'Le faire ressortir du bassin aux lotus : il reprend sa place devant son pavillon'
-                        : 'Le mettre de côté dans le bassin aux lotus de son pavillon, au calme'
-                    }
-                  >
-                    {s.lotus ? 'Sortir du lotus' : 'Mettre au lotus'}
-                  </button>
-                  {!s.external && (
-                    <button className="btn btn-ghost btn-nirvana" onClick={() => set({ dialog: { kind: 'dismiss', id: s.id } })}>
-                      Envoyer au nirvana
+                  <div className="sv-act-btns">
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => {
+                        setLotusError(null)
+                        // Without a note, a word first: in the pond, it's all you'll see of him on hover.
+                        if (!s.lotus && !s.note) return set({ dialog: { kind: 'note', id: s.id, lotus: true } })
+                        api.lotus(s.id, !s.lotus).catch((e: unknown) => setLotusError(lotusFailure(e)))
+                      }}
+                      title={
+                        s.lotus
+                          ? 'Le faire ressortir du bassin aux lotus : il reprend sa place devant son pavillon'
+                          : 'Le mettre de côté dans le bassin aux lotus de son pavillon, au calme'
+                      }
+                    >
+                      {s.lotus ? 'Sortir du lotus' : 'Mettre au lotus'}
                     </button>
-                  )}
+                    {!s.external && (
+                      <button className="btn btn-ghost btn-nirvana" onClick={() => set({ dialog: { kind: 'dismiss', id: s.id } })}>
+                        Envoyer au nirvana
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
