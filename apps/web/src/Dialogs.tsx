@@ -1116,7 +1116,8 @@ export function Dialogs() {
   if (dialog.kind === 'mcp') return <McpDialog onClose={close} onLibrary={() => set({ dialog: { kind: 'mcp-library' } })} />
   // Reached from the MCP dialog: closing it goes back there.
   if (dialog.kind === 'mcp-library') return <McpLibraryDialog onClose={() => set({ dialog: { kind: 'mcp' } })} />
-  return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
+  if (dialog.kind === 'dismiss') return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
+  return null // 'elder': routed once ElderDialog lands
 }
 
 /**

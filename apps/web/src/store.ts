@@ -20,8 +20,8 @@ export type MonkInstance = {
 }
 
 export type ChatItem =
-  | { kind: 'user'; text: string; at: number }
-  | { kind: 'buddha'; text: string; at: number }
+  | { kind: 'user'; text: string; at: number; seq: number }
+  | { kind: 'buddha'; text: string; at: number; seq: number }
   | { kind: 'tool'; tool: string; summary: string; at: number }
   | { kind: 'summon'; monkId: string; at: number }
   | { kind: 'done'; monkId: string; at: number }
@@ -70,11 +70,11 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
     case 'session.started':
       return { ...s, model: ev.model, skills: ev.skills ?? [], plugins: ev.plugins ?? [] }
     case 'user.message':
-      return { ...s, chat: [...s.chat, { kind: 'user', text: ev.text, at }] }
+      return { ...s, chat: [...s.chat, { kind: 'user', text: ev.text, at, seq }] }
     case 'buddha.delta':
       return { ...s, draft: s.draft + ev.text }
     case 'buddha.text':
-      return { ...s, draft: '', chat: [...s.chat, { kind: 'buddha', text: ev.text, at }] }
+      return { ...s, draft: '', chat: [...s.chat, { kind: 'buddha', text: ev.text, at, seq }] }
     case 'buddha.tool':
       return { ...s, chat: [...s.chat, { kind: 'tool', tool: ev.tool, summary: ev.summary, at }] }
     case 'monk.summoned':
@@ -136,6 +136,8 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
     // His autonomy (`SessionSummary.autonomy`) is derived server-side from this and reflected in the
     // sessions list, not in this per-session chat view: nothing to patch here.
     case 'loop.wake':
+    // Aggregated server-side into Ananda's Sangha block (see `elderSanghaStats`), not shown per-session.
+    case 'tool.error':
       return s
     case 'error':
       return { ...s, chat: [...s.chat, { kind: 'error', text: ev.message, at }] }
@@ -156,7 +158,8 @@ export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-pr
   | { kind: 'autonomy'; id: string }
   | { kind: 'host' }
   | { kind: 'mcp' }
-  | { kind: 'mcp-library' } | null
+  | { kind: 'mcp-library' }
+  | { kind: 'elder' } | null
 
 type AppState = {
   profiles: MonkProfile[]
@@ -178,6 +181,8 @@ type AppState = {
   reserve: QuotaReserveState | null
   /** The machine Sangha runs on, sampled every few seconds; null until the first sample lands. */
   host: HostReport | null
+  /** The number of Ananda's `proposed` topics and whether he's meditating right now, fed by the global `elder` event. */
+  elderBadge: { proposed: number; running: boolean } | null
   /** Bumped on every `{kind:'nirvana'}` global event: its open dialog refetches (arrivals, summaries, reincarnations). */
   nirvanaTick: number
   /** Bumped only when a non-external priest actually leaves the courtyard (flies into the moon): what the moon's glow watches. */
@@ -286,6 +291,7 @@ export const useApp = create<AppState>((set) => ({
   quota: null,
   reserve: null,
   host: null,
+  elderBadge: null,
   nirvanaTick: 0,
   moonArrivals: 0,
   sessionsVersion: 0,

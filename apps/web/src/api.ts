@@ -1,4 +1,4 @@
-import type { CostReport, Envelope, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, GlobalMcp, LibraryMcp, McpServer, MonkProfile, NirvanaEntry, NirvanaSearchResult, ProjectInfo, ProjectSuggestion, QuotaReserve, QuotaReserveState, SessionSummary } from '@sangha/shared'
+import type { CostReport, ElderSettings, ElderSettingsPatch, ElderState, ElderTopic, Envelope, Feedback, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, GlobalMcp, LibraryMcp, McpServer, MonkProfile, NirvanaEntry, NirvanaSearchResult, ProjectInfo, ProjectSuggestion, QuotaReserve, QuotaReserveState, SessionSummary } from '@sangha/shared'
 import { yeet } from './notify'
 import { emptyView, useApp } from './store'
 
@@ -112,6 +112,17 @@ export const api = {
   mcpLibrary: () => json<LibraryMcp[]>('/api/mcp-library'),
   /** `values`: credentials to save in .env (an empty one keeps what is saved); `active`: switch it on or off. */
   setLibraryMcp: (name: string, change: { active?: boolean; values?: Record<string, string> }) => json<LibraryMcp[]>(`/api/mcp-library/${encodeURIComponent(name)}`, post(change)),
+  /** Ananda: his settings, state (next pass, running, last error), topics, last reports and chat. */
+  elder: () => json<ElderState>('/api/elder'),
+  saveElderSettings: (patch: ElderSettingsPatch) => json<ElderSettings>('/api/elder/settings', { method: 'PUT', body: JSON.stringify(patch) }),
+  /** « Médite maintenant » : fires a pass right away; the panel follows along via the `elder` global event. */
+  runElderNow: () => json<void>('/api/elder/run', post()),
+  askElder: (text: string) => json<{ reply: string }>('/api/elder/ask', post({ text })),
+  voteElderTopic: (id: string, vote: 'up' | 'down') => json<ElderTopic>(`/api/elder/topics/${id}/vote`, post({ vote })),
+  doneElderTopic: (id: string) => json<ElderTopic>(`/api/elder/topics/${id}/done`, post()),
+  /** A comment or a 👍/👎 on a message (`eventSeq`) or on the whole conversation (omitted): Ananda reads it later. */
+  sendFeedback: (b: { sessionId: string; eventSeq?: number; rating?: 'up' | 'down'; comment?: string }) => json<Feedback>('/api/feedback', post(b)),
+  sessionFeedback: (id: string) => json<Feedback[]>(`/api/sessions/${id}/feedback`),
 }
 
 /** Follow the whole monastery: every session's status, novices and the plan quota. */
@@ -153,6 +164,9 @@ export function openMonastery(onError: () => void) {
         break
       case 'host':
         set({ host: ev.host })
+        break
+      case 'elder':
+        set({ elderBadge: { proposed: ev.proposed, running: ev.running } })
         break
     }
   }
