@@ -22,6 +22,7 @@ import { EXTERNAL_PREFIX, Observer } from './observer'
 import { Projects } from './projects'
 import { type CreateSession, Sessions, UserError } from './session'
 import { noviceLog, parseLine, TranscriptReader } from './transcript'
+import { Elder } from './elder'
 
 assertQuotaOnly()
 
@@ -47,6 +48,8 @@ sessions.startRenewalLoop()
 sessions.startPullsLoop()
 const host = new HostMonitor(config.workspacesDir, () => sessions.summaries(), () => sessions.archivedWorktrees(), () => sessions.blocked(), () => projects.repos())
 host.start()
+const elder = new Elder(store, sessions.providers, () => sessions.summaries(), () => sessions.quota)
+elder.start()
 
 const app = new Hono()
 
@@ -125,6 +128,32 @@ app.get('/api/projects/:name/branches', async (c) => {
   return c.json(await branches(projects.dir(c.req.param('name'))))
 })
 
+// Ananda, le vieux sage : relit les retours et le fonctionnement de Sangha, propose, ne modifie jamais rien.
+app.get('/api/elder', (c) => c.json(elder.state()))
+app.put('/api/elder/settings', async (c) => c.json(elder.setSettings(await c.req.json())))
+app.post('/api/elder/run', (c) => {
+  void elder.runPass('manual')
+  return c.body(null, 202)
+})
+app.post('/api/elder/ask', async (c) => {
+  const { text } = await c.req.json<{ text: string }>()
+  if (!text?.trim()) throw new UserError('message vide')
+  return c.json(await elder.ask(text.trim()))
+})
+app.post('/api/elder/topics/:id/vote', async (c) => {
+  const { vote } = await c.req.json<{ vote: 'up' | 'down' }>()
+  if (vote !== 'up' && vote !== 'down') throw new UserError('vote invalide')
+  return c.json(elder.voteTopic(c.req.param('id'), vote))
+})
+app.post('/api/elder/topics/:id/done', (c) => c.json(elder.doneTopic(c.req.param('id'))))
+app.post('/api/feedback', async (c) => {
+  const body = await c.req.json<{ sessionId: string; eventSeq?: number; rating?: 'up' | 'down'; comment?: string }>()
+  if (!body.sessionId) throw new UserError('session manquante')
+  if (!body.rating && !body.comment?.trim()) throw new UserError('note ou commentaire requis')
+  if (!store.getSession(body.sessionId)) throw new UserError('session inconnue')
+  return c.json(elder.addFeedback(body), 201)
+})
+app.get('/api/sessions/:id/feedback', (c) => c.json(store.feedbackForSession(c.req.param('id'))))
 
 app.get('/api/sessions', (c) => c.json(sessions.summaries()))
 app.post('/api/sessions', async (c) => {
@@ -320,9 +349,14 @@ app.get('/api/events', (c) =>
       queue.push({ kind: 'host', host: report })
       wake?.()
     })
+    const unsubscribeElder = elder.subscribe((ev) => {
+      queue.push(ev)
+      wake?.()
+    })
     stream.onAbort(() => {
       unsubscribe()
       unsubscribeHost()
+      unsubscribeElder()
       wake?.()
     })
     await drain(stream, queue, (ev) => stream.writeSSE({ data: JSON.stringify(ev) }), (w) => (wake = w))
@@ -405,6 +439,7 @@ const server = serve({ fetch: app.fetch, port: config.port, hostname: process.en
 const shutdown = () => {
   observer.stop()
   host.stop()
+  elder.stop()
   sessions.closeAll()
   server.close()
   process.exit(0)
