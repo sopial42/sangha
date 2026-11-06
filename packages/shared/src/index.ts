@@ -358,6 +358,25 @@ export type HostWorktree = {
   /** The priest's own note (see `SessionSummary.note`), null when he has none or there is no live priest. */
   sessionNote: string | null
   status: SessionStatus | null
+  /**
+   * What it is: a priest's own worktree; one a priest made for his sub-agents / parallel epics
+   * (e.g. `kiat-team-lead-bc7d86-e181`, or Claude Code's `.claude/worktrees/agent-*`); or an orphan nobody claims.
+   */
+  kind: 'priest' | 'subagent' | 'orphan'
+  /** For a sub-agent worktree: the priest who made it (live or gone to nirvana), with his note. */
+  owner: { sessionId: string; note: string | null; title: string; alive: boolean; working: boolean } | null
+  /** Safety facts, checked on disk: uncommitted changes, commits on no remote branch, a process running inside. */
+  dirty: number
+  unpushed: number
+  inUse: boolean
+  /** Safe to delete: clean, everything pushed, nobody inside, and its priest (or owner) not working. */
+  removable: boolean
+  /** Why not, in plain French, when it isn't removable. */
+  blocker: string | null
+  /** The command to remove it yourself (always `git -C`, works from any folder). */
+  removeCommand: string
+  /** What this worktree is, in a sentence or two by a small model (branch, last commits, its priest); null until written. */
+  comment: string | null
 }
 
 /**

@@ -231,3 +231,62 @@ export async function nirvanaSearch(entries: NirvanaSearchEntry[], question: str
   const out = await ask<{ results: unknown }>(NIRVANA_SEARCH_SYSTEM, NIRVANA_SEARCH_SCHEMA, prompt, 40_000)
   return parseNirvanaSearchResult(out, new Set(entries.map((e) => e.id)))
 }
+
+/** One worktree left on disk, as fed to the model: enough to judge what it was for and whether it still matters. */
+export type WorktreeCommentInput = { path: string; name: string; branch: string | null; commits: string[]; dirty: number; unpushed: number; owner: string | null }
+
+const WORKTREE_COMMENT_SCHEMA = {
+  type: 'object',
+  properties: {
+    comments: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          comment: { type: 'string', description: 'Un commentaire en français, une ou deux phrases courtes : ce qu’est ce worktree, et s’il semble terminé ou fusionné.' },
+        },
+        required: ['path', 'comment'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ['comments'],
+  additionalProperties: false,
+}
+
+const WORKTREE_COMMENT_SYSTEM = `Tu regardes une liste de worktrees git (des copies de travail) restés sur le disque d'un utilisateur.
+Pour chacun, on te donne son chemin, sa branche, ses trois derniers commits, s'il a des modifications non
+commitées ou des commits jamais poussés, et le prêtre (agent) qui l'a créé quand on le connaît.
+Pour chacun, écris un commentaire ("comment") d'une ou deux phrases courtes en français : ce qu'est ce worktree
+(à quoi il a servi, d'après ses commits) et s'il semble terminé ou fusionné, ou encore utile à garder.
+${STYLE}
+Réponds en JSON strict : {"comments":[{"path":"...","comment":"..."}]}. N'invente jamais de chemin : utilise
+uniquement ceux donnés ci-dessous.`
+
+function worktreeCommentLine(e: WorktreeCommentInput): string {
+  return `path=${e.path} branche=${e.branch ?? '-'} commits=${e.commits.join(' | ') || '-'} modifs=${e.dirty} non_poussés=${e.unpushed} prêtre=${e.owner ?? '-'}`
+}
+
+/** The model's whole input: one compact line per worktree. */
+export function buildWorktreeCommentsPrompt(entries: WorktreeCommentInput[]): string {
+  return entries.map(worktreeCommentLine).join('\n')
+}
+
+/** The model's raw answer, filtered down to known paths, well-shaped entries, keyed by path. */
+export function parseWorktreeComments(raw: unknown, validPaths: Set<string>): Record<string, string> {
+  const list = raw && typeof raw === 'object' && Array.isArray((raw as { comments?: unknown }).comments) ? (raw as { comments: unknown[] }).comments : []
+  const map: Record<string, string> = {}
+  for (const c of list) {
+    const rec = c as Record<string, unknown> | null
+    if (rec && typeof rec === 'object' && typeof rec.path === 'string' && typeof rec.comment === 'string' && validPaths.has(rec.path)) map[rec.path] = rec.comment.trim()
+  }
+  return map
+}
+
+/** One batched call for every worktree given: {path: comment} in French, filtered against the paths asked about. */
+export async function worktreeComments(entries: WorktreeCommentInput[]): Promise<Record<string, string>> {
+  if (!entries.length) return {}
+  const out = await ask<{ comments: unknown }>(WORKTREE_COMMENT_SYSTEM, WORKTREE_COMMENT_SCHEMA, buildWorktreeCommentsPrompt(entries), 20_000)
+  return parseWorktreeComments(out, new Set(entries.map((e) => e.path)))
+}

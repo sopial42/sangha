@@ -844,13 +844,13 @@ export class Sessions {
     }
   }
 
-  /** Archived sessions that had a worktree, so an orphan one can be named after who left it behind (see `host.ts`). */
+  /** Archived sessions that had a worktree, so an orphan one can be named after who left it behind, or own a sub-agent of theirs (see `host.ts`). */
   archivedWorktrees(): HostNirvanaWorktree[] {
     const notes = this.store.notes()
     return this.store
       .archivedSessions()
       .filter((r) => r.worktree)
-      .map((r) => ({ path: r.worktree!, title: r.title, note: notes.get(r.id) ?? null, archivedAt: r.archivedAt! }))
+      .map((r) => ({ id: r.id, path: r.worktree!, title: r.title, note: notes.get(r.id) ?? null, archivedAt: r.archivedAt! }))
   }
 
   private nirvanaBusy = false

@@ -1,4 +1,5 @@
-import type { HostMetric, HostSample, HostSuggestion } from '@sangha/shared'
+import { useState } from 'react'
+import type { HostMetric, HostSample, HostSuggestion, HostWorktree, SessionSummary } from '@sangha/shared'
 import { openSession } from '../api'
 import { Modal, ShellSnippet } from '../Dialogs'
 import { formatAge, formatBytes, formatSince, PriestName, STATUS_LABEL } from '../priests'
@@ -45,8 +46,120 @@ function Metric({ metric, history }: { metric: HostMetric; history: HostSample[]
   )
 }
 
+/**
+ * The worktree a suggestion is about, when it is one of the disk ones (an idle priest's worktree, or an
+ * orphan): matched by its id (`disk:worktree:<path>` / `disk:orphan:<path>`), else by its command when
+ * it happens to be exactly the worktree's own removal command.
+ */
+function matchSuggestionWorktree(s: HostSuggestion, worktrees: HostWorktree[]): HostWorktree | undefined {
+  const m = /^disk:(?:worktree|orphan):(.+)$/.exec(s.id)
+  if (m) return worktrees.find((w) => w.path === m[1])
+  return s.command ? worktrees.find((w) => w.removeCommand === s.command) : undefined
+}
+
+/** What a worktree is, in a sentence or two by a small model: quiet and in italics, a placeholder while it still thinks. */
+function WorktreeComment({ comment }: { comment: string | null }) {
+  return <p className="host-wt-comment">{comment ?? '✦ Haiku lit ce worktree…'}</p>
+}
+
+/**
+ * Copies a worktree's removal command. Safe to delete: a plain "Copier la commande". Not: the same
+ * command stays one click away, but behind an amber "Copier quand même" naming the blocker — the facts
+ * are never hidden, only the risk is made visible.
+ */
+function WorktreeCopyButton({ w }: { w: HostWorktree }) {
+  const [copied, setCopied] = useState(false)
+  const copy = () =>
+    void navigator.clipboard.writeText(w.removeCommand).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  return (
+    <button
+      type="button"
+      className={`btn host-wt-copy ${w.removable ? 'btn-ghost' : 'btn-warn'} ${copied ? 'is-copied' : ''}`}
+      onClick={copy}
+      title={!w.removable && w.blocker ? w.blocker : undefined}
+    >
+      {copied ? 'Copié ✓' : w.removable ? 'Copier la commande' : 'Copier quand même'}
+    </button>
+  )
+}
+
+/**
+ * Who a worktree belongs to, named like everywhere else a priest is (his note first, his title
+ * alongside): a sub-agent's owner, or the worktree's own priest; none when it is an orphan. His note
+ * comes from the live store when he's still in the courtyard (freshest), the report's own copy once he
+ * isn't (nirvana, or the report just hasn't caught up yet).
+ */
+function WorktreeOwner({ w, sessions }: { w: HostWorktree; sessions: Record<string, Pick<SessionSummary, 'note'>> }) {
+  if (w.kind === 'subagent' && w.owner) {
+    const note = sessions[w.owner.sessionId]?.note ?? w.owner.note
+    return <PriestName note={note} title={w.owner.title} />
+  }
+  if (w.sessionId) {
+    const note = sessions[w.sessionId]?.note ?? w.sessionNote
+    return (
+      <>
+        <PriestName note={note} title={w.sessionTitle ?? ''} />
+        {w.status && <span className="muted small"> · {STATUS_LABEL[w.status]}</span>}
+      </>
+    )
+  }
+  return <span className="muted small">aucun prêtre</span>
+}
+
+/** The kind badge: what this worktree is, for the sub-agent one with its owner's note and whether he's still around. */
+function worktreeKind(w: HostWorktree): { label: string; cls: string } {
+  if (w.kind === 'orphan') return { label: 'orphelin', cls: 'host-wt-badge-orphan' }
+  if (w.kind === 'priest') return { label: 'prêtre', cls: 'host-wt-badge-priest' }
+  const owner = w.owner
+  const who = owner ? owner.note ?? owner.title : ''
+  let label = `sous-agent de « ${who} »`
+  if (owner && !owner.alive) label += ' · au nirvana'
+  else if (owner?.working) label += ' · travaille'
+  return { label, cls: 'host-wt-badge-subagent' }
+}
+
+/** Small safety facts, in French, only the ones that apply: how much is uncommitted, unpushed, or in use. */
+function worktreeFacts(w: HostWorktree): string[] {
+  const facts: string[] = []
+  if (w.dirty > 0) facts.push(`${w.dirty} modif${w.dirty > 1 ? 's' : ''}`)
+  if (w.unpushed > 0) facts.push(`${w.unpushed} commit${w.unpushed > 1 ? 's' : ''} non poussé${w.unpushed > 1 ? 's' : ''}`)
+  if (w.inUse) facts.push('utilisé')
+  return facts
+}
+
+/** One worktree, as a readable row: what it is, whose it is, what a small model makes of it, and whether it's safe to clear. */
+function WorktreeRow({ w, sessions }: { w: HostWorktree; sessions: Record<string, Pick<SessionSummary, 'note'>> }) {
+  const badge = worktreeKind(w)
+  const facts = worktreeFacts(w)
+  return (
+    <li className="host-wt-row">
+      <div className="host-wt-top">
+        <span className="host-wt-name">
+          {w.project} / {w.name}
+        </span>
+        <span className="muted small host-wt-size">{formatBytes(w.bytes)}</span>
+        <span className={`host-wt-badge ${badge.cls}`}>{badge.label}</span>
+      </div>
+      <div className="host-wt-owner">
+        <WorktreeOwner w={w} sessions={sessions} />
+      </div>
+      <WorktreeComment comment={w.comment} />
+      <div className="host-wt-safety">
+        {w.removable ? <span className="host-wt-safe">✓ Supprimable sans rien perdre</span> : <span className="host-wt-blocker">{w.blocker ?? 'Non supprimable'}</span>}
+        {facts.length > 0 && <span className="muted small">{facts.join(' · ')}</span>}
+      </div>
+      <div className="host-wt-actions">
+        <WorktreeCopyButton w={w} />
+      </div>
+    </li>
+  )
+}
+
 /** Something to do about a metric stuck red: what, why, the command to run yourself, and the priest it concerns (if any). */
-function Suggestion({ s, onClose }: { s: HostSuggestion; onClose: () => void }) {
+function Suggestion({ s, wt, onClose }: { s: HostSuggestion; wt?: HostWorktree; onClose: () => void }) {
   const set = useApp((st) => st.set)
   const session = useApp((st) => (s.sessionId ? st.sessions[s.sessionId] : undefined))
   // The title or detail may already carry his note (written in from the server): no point saying it twice.
@@ -60,6 +173,12 @@ function Suggestion({ s, onClose }: { s: HostSuggestion; onClose: () => void }) 
         <p className="host-suggestion-note">
           Prêtre concerné : <PriestName note={note} title={session!.title} />
         </p>
+      )}
+      {wt && (
+        <div className="host-suggestion-wt">
+          <WorktreeComment comment={wt.comment} />
+          <WorktreeCopyButton w={wt} />
+        </div>
       )}
       {s.command && <ShellSnippet title="À lancer toi-même : Sangha n'exécute jamais cette commande" text={s.command} />}
       {s.sessionId && (
@@ -94,6 +213,11 @@ export function HostDialog({ onClose }: { onClose: () => void }) {
   const sessions = useApp((s) => s.sessions)
   if (!host) return null // the chip that opens this dialog is itself hidden until a report lands
 
+  // Removable first (stable sort keeps each group in the report's own heaviest-first order), then the rest.
+  const worktrees = [...host.worktrees].sort((a, b) => Number(b.removable) - Number(a.removable))
+  const removable = worktrees.filter((w) => w.removable)
+  const removableBytes = removable.reduce((sum, w) => sum + w.bytes, 0)
+
   return (
     <Modal title={`Machine — ${host.hostname}`} onClose={onClose}>
       <div className="form host-dialog">
@@ -104,7 +228,7 @@ export function HostDialog({ onClose }: { onClose: () => void }) {
             <h3>À faire</h3>
             <ul className="host-suggestions">
               {host.suggestions.map((s) => (
-                <Suggestion key={s.id} s={s} onClose={onClose} />
+                <Suggestion key={s.id} s={s} wt={matchSuggestionWorktree(s, host.worktrees)} onClose={onClose} />
               ))}
             </ul>
           </section>
@@ -190,42 +314,21 @@ export function HostDialog({ onClose }: { onClose: () => void }) {
             Worktrees
             {host.worktreesSizedAt != null && <span className="muted small host-section-sub"> · pesés {formatAge(host.worktreesSizedAt)}</span>}
           </h3>
-          {host.worktrees.length === 0 ? (
+          {worktrees.length === 0 ? (
             <p className="hint">Aucun worktree.</p>
           ) : (
-            <div className="md-table">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Projet</th>
-                    <th>Taille</th>
-                    <th>Prêtre</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {host.worktrees.map((w) => (
-                    <tr key={w.path}>
-                      <td>
-                        {w.project} / {w.name}
-                      </td>
-                      <td>{formatBytes(w.bytes)}</td>
-                      <td>
-                        {w.sessionId ? (
-                          <>
-                            {/* His note first: a worktree id or a first message means nothing — his note is
-                                what tells you whether this is the one safe to clear out. */}
-                            <PriestName note={sessions[w.sessionId]?.note} title={w.sessionTitle ?? ''} />{' '}
-                            <span className="muted small">({w.status ? STATUS_LABEL[w.status] : '?'})</span>
-                          </>
-                        ) : (
-                          <span className="muted small">aucun prêtre</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {removable.length > 0 && (
+                <p className="host-wt-count muted small">
+                  {removable.length} supprimable{removable.length > 1 ? 's' : ''} · {formatBytes(removableBytes)} récupérables
+                </p>
+              )}
+              <ul className="host-wt-list">
+                {worktrees.map((w) => (
+                  <WorktreeRow key={w.path} w={w} sessions={sessions} />
+                ))}
+              </ul>
+            </>
           )}
         </section>
       </div>

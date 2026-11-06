@@ -45,7 +45,7 @@ observer.start()
 sessions.startDoingLoop()
 sessions.startRenewalLoop()
 sessions.startPullsLoop()
-const host = new HostMonitor(config.workspacesDir, () => sessions.summaries(), () => sessions.archivedWorktrees())
+const host = new HostMonitor(config.workspacesDir, () => sessions.summaries(), () => sessions.archivedWorktrees(), () => sessions.blocked(), () => projects.repos())
 host.start()
 
 const app = new Hono()

@@ -711,6 +711,133 @@ input[type='range']:disabled::-moz-range-thumb {
   font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* Worktrees (see HostDialog): one card per worktree instead of a cramped table — name, who it
+   belongs to, what a small model makes of it, and whether it's safe to clear. */
+.host-wt-count {
+  margin: -4px 0 10px;
+}
+
+.host-wt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.host-wt-row {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+
+.host-wt-top {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.host-wt-name {
+  font: 600 14.5px var(--sans);
+  overflow-wrap: anywhere;
+}
+
+.host-wt-badge {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  white-space: normal;
+  text-align: right;
+}
+
+.host-wt-badge-subagent {
+  color: #c79bc4;
+  border-color: #5a3f5f;
+}
+
+.host-wt-badge-orphan {
+  color: #d98a80;
+  border-color: #6b2a22;
+}
+
+.host-wt-owner {
+  font-size: 14px;
+}
+
+.host-wt-comment {
+  margin: 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--muted);
+}
+
+.host-wt-safety {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  font-size: 13px;
+}
+
+.host-wt-safe {
+  color: var(--jade);
+  font-weight: 600;
+}
+
+.host-wt-blocker {
+  color: var(--saffron);
+  font-weight: 600;
+}
+
+.host-wt-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+
+.host-wt-copy {
+  font-size: 13px;
+}
+
+.host-wt-copy.is-copied {
+  border-color: var(--jade);
+  color: var(--jade);
+}
+
+.btn-warn {
+  background: transparent;
+  border-color: var(--saffron);
+  color: var(--saffron);
+}
+
+.btn-warn:hover:not(:disabled),
+.btn-warn:focus-visible {
+  background: #2a2117;
+}
+
+/* A suggestion that carries a worktree (an idle priest's, or an orphan): same comment and copy affordance
+   as its row below, so the two never disagree on what the worktree is or whether it's safe to clear. */
+.host-suggestion-wt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  justify-content: space-between;
+}
+
+.host-suggestion-wt .host-wt-comment {
+  flex: 1;
+  min-width: 180px;
+}
+
 .ember {
   animation: pulse 1.6s ease-in-out infinite;
 }
@@ -1613,6 +1740,10 @@ input[type='range']:disabled::-moz-range-thumb {
 
 .form {
   display: grid;
+  /* A single column that can actually shrink: without `minmax(0, …)`, an unbroken-text child (a long
+     shell command, a wide table with no good line-break) makes the whole implicit `auto` column — and so
+     every dialog built on `.form` — grow past the dialog's own width instead of scrolling within itself. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -1881,6 +2012,10 @@ input[type='range']:disabled::-moz-range-thumb {
   overflow: auto;
   font-size: 12px;
   user-select: all;
+  /* Wraps instead of staying on one unbroken line: a long `git -C "<path>" …` command otherwise forced
+     the whole dialog wider than the viewport on narrow screens (a single-column CSS grid blowout). */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .form-actions {

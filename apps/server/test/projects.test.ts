@@ -53,4 +53,14 @@ describe('a local project whose folder was renamed', () => {
     projects.addLocal(repo)
     await expect(projects.relocate('Robia', join(root, 'nowhere'))).rejects.toThrow(/introuvable/)
   })
+
+  it('lists only the projects that are git repositories, for worktree discovery', async () => {
+    const { Projects } = await import('../src/projects')
+    const projects = new Projects(new Store(':memory:'))
+    projects.addLocal(repo)
+    const plain = join(root, 'not-a-repo')
+    await import('node:fs').then((fs) => fs.mkdirSync(plain))
+    projects.addLocal(plain)
+    expect(projects.repos()).toEqual([{ name: 'Robia', path: repo }])
+  })
 })

@@ -560,7 +560,7 @@ describe('Sessions nirvana', () => {
     store.createSession({ ...baseRow(), id: 'p3', title: 'je corrige le panier', worktree: '/w/.worktrees/p/old' })
     store.setSessionNote('p3', 'RIB ET MAIL')
     store.archive('p3')
-    expect(sessions.archivedWorktrees()).toEqual([{ path: '/w/.worktrees/p/old', title: 'je corrige le panier', note: 'RIB ET MAIL', archivedAt: expect.any(Number) }])
+    expect(sessions.archivedWorktrees()).toEqual([{ id: 'p3', path: '/w/.worktrees/p/old', title: 'je corrige le panier', note: 'RIB ET MAIL', archivedAt: expect.any(Number) }])
   })
 
   it('excludes archived sessions that never had a worktree', () => {

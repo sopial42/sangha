@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { statfs } from 'node:fs/promises'
 import { cpus, hostname, platform, totalmem } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type {
   HostContainer,
   HostLevel,
@@ -15,6 +15,7 @@ import type {
   HostWorktree,
   SessionSummary,
 } from '@sangha/shared'
+import { worktreeComments, type WorktreeCommentInput } from './recap'
 
 const SAMPLE_MS = 10_000
 const SIZE_MS = 5 * 60_000
@@ -109,6 +110,134 @@ export function parseDockerStats(out: string, images: Map<string, string> = new 
   return list.sort((a, b) => b.cpu - a.cpu)
 }
 
+// ── Worktrees: discovery, classification, safety ────────────────────────────
+
+/** One entry of `git worktree list --porcelain`. `branch` null for a detached (or bare) one. */
+export type GitWorktreeEntry = { path: string; head: string | null; branch: string | null }
+
+/** `git -C <repo> worktree list --porcelain`: blocks separated by a blank line, one `worktree <path>` each. */
+export function parseWorktreeList(out: string): GitWorktreeEntry[] {
+  const entries: GitWorktreeEntry[] = []
+  let cur: GitWorktreeEntry | null = null
+  for (const line of out.split('\n')) {
+    if (line.startsWith('worktree ')) {
+      if (cur) entries.push(cur)
+      cur = { path: line.slice('worktree '.length).trim(), head: null, branch: null }
+    } else if (cur && line.startsWith('HEAD ')) cur.head = line.slice('HEAD '.length).trim()
+    else if (cur && line.startsWith('branch ')) cur.branch = line.slice('branch '.length).trim().replace(/^refs\/heads\//, '')
+  }
+  if (cur) entries.push(cur)
+  return entries
+}
+
+/** `lsof -a -d cwd -Fpn`: one `p<pid>` line followed by one `n<cwd>` line per process. Only the cwd matters here. */
+export function parseLsofCwds(out: string): string[] {
+  return out
+    .split('\n')
+    .filter((l) => l.startsWith('n'))
+    .map((l) => l.slice(1))
+}
+
+/** Whether some process sits in `path`, or in a folder under it. */
+export function isInUse(path: string, cwds: string[]): boolean {
+  return cwds.some((c) => c === path || c.startsWith(`${path}/`))
+}
+
+/**
+ * How a worktree not under workspaces/.worktrees/<project>/ is still named: under the repository itself
+ * (e.g. a Claude Code sub-agent's `.claude/worktrees/agent-*`), or by its own basename as a last resort.
+ */
+export function worktreeName(path: string, repo: { name: string; path: string }, worktreesRoot: string): string {
+  const groupPrefix = `${join(worktreesRoot, repo.name)}/`
+  if (path.startsWith(groupPrefix)) return path.slice(groupPrefix.length)
+  const repoPrefix = `${repo.path}/`
+  if (path.startsWith(repoPrefix)) return path.slice(repoPrefix.length)
+  return basename(path)
+}
+
+/** The command offered to remove a worktree yourself: always scoped with -C (works from any cwd), never forced. */
+export const removeCommand = (path: string): string => `git -C "${path}" worktree remove "${path}"`
+
+/** A priest who may own a worktree (directly, or as the base name of one of its sub-agents): live or gone to nirvana. */
+export type OwnerCandidate = { sessionId: string; path: string; note: string | null; title: string; alive: boolean; working: boolean }
+
+/** Every priest who could own a worktree: live sessions (their own cwd) and archived ones (their worktree kept, see `Sessions.archivedWorktrees`). */
+export function ownerCandidates(
+  sessions: Pick<SessionSummary, 'id' | 'cwd' | 'note' | 'title' | 'status'>[],
+  nirvana: HostNirvanaWorktree[],
+): OwnerCandidate[] {
+  return [
+    ...sessions.filter((s): s is typeof s & { cwd: string } => !!s.cwd).map((s) => ({ sessionId: s.id, path: s.cwd, note: s.note, title: s.title, alive: true, working: s.status === 'working' })),
+    ...nirvana.map((n) => ({ sessionId: n.id, path: n.path, note: n.note, title: n.title, alive: false, working: false })),
+  ]
+}
+
+const toOwner = (c: OwnerCandidate): NonNullable<HostWorktree['owner']> => ({ sessionId: c.sessionId, note: c.note, title: c.title, alive: c.alive, working: c.working })
+
+/**
+ * What a worktree is: `priest` when a live session works right there; `subagent` when it was made for one
+ * (nested under an owner's `.claude/worktrees/`, or named after an owner's worktree plus a `-` suffix, in
+ * the same folder — the owner can be live or gone to nirvana); `orphan` otherwise, even when its path
+ * matches a nirvana entry directly (that case keeps the plain nirvana naming, see `suggest`).
+ */
+export function classifyWorktree(path: string, candidates: OwnerCandidate[]): { kind: HostWorktree['kind']; owner: HostWorktree['owner'] } {
+  if (candidates.some((c) => c.alive && c.path === path)) return { kind: 'priest', owner: null }
+  const nested = candidates.find((c) => path.startsWith(`${c.path}/.claude/worktrees/`))
+  if (nested) return { kind: 'subagent', owner: toOwner(nested) }
+  const parent = dirname(path)
+  const base = basename(path)
+  const prefixed = candidates.find((c) => dirname(c.path) === parent && base.startsWith(`${basename(c.path)}-`))
+  if (prefixed) return { kind: 'subagent', owner: toOwner(prefixed) }
+  return { kind: 'orphan', owner: null }
+}
+
+const plural = (n: number, word: string, pluralWord = `${word}s`) => (n > 1 ? pluralWord : word)
+
+/** Safe to delete: never a priest's own worktree, and only once clean, fully pushed, unused, and its owner (if any) idle. */
+export function removableInfo(
+  kind: HostWorktree['kind'],
+  facts: { dirty: number; unpushed: number; inUse: boolean },
+  owner: HostWorktree['owner'],
+  where: { checked: boolean; external: boolean } = { checked: true, external: false },
+): { removable: boolean; blocker: string | null } {
+  if (kind === 'priest') return { removable: false, blocker: "c'est le worktree d'un prêtre vivant : envoie-le au nirvana" }
+  // Not checked on disk yet: zero changes would only mean « not looked », never « safe ».
+  if (!where.checked) return { removable: false, blocker: 'vérification en cours' }
+  // Made outside Sangha (Kiat Operator under ~/.kiat-operator, scripts under /tmp…) and claimed by no priest: another
+  // tool may rely on it, so Sangha never calls it safe to delete.
+  if (where.external && !owner) return { removable: false, blocker: 'créé hors de Sangha (Kiat Operator, script…) : vérifie qui s’en sert avant' }
+  if (facts.dirty > 0) return { removable: false, blocker: `${facts.dirty} ${plural(facts.dirty, 'fichier')} ${plural(facts.dirty, 'modifié', 'modifiés')}` }
+  if (facts.unpushed > 0) return { removable: false, blocker: `${facts.unpushed} ${plural(facts.unpushed, 'commit')} jamais ${plural(facts.unpushed, 'poussé', 'poussés')}` }
+  if (facts.inUse) return { removable: false, blocker: 'un process tourne dedans' }
+  if (owner?.working) return { removable: false, blocker: `son prêtre « ${owner.note ?? owner.title} » travaille encore` }
+  return { removable: true, blocker: null }
+}
+
+/** Cache of a worktree's Haiku comment, keyed by path and HEAD sha: a fresh commit asks again, nothing else does. */
+export class WorktreeCommentCache {
+  private cache = new Map<string, string>()
+
+  constructor(private summarize: (entries: WorktreeCommentInput[]) => Promise<Record<string, string>>) {}
+
+  /** The cached comment for a worktree at this exact HEAD, or null until one has been written. */
+  of(path: string, headSha: string | null): string | null {
+    return headSha ? this.cache.get(cacheKey(path, headSha)) ?? null : null
+  }
+
+  /** Asks about every entry not yet cached for its HEAD, one batched call; a failure leaves them uncached (retried next refresh). */
+  async refresh(entries: (WorktreeCommentInput & { headSha: string | null })[]) {
+    const todo = entries.filter((e): e is WorktreeCommentInput & { headSha: string } => !!e.headSha && !this.cache.has(cacheKey(e.path, e.headSha)))
+    if (!todo.length) return
+    const result = await this.summarize(todo).catch(() => ({}) as Record<string, string>)
+    for (const e of todo) if (result[e.path]) this.cache.set(cacheKey(e.path, e.headSha), result[e.path]!)
+  }
+}
+
+const cacheKey = (path: string, sha: string) => `${path}@${sha}`
+
+/** A worktree's own safety facts and the little context a comment is written from. */
+type WorktreeFacts = { dirty: number; unpushed: number; headSha: string | null; branch: string | null; commits: string[] }
+
 // ── Levels ──────────────────────────────────────────────────────────────────
 
 type Thresholds = { warn: number; red: number }
@@ -151,8 +280,8 @@ export class RedTracker {
 
 // ── Suggestions ─────────────────────────────────────────────────────────────
 
-/** An archived session that once worked in a worktree: enough to name it when it is now orphaned. */
-export type HostNirvanaWorktree = { path: string; title: string; note: string | null; archivedAt: number }
+/** An archived session that once worked in a worktree: enough to name it when it is now orphaned, or to own a sub-agent of his. */
+export type HostNirvanaWorktree = { id: string; path: string; title: string; note: string | null; archivedAt: number }
 
 export type SuggestInput = {
   metrics: HostMetric[]
@@ -261,16 +390,23 @@ export function suggest({ metrics, now, processes, containers, worktrees, sessio
         detail: 'Congédier ce prêtre supprime son worktree (Sangha refuse si du travail serait perdu).',
         sessionId: idle.sessionId!,
       })
-    const orphan = worktrees.find((w) => !w.sessionId)
-    if (orphan) {
-      const left = nirvana.find((n) => n.path === orphan.path)
-      const who = left ? `${namePriest(left.note, left.title)}, parti au nirvana le ${dateFr(left.archivedAt)}` : `${orphan.project}/${orphan.name}`
+    // Only ever a worktree Sangha knows is safe to delete: never a priest's own, and never one with anything to lose.
+    const removable = worktrees.find((w) => w.removable)
+    if (removable) {
+      let who: string
+      if (removable.kind === 'subagent' && removable.owner) {
+        const ownerName = removable.owner.note ? `« ${removable.owner.note} »` : `« ${removable.owner.title} »`
+        who = `un worktree de sous-agent de ${ownerName}${removable.owner.alive ? '' : ' (parti au nirvana)'}`
+      } else {
+        const left = nirvana.find((n) => n.path === removable.path)
+        who = left ? `${namePriest(left.note, left.title)}, parti au nirvana le ${dateFr(left.archivedAt)}` : `${removable.project}/${removable.name}`
+      }
       out.push({
-        id: `disk:orphan:${orphan.path}`,
+        id: `disk:orphan:${removable.path}`,
         metric: 'disk',
-        title: `Worktree sans prêtre : ${who} (${bytes(orphan.bytes)})`,
+        title: `Worktree sans prêtre : ${who} (${bytes(removable.bytes)})`,
         detail: 'Plus aucun prêtre n’y travaille. Vérifie qu’il n’y reste rien à garder, puis retire-le toi-même.',
-        command: `git -C "${orphan.path}" status --short && git -C "${orphan.path}" worktree remove "${orphan.path}"`,
+        command: removable.removeCommand,
       })
     }
     if (containers)
@@ -308,17 +444,24 @@ export class HostMonitor {
   private lastCpu = cpuTimes()
   private history: HostSample[] = []
   private red = new RedTracker()
-  private worktrees: HostWorktree[] = []
+  private discovered: { path: string; project: string; name: string }[] = []
   private sizes = new Map<string, number>()
+  private facts = new Map<string, WorktreeFacts>()
+  private inUseCwds: string[] = []
   private sizedAt: number | null = null
   private sizing = false
+  private comments = new WorktreeCommentCache(worktreeComments)
   private readonly inContainer = existsSync('/.dockerenv')
 
   constructor(
     private workspacesDir: string,
     private sessions: () => SessionSummary[],
-    /** Archived sessions, so an orphan worktree can be named after who left it behind (see `suggest`). */
+    /** Archived sessions, so an orphan worktree can be named after who left it behind (see `suggest`), or own a sub-agent of his. */
     private nirvana: () => HostNirvanaWorktree[] = () => [],
+    /** Whether the quota reserve holds every priest right now: Haiku comments on worktrees wait their turn like any other (see `Sessions.blocked`). */
+    private reserveBlocked: () => boolean = () => false,
+    /** Every project that is a git repository: name and root, to discover every worktree it has (see `Projects.repos`). */
+    private projectRepos: () => { name: string; path: string }[] = () => [],
   ) {}
 
   start() {
@@ -396,50 +539,117 @@ export class HostMonitor {
     return parseDockerStats(stats, images)
   }
 
-  /** Worktrees Sangha made (workspaces/.worktrees/<project>/<name>), sized with du every few minutes: it is slow. */
-  private async sizeWorktrees() {
+  /** Every worktree of every project repo, wherever git keeps it (not just workspaces/.worktrees/): the main checkout is skipped. */
+  private async discoverWorktrees(): Promise<{ path: string; project: string; name: string }[]> {
+    const root = join(this.workspacesDir, '.worktrees')
+    const out: { path: string; project: string; name: string }[] = []
+    for (const repo of this.projectRepos()) {
+      const porcelain = await run('git', ['-C', repo.path, 'worktree', 'list', '--porcelain'])
+      if (!porcelain) continue
+      for (const e of parseWorktreeList(porcelain)) {
+        if (e.path === repo.path) continue // the main checkout itself
+        out.push({ path: e.path, project: repo.name, name: worktreeName(e.path, repo, root) })
+      }
+    }
+    return out
+  }
+
+  /** Dirty/unpushed/branch/commits of one worktree: cheap git calls, run together with its size. */
+  private async gitFacts(path: string): Promise<WorktreeFacts> {
+    const [status, unpushedOut, head, branch, log] = await Promise.all([
+      run('git', ['-C', path, 'status', '--porcelain']),
+      run('git', ['-C', path, 'rev-list', '--count', 'HEAD', '--not', '--remotes']),
+      run('git', ['-C', path, 'rev-parse', 'HEAD']),
+      run('git', ['-C', path, 'rev-parse', '--abbrev-ref', 'HEAD']),
+      run('git', ['-C', path, 'log', '-3', '--pretty=%s']),
+    ])
+    return {
+      dirty: status ? status.split('\n').filter(Boolean).length : 0,
+      unpushed: Number(unpushedOut?.trim()) || 0,
+      headSha: head?.trim() || null,
+      branch: branch?.trim() || null,
+      commits: log ? log.split('\n').filter(Boolean) : [],
+    }
+  }
+
+  /**
+   * Every worktree of every project (not just workspaces/.worktrees/), sized with du and read for its safety
+   * facts every few minutes: it is slow. One `lsof` call for all of them tells which are in use.
+   */
+  private async refreshWorktrees() {
     if (this.sizing || (this.sizedAt && Date.now() - this.sizedAt < SIZE_MS)) return
     this.sizing = true
     try {
-      const root = join(this.workspacesDir, '.worktrees')
-      const dirs: string[] = []
-      for (const project of existsSync(root) ? readdirSync(root, { withFileTypes: true }) : []) {
-        if (!project.isDirectory()) continue
-        // A worktree is one level down, except names with a slash (sangha/lead-…): two levels.
-        for (const d of readdirSync(join(root, project.name), { withFileTypes: true })) {
-          if (!d.isDirectory()) continue
-          const path = join(root, project.name, d.name)
-          if (existsSync(join(path, '.git'))) dirs.push(path)
-          else for (const sub of readdirSync(path, { withFileTypes: true })) if (sub.isDirectory() && existsSync(join(path, sub.name, '.git'))) dirs.push(join(path, sub.name))
-        }
-      }
+      const discovered = await this.discoverWorktrees()
       const sizes = new Map<string, number>()
-      for (const dir of dirs) {
-        const out = await run('du', ['-sk', dir], 60_000)
-        sizes.set(dir, Number(out?.split('\t')[0] ?? 0) * 1024)
+      const facts = new Map<string, WorktreeFacts>()
+      for (const w of discovered) {
+        const [sizeOut, f] = await Promise.all([run('du', ['-sk', w.path], 60_000), this.gitFacts(w.path)])
+        sizes.set(w.path, Number(sizeOut?.split('\t')[0] ?? 0) * 1024)
+        facts.set(w.path, f)
       }
+      const lsofOut = await run('lsof', ['-a', '-d', 'cwd', '-Fpn'])
+      this.inUseCwds = lsofOut ? parseLsofCwds(lsofOut) : []
+      this.discovered = discovered
       this.sizes = sizes
+      this.facts = facts
       this.sizedAt = Date.now()
+      if (!this.reserveBlocked()) void this.refreshComments(discovered, facts)
     } finally {
       this.sizing = false
     }
   }
 
+  /** One batched Haiku call for every worktree whose HEAD has no comment cached yet (see `WorktreeCommentCache`). */
+  private async refreshComments(discovered: { path: string; project: string; name: string }[], facts: Map<string, WorktreeFacts>) {
+    const candidates = ownerCandidates(this.sessions(), this.nirvana())
+    const entries = discovered.map((w) => {
+      const f = facts.get(w.path)
+      const { owner } = classifyWorktree(w.path, candidates)
+      return {
+        path: w.path,
+        name: `${w.project}/${w.name}`,
+        branch: f?.branch ?? null,
+        commits: f?.commits ?? [],
+        dirty: f?.dirty ?? 0,
+        unpushed: f?.unpushed ?? 0,
+        owner: owner ? (owner.note ?? owner.title) : null,
+        headSha: f?.headSha ?? null,
+      }
+    })
+    await this.comments.refresh(entries).catch((e) => console.error('host monitor: worktree comments', e))
+  }
+
   private mapWorktrees(sessions: SessionSummary[]): HostWorktree[] {
-    const root = join(this.workspacesDir, '.worktrees')
-    return [...this.sizes]
-      .map(([path, size]) => {
-        const s = sessions.find((x) => x.cwd === path)
-        const [project, ...rest] = path.slice(root.length + 1).split('/')
+    const candidates = ownerCandidates(sessions, this.nirvana())
+    return this.discovered
+      .map((w) => {
+        const s = sessions.find((x) => x.cwd === w.path)
+        const checked = this.facts.get(w.path)
+        const facts = checked ?? { dirty: 0, unpushed: 0, headSha: null, branch: null, commits: [] }
+        const { kind, owner } = classifyWorktree(w.path, candidates)
+        const inUse = isInUse(w.path, this.inUseCwds)
+        // Sangha's own: under its workspaces, or a Claude Code sub-agent worktree (`.claude/worktrees/`) inside a repo.
+        const external = !w.path.startsWith(this.workspacesDir + '/') && !w.path.includes('/.claude/worktrees/')
+        const { removable, blocker } = removableInfo(kind, { dirty: facts.dirty, unpushed: facts.unpushed, inUse }, owner, { checked: !!checked, external })
         return {
-          path,
-          project: project ?? '',
-          name: rest.join('/'),
-          bytes: size,
+          path: w.path,
+          project: w.project,
+          name: w.name,
+          bytes: this.sizes.get(w.path) ?? 0,
           sessionId: s?.id ?? null,
           sessionTitle: s?.title ?? null,
           sessionNote: s?.note ?? null,
           status: s?.status ?? null,
+          kind,
+          owner,
+          dirty: facts.dirty,
+          unpushed: facts.unpushed,
+          inUse,
+          removable,
+          blocker,
+          removeCommand: removeCommand(w.path),
+          comment: this.comments.of(w.path, facts.headSha),
         }
       })
       .sort((a, b) => b.bytes - a.bytes)
@@ -447,7 +657,7 @@ export class HostMonitor {
 
   private async sample() {
     const now = Date.now()
-    void this.sizeWorktrees()
+    void this.refreshWorktrees()
     const cpu = this.cpu()
     const [mem, disk, ps, containers] = await Promise.all([this.memory(), this.disk(), run('ps', ['-Ao', 'pid=,pcpu=,rss=,comm=']), this.docker()])
     const reading: Reading = {

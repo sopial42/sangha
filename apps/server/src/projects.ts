@@ -87,6 +87,13 @@ export class Projects {
     return this.store.projectColor(name, ROBES)
   }
 
+  /** Every project that is a git repository: name and root, for worktree discovery (see `host.ts`). */
+  repos(): { name: string; path: string }[] {
+    return this.entries()
+      .filter((e) => isGitRepo(e.path))
+      .map((e) => ({ name: e.name, path: e.path }))
+  }
+
   async list(): Promise<ProjectInfo[]> {
     return Promise.all(
       this.entries().map(async (e) => ({
