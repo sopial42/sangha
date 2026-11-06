@@ -57,6 +57,8 @@ export type MonasteryEvent =
   /** Micro recap written when a priest stops: what was done, what is left (or awaited from you). */
   | ({ t: 'recap' } & SessionRecap)
   | { t: 'error'; message: string }
+  /** Un outil MCP a échoué sur le fil principal (jamais celui d'un novice) : ce qu'Ananda agrège par serveur. */
+  | { t: 'tool.error'; tool: string; server: string; message: string }
 
 /** An event as stored and streamed: numbered per session, timestamped. */
 export type Envelope = { seq: number; at: number; ev: MonasteryEvent }
@@ -325,6 +327,8 @@ export type GlobalEvent =
   | { kind: 'projects' }
   /** The machine Sangha runs on, sampled every few seconds (see HostReport). */
   | { kind: 'host'; host: HostReport }
+  /** Le nombre de sujets `proposed` d'Ananda a changé, ou un passage a commencé ou s'est terminé. */
+  | { kind: 'elder'; proposed: number; running: boolean }
 
 /** ok: fine; warn: getting tight; red: saturated. */
 export type HostLevel = 'ok' | 'warn' | 'red'
@@ -488,3 +492,82 @@ export const envText = (env: Record<string, string>) =>
   Object.entries(env)
     .map(([k, v]) => `${k}=${/[\s#"']/.test(v) ? JSON.stringify(v) : v}`)
     .join('\n')
+
+/** Un retour posé sur un message précis (eventSeq) ou sur la conversation entière (eventSeq: null). */
+export type Feedback = {
+  id: string
+  sessionId: string
+  eventSeq: number | null
+  rating: 'up' | 'down' | null
+  comment: string | null
+  /** Le message commenté et ses voisins, figés au moment du retour, tronqués. */
+  excerpt: string
+  createdAt: number
+  /** Null tant qu'Ananda ne l'a pas lu. */
+  processedAt: number | null
+}
+
+export type ElderTopicStatus = 'proposed' | 'accepted' | 'rejected' | 'done'
+
+/** Une suggestion d'amélioration : 'manual' | 'sangha' | 'project:<nom>'. */
+export type ElderTopic = {
+  id: string
+  scope: string
+  title: string
+  detail: string
+  /** Ids de feedback et de sessions qui l'appuient. */
+  evidence: string[]
+  status: ElderTopicStatus
+  createdAt: number
+  updatedAt: number
+}
+
+export type ElderReportKind = 'daily' | 'weekly' | 'conversation' | 'manual' | 'skipped'
+
+export type ElderReport = {
+  id: string
+  kind: ElderReportKind
+  text: string
+  /** Sujets créés ou mis à jour par ce rapport. */
+  topicIds: string[]
+  costUsd: number | null
+  tokens: number | null
+  createdAt: number
+}
+
+export type ElderChatTurn = { id: number; role: 'user' | 'elder'; text: string; createdAt: number }
+
+export type ElderSettings = {
+  enabled: boolean
+  /** Un id de ModelChoice : 'sonnet' par défaut, ou '<provider>::<model>'. */
+  model: string
+  levels: { manual: boolean; sangha: boolean; project: boolean }
+  projects: string[]
+  /** 'HH:MM', moteur fournisseur. */
+  dailyAt: string
+  /** day: 0-6 (convention JS, 4 = jeudi), at: 'HH:MM', maxWeekUsedPct: 0-100 — moteur Claude. */
+  weekly: { day: number; at: string; maxWeekUsedPct: number }
+  /** Plafond du contexte envoyé au modèle. */
+  maxInputChars: number
+  /** Borne « depuis le dernier passage » ; aussi ce qui marque une fenêtre hebdomadaire résolue. */
+  lastRunAt: number | null
+}
+
+/** Un changement partiel de réglages : les objets imbriqués peuvent être partiels eux aussi. */
+export type ElderSettingsPatch = Partial<Omit<ElderSettings, 'levels' | 'weekly'>> & {
+  levels?: Partial<ElderSettings['levels']>
+  weekly?: Partial<ElderSettings['weekly']>
+}
+
+export type ElderState = {
+  settings: ElderSettings
+  /** Best-effort : la vraie décision reste celle de `due()`. */
+  nextRunAt: number | null
+  running: boolean
+  lastError: string | null
+  topics: ElderTopic[]
+  /** Les 10 derniers. */
+  reports: ElderReport[]
+  /** Les 20 derniers messages. */
+  chat: ElderChatTurn[]
+}
