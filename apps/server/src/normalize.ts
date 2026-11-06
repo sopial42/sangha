@@ -15,6 +15,8 @@ export class Normalizer {
   // The reverse of monkByTask: a novice's own SDK task id, the one `Query.stopTask` expects (never his
   // monkId, which is his summoning tool_use id — a different string entirely).
   private taskByMonk = new Map<string, string>()
+  // tool_use id -> ce qui a été appelé et par qui (pour relier le tool_result qui suit, un message plus tard)
+  private toolUseNames = new Map<string, { name: string; parent: string | null }>()
 
   push(m: SDKMessage): MonasteryEvent[] {
     switch (m.type) {
@@ -29,6 +31,8 @@ export class Normalizer {
       case 'assistant':
         if (m.error && !m.parent_tool_use_id) return [{ t: 'error', message: ERROR_HINTS[m.error] ?? `Claude error: ${m.error}` }]
         return this.assistant(m.message.content, m.parent_tool_use_id)
+      case 'user':
+        return this.toolResults(m)
       case 'result':
         return [
           {
@@ -107,10 +111,11 @@ export class Normalizer {
   private assistant(content: unknown, parent: string | null): MonasteryEvent[] {
     if (!Array.isArray(content)) return []
     const out: MonasteryEvent[] = []
-    for (const block of content as Array<{ type: string; text?: string; name?: string; input?: unknown }>) {
+    for (const block of content as Array<{ type: string; text?: string; name?: string; input?: unknown; id?: string }>) {
       if (block.type === 'text' && block.text) {
         out.push(parent ? { t: 'monk.text', monkId: parent, text: block.text } : { t: 'buddha.text', text: block.text })
       } else if (block.type === 'tool_use' && block.name) {
+        if (block.id) this.toolUseNames.set(block.id, { name: block.name, parent })
         if (!parent && SUMMON_TOOLS.has(block.name)) continue
         const summary = summarizeInput(block.input)
         out.push(parent ? { t: 'monk.tool', monkId: parent, tool: block.name, summary } : { t: 'buddha.tool', tool: block.name, summary })
@@ -121,6 +126,21 @@ export class Normalizer {
           if (wake) out.push(wake)
         }
       }
+    }
+    return out
+  }
+
+  private toolResults(m: Extract<SDKMessage, { type: 'user' }>): MonasteryEvent[] {
+    const content = m.message.content
+    if (!Array.isArray(content)) return []
+    const out: MonasteryEvent[] = []
+    for (const block of content as Array<{ type: string; tool_use_id?: string; is_error?: boolean; content?: unknown }>) {
+      if (block.type !== 'tool_result' || !block.is_error || !block.tool_use_id) continue
+      const used = this.toolUseNames.get(block.tool_use_id)
+      if (!used || used.parent) continue // seuls les outils de son propre fil nourrissent le bloc Sangha d'Ananda
+      const parts = used.name.split('__')
+      if (parts.length < 2 || parts[0] !== 'mcp') continue // pas un outil MCP : Ananda ne suit que les échecs de serveur
+      out.push({ t: 'tool.error', tool: used.name, server: parts[1]!, message: toolErrorMessage(block.content) })
     }
     return out
   }
@@ -217,6 +237,15 @@ export function summarizeInput(input: unknown): string {
 }
 
 const truncate = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
+
+function toolErrorMessage(content: unknown): string {
+  if (typeof content === 'string') return truncate(content.replace(/\s+/g, ' ').trim(), 200)
+  if (Array.isArray(content)) {
+    const text = content.find((b): b is { type: string; text?: string } => typeof b === 'object' && b !== null && (b as { type?: string }).type === 'text')?.text
+    if (typeof text === 'string') return truncate(text.replace(/\s+/g, ' ').trim(), 200)
+  }
+  return 'échec'
+}
 
 type RateLimitInfo = Extract<SDKMessage, { type: 'rate_limit_event' }>['rate_limit_info'] & {
   unifiedWindows?: Record<string, { utilization?: number; resetsAt?: number }>

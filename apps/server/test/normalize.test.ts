@@ -175,3 +175,41 @@ describe('nextCronFire', () => {
     expect(nextCronFire('not a cron', Date.now())).toBeNull()
   })
 })
+
+describe('Normalizer on MCP tool failures', () => {
+  const toolUse = (id: string, name: string, parent: string | null = null) => ({
+    type: 'assistant',
+    parent_tool_use_id: parent,
+    message: { content: [{ type: 'tool_use', id, name, input: {} }] },
+  })
+  const toolResult = (toolUseId: string, isError: boolean, content: unknown = 'boom', parent: string | null = null) => ({
+    type: 'user',
+    parent_tool_use_id: parent,
+    message: { content: [{ type: 'tool_result', tool_use_id: toolUseId, is_error: isError, content }] },
+  })
+
+  it('reports an MCP tool failure on the main thread, with its server', () => {
+    const n = new Normalizer()
+    n.push(toolUse('toolu_1', 'mcp__bitbucket__get_pr') as never)
+    const evs = n.push(toolResult('toolu_1', true, 'timeout') as never)
+    expect(evs).toEqual([{ t: 'tool.error', tool: 'mcp__bitbucket__get_pr', server: 'bitbucket', message: 'timeout' }])
+  })
+
+  it('ignores a successful tool result', () => {
+    const n = new Normalizer()
+    n.push(toolUse('toolu_1', 'mcp__bitbucket__get_pr') as never)
+    expect(n.push(toolResult('toolu_1', false) as never)).toEqual([])
+  })
+
+  it('ignores a non-MCP tool failure (Bash, Read…)', () => {
+    const n = new Normalizer()
+    n.push(toolUse('toolu_1', 'Bash') as never)
+    expect(n.push(toolResult('toolu_1', true) as never)).toEqual([])
+  })
+
+  it('ignores a novice’s own tool failure (parent set)', () => {
+    const n = new Normalizer()
+    n.push(toolUse('toolu_1', 'mcp__bitbucket__get_pr', 'toolu_monk') as never)
+    expect(n.push(toolResult('toolu_1', true, 'boom', 'toolu_monk') as never)).toEqual([])
+  })
+})
