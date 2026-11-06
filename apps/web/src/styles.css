@@ -4194,3 +4194,174 @@ a.icon-btn.sv-newtab {
     border-radius: 2px;
   }
 }
+
+/* Ananda's panel (see ElderDialog): his status line, sujets/rapports/discussion/réglages behind a
+   segmented tab bar reused from elsewhere in Sangha (Source du projet, Mode d'autonomie…). */
+.elder-dialog {
+  display: grid;
+  gap: 12px;
+}
+
+.elder-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.elder-status p {
+  margin: 0;
+}
+
+/* `.segmented` is built for 2-3 items in one row; Ananda's tabs (4) and filters (5) wrap instead of
+   squeezing each label unreadably narrow on a phone-wide modal. */
+.elder-tabs,
+.elder-filters {
+  flex-wrap: wrap;
+}
+
+.elder-tabs button,
+.elder-filters button {
+  flex: 1 1 auto;
+}
+
+.elder-filters {
+  margin-bottom: 4px;
+}
+
+.elder-scope + .elder-scope {
+  margin-top: 14px;
+}
+
+.elder-scope h4 {
+  margin: 0 0 6px;
+  font: 700 14px var(--serif);
+  color: var(--gold);
+}
+
+.elder-scope ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.elder-topic {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.elder-topic-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.elder-topic p {
+  margin: 4px 0;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.elder-topic-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.elder-reports {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.elder-reports li {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.elder-reports p {
+  margin: 4px 0 0;
+}
+
+.elder-report-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.elder-report-head time {
+  font-variant-numeric: tabular-nums;
+}
+
+.elder-chat {
+  display: grid;
+  gap: 10px;
+}
+
+.elder-chat ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* Reuses the conversation's own bubble look (see .msg-user / .msg-buddha): his word and yours read the
+   same way here as anywhere else in Sangha. */
+.elder-chat .msg {
+  max-width: 88%;
+}
+
+.elder-chat-form {
+  display: flex;
+  gap: 8px;
+}
+
+.elder-chat-form input {
+  flex: 1;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--ink);
+  font: inherit;
+}
+
+.elder-settings fieldset {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin: 0;
+}
+
+.elder-weekly-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.elder-weekly-row label {
+  flex: 1 1 140px;
+  min-width: 0;
+}

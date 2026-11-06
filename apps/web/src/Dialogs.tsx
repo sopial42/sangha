@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { providerEnv, shellExports, type CostReport, type GlobalMcp, type LibraryMcp, type NirvanaEntry, type NirvanaSearchResult, type ProjectSuggestion, type Provider, envText, parseEnvText } from '@sangha/shared'
+import { providerEnv, shellExports, type CostReport, type ElderSettingsPatch, type ElderState, type ElderTopic, type ElderTopicStatus, type GlobalMcp, type LibraryMcp, type NirvanaEntry, type NirvanaSearchResult, type ProjectSuggestion, type Provider, envText, parseEnvText } from '@sangha/shared'
 import { ApiError, api, lotusFailure, openSession } from './api'
 import { agentTitle, formatCost, formatTime, priestLabel, PriestName, robeOf, robeOfAgent } from './priests'
 import { useApp } from './store'
@@ -1096,6 +1096,321 @@ function McpLibraryDialog({ onClose }: { onClose: () => void }) {
   )
 }
 
+const ELDER_STATUS_LABEL: Record<ElderTopicStatus | 'all', string> = { all: 'Tous', proposed: 'Proposés', accepted: 'Acceptés', rejected: 'Rejetés', done: 'Faits' }
+const ELDER_WEEKDAYS = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi']
+const ELDER_LEVEL_LABEL: Record<'manual' | 'sangha' | 'project', string> = { manual: 'Retours manuels', sangha: 'Sangha', project: 'Projets' }
+
+/** 'manual' → Retours manuels, 'sangha' → Sangha, 'project:<nom>' → Projet <nom>. */
+function elderScopeLabel(scope: string): string {
+  if (scope === 'manual') return 'Retours manuels'
+  if (scope === 'sangha') return 'Sangha'
+  return /^project:(.+)$/.exec(scope)?.[1] ? `Projet ${/^project:(.+)$/.exec(scope)![1]}` : scope
+}
+
+/** A topic's evidence: a link to the conversation when it's a session still known here, a quiet word otherwise. */
+function ElderEvidence({ evidence }: { evidence: string[] }) {
+  const sessions = useApp((s) => s.sessions)
+  if (!evidence.length) return null
+  return (
+    <p className="muted small">
+      Preuves :{' '}
+      {evidence.map((id, i) => (
+        <span key={id}>
+          {i > 0 && ', '}
+          {sessions[id] ? (
+            <button type="button" className="text-link" onClick={() => openSession(id)}>
+              {priestLabel(sessions[id]!)}
+            </button>
+          ) : (
+            'un retour'
+          )}
+        </span>
+      ))}
+    </p>
+  )
+}
+
+/**
+ * Ananda's panel: his suggestions grouped by where they come from, his latest reports, a plain
+ * discussion with him, and his own réglages — every one a real control (a model picker shared with a
+ * priest's own, the projects you actually follow as checkboxes, a day and an hour for the weekly
+ * pass), never a raw string to type by hand.
+ */
+function ElderDialog({ onClose }: { onClose: () => void }) {
+  const projects = useApp((s) => s.projects)
+  const models = useApp((s) => s.models)
+  const elderBadge = useApp((s) => s.elderBadge)
+  const [state, setState] = useState<ElderState | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<'topics' | 'reports' | 'chat' | 'settings'>('topics')
+  const [statusFilter, setStatusFilter] = useState<ElderTopicStatus | 'all'>('all')
+  const [chatText, setChatText] = useState('')
+  const [chatBusy, setChatBusy] = useState(false)
+  const [meditating, setMeditating] = useState(false)
+
+  const load = () => api.elder().then(setState, (e: unknown) => setError(message(e)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => void load(), [])
+  // His badge changed (a pass started, ended, or a sujet count moved): the open panel follows along.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => void (state && load()), [elderBadge?.proposed, elderBadge?.running])
+
+  const vote = (id: string, v: 'up' | 'down') => api.voteElderTopic(id, v).then(load, (e: unknown) => setError(message(e)))
+  const markDone = (id: string) => api.doneElderTopic(id).then(load, (e: unknown) => setError(message(e)))
+  const meditateNow = async () => {
+    setMeditating(true)
+    setError(null)
+    try {
+      await api.runElderNow()
+      await load()
+    } catch (e) {
+      setError(message(e))
+    } finally {
+      setMeditating(false)
+    }
+  }
+  const sendChat = async () => {
+    const text = chatText.trim()
+    if (!text) return
+    setChatBusy(true)
+    setError(null)
+    try {
+      await api.askElder(text)
+      setChatText('')
+      await load()
+    } catch (e) {
+      setError(message(e))
+    } finally {
+      setChatBusy(false)
+    }
+  }
+  const saveSettings = (patch: ElderSettingsPatch) => api.saveElderSettings(patch).then(load, (e: unknown) => setError(message(e)))
+  const toggleProject = (name: string) => {
+    if (!state) return
+    const next = state.settings.projects.includes(name) ? state.settings.projects.filter((p) => p !== name) : [...state.settings.projects, name]
+    saveSettings({ projects: next })
+  }
+
+  if (!state)
+    return (
+      <Modal onClose={onClose} title="Ananda">
+        {error ? <p className="form-error">{error}</p> : <p className="muted">Chargement…</p>}
+      </Modal>
+    )
+
+  const byScope = (topics: ElderTopic[]) => {
+    const groups = new Map<string, ElderTopic[]>()
+    for (const t of topics) groups.set(t.scope, [...(groups.get(t.scope) ?? []), t])
+    return [...groups.entries()]
+  }
+  const topics = state.topics.filter((t) => statusFilter === 'all' || t.status === statusFilter)
+  const engine = state.settings.model.includes('::') ? 'provider' : 'claude'
+
+  return (
+    <Modal onClose={onClose} title="Ananda, le vieux sage">
+      <div className="elder-dialog">
+        <div className="elder-status">
+          <p>
+            {state.running
+              ? 'Il médite en ce moment…'
+              : state.settings.enabled
+                ? `Prochain passage : ${state.nextRunAt ? formatTime(state.nextRunAt) : 'à déterminer'}`
+                : 'Désactivé pour l’instant.'}
+          </p>
+          <button type="button" className="btn btn-ghost" disabled={state.running || meditating} onClick={() => void meditateNow()}>
+            {meditating || state.running ? 'Médite…' : 'Médite maintenant'}
+          </button>
+        </div>
+        {state.lastError && <p className="form-error">Dernière erreur d’Ananda : {state.lastError}</p>}
+        {error && <p className="form-error">{error}</p>}
+
+        <nav className="segmented elder-tabs" role="tablist" aria-label="Section du panneau d’Ananda">
+          {(['topics', 'reports', 'chat', 'settings'] as const).map((k) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>
+              {{ topics: 'Sujets', reports: 'Rapports', chat: 'Discussion', settings: 'Réglages' }[k]}
+            </button>
+          ))}
+        </nav>
+
+        {tab === 'topics' &&
+          (topics.length === 0 ? (
+            <p className="muted">Aucun sujet {statusFilter === 'all' ? '' : ELDER_STATUS_LABEL[statusFilter].toLowerCase()} pour l’instant.</p>
+          ) : null)}
+        {tab === 'topics' && (
+          <div className="elder-topics">
+            <div className="segmented elder-filters" role="tablist" aria-label="Filtrer les sujets par statut">
+              {(['all', 'proposed', 'accepted', 'rejected', 'done'] as const).map((f) => (
+                <button key={f} type="button" role="tab" aria-selected={statusFilter === f} className={statusFilter === f ? 'active' : ''} onClick={() => setStatusFilter(f)}>
+                  {ELDER_STATUS_LABEL[f]}
+                </button>
+              ))}
+            </div>
+            {byScope(topics).map(([scope, list]) => (
+              <section key={scope} className="elder-scope">
+                <h4>{elderScopeLabel(scope)}</h4>
+                <ul>
+                  {list.map((t) => (
+                    <li key={t.id} className="elder-topic">
+                      <div className="elder-topic-head">
+                        <b>{t.title}</b>
+                        <span className="muted small">({ELDER_STATUS_LABEL[t.status].toLowerCase()})</span>
+                      </div>
+                      <p>{t.detail}</p>
+                      <ElderEvidence evidence={t.evidence} />
+                      <div className="elder-topic-actions">
+                        <button type="button" className={`icon-btn${t.status === 'accepted' ? ' active-up' : ''}`} onClick={() => vote(t.id, 'up')} aria-pressed={t.status === 'accepted'} aria-label="Approuver ce sujet">
+                          👍
+                        </button>
+                        <button type="button" className={`icon-btn${t.status === 'rejected' ? ' active-down' : ''}`} onClick={() => vote(t.id, 'down')} aria-pressed={t.status === 'rejected'} aria-label="Rejeter ce sujet">
+                          👎
+                        </button>
+                        {t.status === 'accepted' && (
+                          <button type="button" className="text-link" onClick={() => markDone(t.id)}>
+                            Marquer fait
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        )}
+
+        {tab === 'reports' &&
+          (state.reports.length === 0 ? (
+            <p className="muted">Pas encore de rapport.</p>
+          ) : (
+            <ul className="elder-reports">
+              {state.reports.map((r) => (
+                <li key={r.id}>
+                  <div className="elder-report-head">
+                    <time>{formatTime(r.createdAt)}</time>
+                    <span className="muted small">
+                      {{ daily: 'quotidien', weekly: 'hebdomadaire', conversation: 'fin de conversation', manual: 'médite maintenant', skipped: 'semaine sautée' }[r.kind]}
+                    </span>
+                  </div>
+                  <p>{r.text}</p>
+                </li>
+              ))}
+            </ul>
+          ))}
+
+        {tab === 'chat' && (
+          <div className="elder-chat">
+            <ul>
+              {state.chat.length === 0 && <li className="muted small">Rien dit pour l’instant : pose-lui une question.</li>}
+              {state.chat.map((h) => (
+                <li key={h.id} className={h.role === 'user' ? 'msg msg-user' : 'msg msg-buddha'}>
+                  {h.text}
+                </li>
+              ))}
+            </ul>
+            <form
+              className="elder-chat-form"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void sendChat()
+              }}
+            >
+              <input value={chatText} onChange={(e) => setChatText(e.target.value)} placeholder="Une question pour Ananda…" disabled={chatBusy} />
+              <button type="submit" className="btn btn-primary" disabled={chatBusy || !chatText.trim()}>
+                Envoyer
+              </button>
+            </form>
+          </div>
+        )}
+
+        {tab === 'settings' && (
+          <div className="elder-settings form">
+            <label className="inline-radio">
+              <input type="checkbox" checked={state.settings.enabled} onChange={(e) => saveSettings({ enabled: e.target.checked })} /> Activé
+            </label>
+            <label>
+              Moteur
+              <select value={state.settings.model} onChange={(e) => saveSettings({ model: e.target.value })}>
+                {!models.some((m) => m.id === state.settings.model) && <option value={state.settings.model}>{state.settings.model}</option>}
+                {models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="hint">
+              {engine === 'claude'
+                ? 'Sur l’abonnement : passage hebdomadaire, sous garde de quota.'
+                : 'Sur un fournisseur : passage quotidien, et à la fin d’une conversation qui a un retour non traité.'}
+            </p>
+            <fieldset>
+              <legend>Ce qu’il relit</legend>
+              {(['manual', 'sangha', 'project'] as const).map((lvl) => (
+                <label key={lvl} className="inline-radio">
+                  <input type="checkbox" checked={state.settings.levels[lvl]} onChange={(e) => saveSettings({ levels: { [lvl]: e.target.checked } })} /> {ELDER_LEVEL_LABEL[lvl]}
+                </label>
+              ))}
+            </fieldset>
+            {state.settings.levels.project && (
+              <fieldset>
+                <legend>Projets suivis</legend>
+                {projects.length === 0 ? (
+                  <p className="hint">Aucun projet pour l’instant.</p>
+                ) : (
+                  projects.map((p) => (
+                    <label key={p.name} className="inline-radio">
+                      <input type="checkbox" checked={state.settings.projects.includes(p.name)} onChange={() => toggleProject(p.name)} /> {p.name}
+                    </label>
+                  ))
+                )}
+              </fieldset>
+            )}
+            <label>
+              Heure quotidienne <span className="muted small">(moteur fournisseur)</span>
+              <input type="time" value={state.settings.dailyAt} onChange={(e) => saveSettings({ dailyAt: e.target.value })} />
+            </label>
+            <fieldset>
+              <legend>
+                Passage hebdomadaire <span className="muted small">(moteur Claude)</span>
+              </legend>
+              <div className="elder-weekly-row">
+                <label>
+                  Jour
+                  <select value={state.settings.weekly.day} onChange={(e) => saveSettings({ weekly: { day: Number(e.target.value) } })}>
+                    {ELDER_WEEKDAYS.map((d, i) => (
+                      <option key={d} value={i}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Heure
+                  <input type="time" value={state.settings.weekly.at} onChange={(e) => saveSettings({ weekly: { at: e.target.value } })} />
+                </label>
+                <label>
+                  Seuil de quota (% max utilisé)
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={state.settings.weekly.maxWeekUsedPct}
+                    onChange={(e) => saveSettings({ weekly: { maxWeekUsedPct: Number(e.target.value) } })}
+                  />
+                </label>
+              </div>
+            </fieldset>
+            <label>
+              Plafond du contexte envoyé <span className="muted small">(caractères)</span>
+              <input type="number" min={1000} step={1000} value={state.settings.maxInputChars} onChange={(e) => saveSettings({ maxInputChars: Number(e.target.value) })} />
+            </label>
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 export function Dialogs() {
   const { dialog, set } = useApp()
   const close = () => set({ dialog: null })
@@ -1117,7 +1432,7 @@ export function Dialogs() {
   // Reached from the MCP dialog: closing it goes back there.
   if (dialog.kind === 'mcp-library') return <McpLibraryDialog onClose={() => set({ dialog: { kind: 'mcp' } })} />
   if (dialog.kind === 'dismiss') return <Dismiss id={dialog.id} working={dialog.working} onClose={close} />
-  return null // 'elder': routed once ElderDialog lands
+  return <ElderDialog onClose={close} />
 }
 
 /**
