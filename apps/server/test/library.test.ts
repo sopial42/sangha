@@ -21,6 +21,21 @@ describe('the MCP library', () => {
     expect(lib.catalog()).toEqual({})
   })
 
+  it('switches back on after a restart what Sangha still has on, when its credentials are there', () => {
+    const lib = new McpLibrary(envFile())
+    lib.restore({ 'bitbucket-stdio': true })
+    expect(lib.catalog()).toEqual({}) // no credentials: stays off, silently
+
+    const path = envFile()
+    new McpLibrary(path).set('bitbucket-stdio', { values: creds })
+    const off = new McpLibrary(path)
+    off.restore({ 'bitbucket-stdio': false, codegraph: true })
+    expect(off.catalog()).toEqual({})
+    const on = new McpLibrary(path)
+    on.restore({ 'bitbucket-stdio': true })
+    expect(Object.keys(on.catalog())).toEqual(['bitbucket-stdio'])
+  })
+
   it('keeps credentials in .env but the switch in memory only', () => {
     const path = envFile('CLAUDE_CODE_OAUTH_TOKEN=abc\nBITBUCKET_MCP_TOKEN=\n')
     const lib = new McpLibrary(path)

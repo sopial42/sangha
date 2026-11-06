@@ -48,8 +48,9 @@ export function withEnv(text: string, values: Record<string, string>): string {
 }
 
 /**
- * Sangha's own MCP servers. Switched on in memory only (a restart switches them all off); their credentials
- * live in `~/.config/sangha/.env`, read again each time so they survive restarts and a server started without it.
+ * Sangha's own MCP servers. Switched on in memory, and switched back on at start (`restore`) when Sangha's
+ * common switch still has them on; their credentials live in `~/.config/sangha/.env`, read again each time
+ * so they survive restarts and a server started without it.
  */
 export class McpLibrary {
   private readonly active = new Set<string>()
@@ -114,6 +115,22 @@ export class McpLibrary {
       const missing = entry.fields.filter((f) => !f.optional && !saved[f.key])
       if (missing.length) throw new Error(`il manque : ${missing.map((f) => f.label).join(', ')}`)
       this.active.add(name)
+    }
+  }
+
+  /**
+   * After a restart: switch back on each server Sangha's common switch (`prefs`) still has on — activating
+   * one turns that switch on, which outlives the process; otherwise its priests would find it gone while
+   * Sangha still shows it on. One whose credentials went missing stays off, silently.
+   */
+  restore(prefs: Record<string, boolean>): void {
+    for (const e of this.entries) {
+      if (!prefs[e.name]) continue
+      try {
+        this.set(e.name, { active: true })
+      } catch {
+        // its credentials are gone: off, until you give them again
+      }
     }
   }
 

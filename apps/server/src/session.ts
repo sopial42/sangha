@@ -360,6 +360,7 @@ export class Sessions {
     this.quota = store.latestQuota()
     this.reserve = reserveState(this.quotaReserveSetting.get(), this.quota, nowSec())
     this.scheduleReserveTimer()
+    library.restore(store.mcpPrefs())
     // No session process survives a server restart: novices still marked as working died with it.
     for (const row of store.listSessions()) {
       for (const monkId of store.danglingNovices(row.id)) {
