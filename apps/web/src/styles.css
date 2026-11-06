@@ -3929,11 +3929,17 @@ a.icon-btn.sv-newtab {
 /* Phone-wide panel: his tags and the action buttons each hold to one line that scrolls sideways,
    instead of stacking rows of buttons above the conversation. */
 @container sv (max-width: 640px) {
+  /* Without min-width: 0 the flex item keeps its content's width, so the row never scrolls: it gets clipped. */
+  .sv-act-col {
+    min-width: 0;
+  }
+
   .sv-tags,
   .sv-actions {
     flex-wrap: nowrap;
     overflow-x: auto;
-    scrollbar-width: none;
+    min-width: 0;
+    scrollbar-width: thin;
   }
 
   .sv-tags > *,
@@ -3946,6 +3952,24 @@ a.icon-btn.sv-newtab {
   }
 
   .sv-actions .btn {
+    flex-shrink: 0;
     white-space: nowrap;
+  }
+
+  /* Firefox gets scrollbar-width: thin above; Chrome/Safari need their own thin, discreet bar. */
+  .sv-tags::-webkit-scrollbar,
+  .sv-actions::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .sv-tags::-webkit-scrollbar-track,
+  .sv-actions::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .sv-tags::-webkit-scrollbar-thumb,
+  .sv-actions::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border-radius: 2px;
   }
 }
