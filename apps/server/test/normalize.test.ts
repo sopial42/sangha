@@ -212,4 +212,14 @@ describe('Normalizer on MCP tool failures', () => {
     n.push(toolUse('toolu_1', 'mcp__bitbucket__get_pr', 'toolu_monk') as never)
     expect(n.push(toolResult('toolu_1', true, 'boom', 'toolu_monk') as never)).toEqual([])
   })
+
+  it('forgets a tool_use once its result arrives, success included (no unbounded growth over a long session)', () => {
+    const n = new Normalizer()
+    n.push(toolUse('toolu_1', 'mcp__bitbucket__get_pr') as never)
+    n.push(toolResult('toolu_1', false) as never) // succès : consomme l'entrée
+    // Un tool_result égaré qui reprend le même id (un comportement du SDK qu'on ne doit pas supposer impossible)
+    // ne doit retrouver ni nom ni serveur : l'entrée a déjà été oubliée.
+    const evs = n.push(toolResult('toolu_1', true, 'late') as never)
+    expect(evs).toEqual([])
+  })
 })

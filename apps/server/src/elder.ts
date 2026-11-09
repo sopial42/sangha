@@ -8,6 +8,16 @@ import { due, type PendingSession } from './elderSchedule'
 import { parseElderResponse } from './elderParse'
 import { UserError } from './session'
 
+const BACKOFF_STEPS_HOURS = [1, 2, 4, 6]
+/** Recul après un échec consécutif d'un passage programmé (quotidien ou hebdomadaire) : 1 h, 2 h, 4 h, plafonné à 6 h. */
+export function elderBackoffMs(consecutiveFailures: number): number {
+  const step = Math.min(consecutiveFailures, BACKOFF_STEPS_HOURS.length) - 1
+  return BACKOFF_STEPS_HOURS[Math.max(0, step)]! * 3600_000
+}
+
+/** Un passage « fin de conversation » n'est plus retenté pour une même session passé ce nombre d'échecs de suite. */
+const CONVERSATION_FAILURE_LIMIT = 3
+
 export const DEFAULT_ELDER_SETTINGS: ElderSettings = {
   // Le passage hebdomadaire est déjà protégé par la garde de quota : activer Ananda par défaut ne mange rien.
   enabled: true,
@@ -100,6 +110,13 @@ export class Elder {
   private lastError: string | null = null
   private timer: NodeJS.Timeout | null = null
   private listeners = new Set<(ev: Extract<GlobalEvent, { kind: 'elder' }>) => void>()
+  // Recul après l'échec d'un passage programmé (quotidien/hebdomadaire) : en mémoire suffit, remis à zéro au
+  // succès. « Médite maintenant » n'appelle jamais `tick()`/`due()` : il ignore ce recul par construction.
+  private consecutiveFailures = 0
+  private retryAfter: number | null = null
+  // Échecs de suite d'un passage « fin de conversation », par session : passé la limite, due() ne la reproposera
+  // plus (ses retours restent en attente : le prochain passage quotidien/hebdomadaire, non restreint, les reprendra).
+  private conversationFailures = new Map<string, number>()
 
   constructor(
     private store: Store,
@@ -156,9 +173,14 @@ export class Elder {
     return [...live, ...archived]
   }
 
-  private async tick() {
+  private blockedSessions(): Set<string> {
+    return new Set([...this.conversationFailures.entries()].filter(([, n]) => n >= CONVERSATION_FAILURE_LIMIT).map(([id]) => id))
+  }
+
+  /** Décide si un passage est dû et le lance. Piloté par le minuteur ; exposé (plutôt que privé) pour les tests. */
+  async tick() {
     if (this.running) return
-    const pass = due(Date.now(), this.settings(), this.quota(), this.pendingSessions(Date.now()))
+    const pass = due(Date.now(), this.settings(), this.quota(), this.pendingSessions(Date.now()), { retryAfter: this.retryAfter, blockedSessions: this.blockedSessions() })
     if (!pass) return
     if (pass.kind === 'skipped') return this.skip()
     await this.runPass(pass.kind, pass.kind === 'conversation' ? pass.sessionId : undefined)
@@ -189,17 +211,39 @@ export class Elder {
       const parsed = parseElderResponse(result.output, knownIds, settings.levels, settings.projects)
       if (!parsed) throw new Error('réponse du modèle invalide')
       this.applyAnswer(kind, parsed, result.costUsd, result.tokens)
-      const pending = sessionId ? this.store.pendingFeedback().filter((f) => f.sessionId === sessionId) : this.store.pendingFeedback()
-      this.store.markFeedbackProcessed(pending.map((f) => f.id), Date.now())
+      // Ne marque traités que les retours réellement envoyés au modèle (après troncature et limite de 50) :
+      // un retour écarté par `buildContext` n'a jamais été lu, il ne doit pas disparaître de la file.
+      this.store.markFeedbackProcessed(ctx.feedbackIds, Date.now())
       // Une « fin de conversation » ne couvre qu'une session : avancer lastRunAt lui ferait perdre, au
       // passage quotidien suivant, les résumés de projet et les signaux Sangha de la période sautée.
       if (kind !== 'conversation') this.store.setSetting('elder', { ...settings, lastRunAt: Date.now() })
+      this.onPassSettled(kind, sessionId, true)
     } catch (e) {
       this.lastError = e instanceof Error ? e.message : String(e)
       console.error('[elder]', this.lastError)
+      this.onPassSettled(kind, sessionId, false)
     } finally {
       this.running = false
       this.broadcast()
+    }
+  }
+
+  /** Tient les compteurs de recul à jour : remis à zéro au succès, armés à l'échec — jamais pour « manual »,
+   *  qui ignore le recul par construction (il ne passe jamais par `due()`). */
+  private onPassSettled(kind: ElderReportKind, sessionId: string | undefined, ok: boolean) {
+    if (kind === 'manual') return
+    if (kind === 'conversation') {
+      if (!sessionId) return
+      if (ok) this.conversationFailures.delete(sessionId)
+      else this.conversationFailures.set(sessionId, (this.conversationFailures.get(sessionId) ?? 0) + 1)
+      return
+    }
+    if (ok) {
+      this.consecutiveFailures = 0
+      this.retryAfter = null
+    } else {
+      this.consecutiveFailures++
+      this.retryAfter = Date.now() + elderBackoffMs(this.consecutiveFailures)
     }
   }
 
@@ -246,6 +290,7 @@ export class Elder {
   }
 
   addFeedback(input: { sessionId: string; eventSeq?: number; rating?: 'up' | 'down'; comment?: string }): Feedback {
+    if (input.rating !== undefined && input.rating !== 'up' && input.rating !== 'down') throw new UserError('note invalide (up ou down)')
     const f: Feedback = {
       id: randomUUID(),
       sessionId: input.sessionId,
@@ -261,7 +306,8 @@ export class Elder {
     return f
   }
 
-  /** Une question libre, hors programme : sujets ouverts, 3 derniers rapports, 20 derniers messages. */
+  /** Une question libre, hors programme : sujets ouverts, 3 derniers rapports, 20 derniers messages. N'enregistre
+   *  la question et la réponse que si le modèle a bien répondu : sinon rien n'est écrit dans la discussion. */
   async ask(text: string): Promise<{ reply: string }> {
     const settings = this.settings()
     const choice = await this.providers.choice(settings.model)
@@ -278,10 +324,22 @@ export class Elder {
     ]
       .filter(Boolean)
       .join('\n\n')
-    this.store.addElderChatMessage('user', text, Date.now())
-    const q = query({ prompt: input, options: { model: choice.model ?? choice.id, systemPrompt: SYSTEM, tools: [], settingSources: [], plugins: [], persistSession: false, maxTurns: 3, env } })
+
     let reply = ''
-    for await (const m of q) if (m.type === 'result' && m.subtype === 'success') reply = m.result
+    let detail: string | null = null
+    try {
+      const q = query({ prompt: input, options: { model: choice.model ?? choice.id, systemPrompt: SYSTEM, tools: [], settingSources: [], plugins: [], persistSession: false, maxTurns: 3, env } })
+      for await (const m of q) {
+        if (m.type !== 'result') continue
+        if (m.subtype === 'success') reply = m.result
+        else detail = `échec (${m.subtype})`
+      }
+    } catch (e) {
+      detail = e instanceof Error ? e.message : String(e)
+    }
+    if (!reply.trim()) throw new UserError(`Ananda n'a pas pu répondre : ${detail ?? 'réponse vide'}`)
+
+    this.store.addElderChatMessage('user', text, Date.now())
     this.store.addElderChatMessage('elder', reply, Date.now())
     this.broadcast()
     return { reply }

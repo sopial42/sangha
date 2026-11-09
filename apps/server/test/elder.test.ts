@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { ModelChoice, SessionSummary } from '@sangha/shared'
-import { DEFAULT_ELDER_SETTINGS, Elder, mergeElderSettings, nextVoteStatus } from '../src/elder'
+import { DEFAULT_ELDER_SETTINGS, Elder, elderBackoffMs, mergeElderSettings, nextVoteStatus } from '../src/elder'
 import { Store, type SessionRow } from '../src/db'
 import type { Providers } from '../src/providers'
 
@@ -150,5 +150,100 @@ describe('Elder.addFeedback', () => {
     const f = elder.addFeedback({ sessionId: 'a', rating: 'up' })
     expect(f.excerpt).toContain('bonjour')
     expect(store.pendingFeedback()).toHaveLength(1)
+  })
+
+  it('rejects a rating that is neither up nor down', () => {
+    const store = new Store(':memory:')
+    store.createSession(row('a'))
+    const elder = new Elder(store, fakeProviders, noSessions, () => null)
+    expect(() => elder.addFeedback({ sessionId: 'a', rating: 'maybe' as never })).toThrow()
+    expect(store.pendingFeedback()).toEqual([])
+  })
+})
+
+describe('elderBackoffMs', () => {
+  it('escalates 1h, 2h, 4h, capped at 6h for further consecutive failures', () => {
+    expect(elderBackoffMs(1)).toBe(3600_000)
+    expect(elderBackoffMs(2)).toBe(2 * 3600_000)
+    expect(elderBackoffMs(3)).toBe(4 * 3600_000)
+    expect(elderBackoffMs(4)).toBe(6 * 3600_000)
+    expect(elderBackoffMs(10)).toBe(6 * 3600_000)
+  })
+})
+
+describe('Elder.tick — backoff after a failed scheduled pass (cost loop fix)', () => {
+  it('does not retry a scheduled pass again until the backoff window has passed', async () => {
+    const store = new Store(':memory:')
+    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'down', comment: 'x', excerpt: 'x', createdAt: 1, processedAt: null })
+    store.setSetting('elder', { ...DEFAULT_ELDER_SETTINGS, enabled: true, model: 'ovh::llama-4', dailyAt: '00:00' })
+    vi.mocked(query).mockReturnValue({ [Symbol.asyncIterator]: async function* () { yield resultMessage({ nope: true }) } } as never)
+    const elder = new Elder(store, fakeProviders, noSessions, () => null)
+    await elder.tick()
+    expect(query).toHaveBeenCalledTimes(1)
+    await elder.tick()
+    expect(query).toHaveBeenCalledTimes(1) // encore dans le recul : pas de nouvel appel, pas de nouveau coût
+  })
+
+  it('"médite maintenant" ignores the backoff and still calls the model', async () => {
+    const store = new Store(':memory:')
+    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'down', comment: 'x', excerpt: 'x', createdAt: 1, processedAt: null })
+    store.setSetting('elder', { ...DEFAULT_ELDER_SETTINGS, enabled: true, model: 'ovh::llama-4', dailyAt: '00:00' })
+    vi.mocked(query).mockReturnValue({ [Symbol.asyncIterator]: async function* () { yield resultMessage({ nope: true }) } } as never)
+    const elder = new Elder(store, fakeProviders, noSessions, () => null)
+    await elder.tick() // échoue, arme le recul
+    expect(query).toHaveBeenCalledTimes(1)
+    vi.mocked(query).mockReturnValue({ [Symbol.asyncIterator]: async function* () { yield resultMessage({ report: 'r', topics: [] }) } } as never)
+    await elder.runPass('manual')
+    expect(query).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Elder.tick — a session’s conversation pass stops retrying after 3 consecutive failures', () => {
+  it('leaves its feedback pending for the next scheduled pass instead of retrying forever', async () => {
+    const store = new Store(':memory:')
+    store.createSession(row('a'))
+    store.archive('a')
+    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'down', comment: 'x', excerpt: 'x', createdAt: 1, processedAt: null })
+    store.setSetting('elder', { ...DEFAULT_ELDER_SETTINGS, enabled: true, model: 'ovh::llama-4', lastRunAt: Date.now() })
+    vi.mocked(query).mockReturnValue({ [Symbol.asyncIterator]: async function* () { yield resultMessage({ nope: true }) } } as never)
+    const elder = new Elder(store, fakeProviders, noSessions, () => null)
+    await elder.tick()
+    await elder.tick()
+    await elder.tick()
+    expect(query).toHaveBeenCalledTimes(3)
+    await elder.tick()
+    expect(query).toHaveBeenCalledTimes(3) // la 4e tentative est bloquée : 3 échecs de suite pour cette session
+    expect(store.pendingFeedback()).toHaveLength(1) // son retour reste en attente pour le prochain passage quotidien/hebdo
+  })
+})
+
+describe('Elder.ask', () => {
+  it('records the question and the reply in chat on a successful, non-empty answer', async () => {
+    const store = new Store(':memory:')
+    vi.mocked(query).mockReturnValue({ [Symbol.asyncIterator]: async function* () { yield resultMessage(undefined) } } as never)
+    const elder = new Elder(store, fakeProviders, noSessions, () => null)
+    const out = await elder.ask('Une question ?')
+    expect(out.reply).toBe('ok')
+    expect(store.elderChat().map((t) => t.text)).toEqual(['Une question ?', 'ok'])
+  })
+
+  it('records nothing and throws a readable error when the model fails to answer', async () => {
+    const store = new Store(':memory:')
+    vi.mocked(query).mockReturnValue({ [Symbol.asyncIterator]: async function* () { yield { type: 'result', subtype: 'error_max_turns', result: '' } } } as never)
+    const elder = new Elder(store, fakeProviders, noSessions, () => null)
+    await expect(elder.ask('Une question ?')).rejects.toThrow(/Ananda n'a pas pu répondre/)
+    expect(store.elderChat()).toEqual([])
+  })
+
+  it('records nothing and throws a readable error when the query itself throws', async () => {
+    const store = new Store(':memory:')
+    vi.mocked(query).mockReturnValue({
+      [Symbol.asyncIterator]: async function* () {
+        throw new Error('réseau coupé')
+      },
+    } as never)
+    const elder = new Elder(store, fakeProviders, noSessions, () => null)
+    await expect(elder.ask('Une question ?')).rejects.toThrow(/Ananda n'a pas pu répondre/)
+    expect(store.elderChat()).toEqual([])
   })
 })

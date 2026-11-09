@@ -1,13 +1,27 @@
 import type { ElderSettings } from '@sangha/shared'
 import type { Store } from './db'
 
-export type ElderContext = { text: string; newItems: number }
+export type ElderContext = { text: string; newItems: number; feedbackIds: string[] }
 
-function feedbackBlock(store: Store, sessionId: string | undefined, maxItems = 50): { text: string; count: number } {
+/**
+ * Seuls les retours entiers qui tiennent dans `maxChars` comptent comme inclus : un retour que la troncature
+ * couperait en deux ne doit jamais être marqué traité (`Elder.runPass` ne marque que `feedbackIds`), sous
+ * peine de perdre un retour qu'Ananda n'a en réalité jamais lu.
+ */
+function feedbackBlock(store: Store, sessionId: string | undefined, maxChars: number, maxItems = 50): { text: string; ids: string[] } {
   const rows = store.pendingFeedback().filter((f) => !sessionId || f.sessionId === sessionId).slice(0, maxItems)
-  if (!rows.length) return { text: '', count: 0 }
-  const lines = rows.map((f) => `- [${f.id}] ${f.rating ?? 'sans note'}${f.comment ? ` : ${f.comment}` : ''}\n  ${f.excerpt}`)
-  return { text: lines.join('\n'), count: rows.length }
+  const lines: string[] = []
+  const ids: string[] = []
+  let used = 0
+  for (const f of rows) {
+    const line = `- [${f.id}] ${f.rating ?? 'sans note'}${f.comment ? ` : ${f.comment}` : ''}\n  ${f.excerpt}`
+    const extra = line.length + (lines.length ? 1 : 0) // +1 pour le '\n' de jointure
+    if (used + extra > maxChars) break
+    lines.push(line)
+    ids.push(f.id)
+    used += extra
+  }
+  return { text: lines.join('\n'), ids }
 }
 
 function projectBlock(store: Store, projects: string[], since: number): { text: string; count: number } {
@@ -56,9 +70,11 @@ function fit(blocks: { label: string; text: string }[], max: number): string {
 }
 
 /** Le contexte envoyé au modèle, par blocs actifs selon le niveau, tronqué à `maxInputChars` (retours en priorité).
- *  `sessionId` : un passage de fin de conversation, restreint à cette session (ses retours, rien d'autre). */
+ *  `sessionId` : un passage de fin de conversation, restreint à cette session (ses retours, rien d'autre). Le
+ *  niveau « manuel » gouverne entièrement les retours, même pour un passage de fin de conversation : il n'existe
+ *  que pour eux, donc s'il est désactivé il n'y a rien à y envoyer. */
 export function buildContext(settings: ElderSettings, since: number, store: Store, sessionId?: string): ElderContext {
-  const feedback = settings.levels.manual || sessionId ? feedbackBlock(store, sessionId) : { text: '', count: 0 }
+  const feedback = settings.levels.manual ? feedbackBlock(store, sessionId, settings.maxInputChars) : { text: '', ids: [] }
   const project = !sessionId && settings.levels.project ? projectBlock(store, settings.projects, since) : { text: '', count: 0 }
   const sangha = !sessionId && settings.levels.sangha ? sanghaBlock(store, since) : { text: '', hasNew: false }
   const memory = memoryBlock(store)
@@ -72,6 +88,6 @@ export function buildContext(settings: ElderSettings, since: number, store: Stor
     ],
     settings.maxInputChars,
   )
-  const newItems = feedback.count + project.count + (sangha.hasNew ? 1 : 0)
-  return { text, newItems }
+  const newItems = feedback.ids.length + project.count + (sangha.hasNew ? 1 : 0)
+  return { text, newItems, feedbackIds: feedback.ids }
 }

@@ -135,9 +135,12 @@ export class Normalizer {
     if (!Array.isArray(content)) return []
     const out: MonasteryEvent[] = []
     for (const block of content as Array<{ type: string; tool_use_id?: string; is_error?: boolean; content?: unknown }>) {
-      if (block.type !== 'tool_result' || !block.is_error || !block.tool_use_id) continue
+      if (block.type !== 'tool_result' || !block.tool_use_id) continue
       const used = this.toolUseNames.get(block.tool_use_id)
-      if (!used || used.parent) continue // seuls les outils de son propre fil nourrissent le bloc Sangha d'Ananda
+      // Le tool_use est consommé dès que son résultat arrive, qu'il ait échoué ou réussi : sinon la carte
+      // grandirait sans fin sur une longue session (chaque appel d'outil y laisserait une entrée pour toujours).
+      this.toolUseNames.delete(block.tool_use_id)
+      if (!block.is_error || !used || used.parent) continue // seuls les outils de son propre fil nourrissent le bloc Sangha d'Ananda
       const parts = used.name.split('__')
       if (parts.length < 2 || parts[0] !== 'mcp') continue // pas un outil MCP : Ananda ne suit que les échecs de serveur
       out.push({ t: 'tool.error', tool: used.name, server: parts[1]!, message: toolErrorMessage(block.content) })

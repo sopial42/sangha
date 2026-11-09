@@ -96,3 +96,44 @@ describe('due — daily and end-of-conversation (a fournisseur)', () => {
     expect(due(noon, { ...PROVIDER_SETTINGS, lastRunAt: morning }, null, [session({ idleMs: 5 * 60_000, hasPendingFeedback: true })])).toBeNull()
   })
 })
+
+describe('due — backoff after a failed model call (retryAfter)', () => {
+  it('suppresses a weekly pass still inside the backoff window', () => {
+    expect(due(THURSDAY_NOON, SETTINGS, quota(10), [], { retryAfter: THURSDAY_NOON + 1 })).toBeNull()
+  })
+
+  it('fires again once the backoff window has passed', () => {
+    expect(due(THURSDAY_NOON, SETTINGS, quota(10), [], { retryAfter: THURSDAY_NOON - 1 })).toEqual({ kind: 'weekly' })
+  })
+
+  it('suppresses a daily pass still inside the backoff window', () => {
+    const morning = new Date(2026, 0, 5, 8, 0, 0).getTime()
+    expect(due(morning, PROVIDER_SETTINGS, null, [], { retryAfter: morning + 1 })).toBeNull()
+  })
+
+  it('does not gate a conversation pass with retryAfter: it has its own block list instead', () => {
+    const morning = new Date(2026, 0, 5, 8, 0, 0).getTime()
+    const noon = morning + 4 * 3600_000
+    const session: PendingSession = { id: 's1', archived: true, idleMs: 0, hasPendingFeedback: true }
+    expect(due(noon, { ...PROVIDER_SETTINGS, lastRunAt: morning }, null, [session], { retryAfter: noon + 1 })).toEqual({ kind: 'conversation', sessionId: 's1' })
+  })
+})
+
+describe('due — blocked sessions (repeated conversation failures)', () => {
+  it('skips a session on the block list for the conversation pass', () => {
+    const morning = new Date(2026, 0, 5, 8, 0, 0).getTime()
+    const noon = morning + 4 * 3600_000
+    const session: PendingSession = { id: 's1', archived: true, idleMs: 0, hasPendingFeedback: true }
+    expect(due(noon, { ...PROVIDER_SETTINGS, lastRunAt: morning }, null, [session], { blockedSessions: new Set(['s1']) })).toBeNull()
+  })
+})
+
+describe('due — the manual level off disables the conversation pass', () => {
+  it('never proposes a conversation pass when the manual level is off', () => {
+    const morning = new Date(2026, 0, 5, 8, 0, 0).getTime()
+    const noon = morning + 4 * 3600_000
+    const off: ElderSettings = { ...PROVIDER_SETTINGS, lastRunAt: morning, levels: { ...PROVIDER_SETTINGS.levels, manual: false } }
+    const session: PendingSession = { id: 's1', archived: true, idleMs: 0, hasPendingFeedback: true }
+    expect(due(noon, off, null, [session])).toBeNull()
+  })
+})
