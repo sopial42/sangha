@@ -3882,20 +3882,20 @@ a.icon-btn.sv-newtab {
   grid-column: 1 / -1;
 }
 
+/* Wide: a two-column grid shared by every family (subgrid), so their names line up in one column,
+   right-aligned against their buttons, whatever each row's width. */
 .sv-actions {
-  flex-direction: column;
-  align-items: flex-end;
-  flex-wrap: nowrap;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 6px 8px;
+  justify-content: end;
 }
 
 .sv-act-group {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: baseline;
-  justify-content: flex-end;
-  gap: 8px;
   padding: 0;
   border: 0;
   margin: 0;
@@ -3916,7 +3916,6 @@ a.icon-btn.sv-newtab {
 /* The family's name, quiet, before its row. */
 .sv-act-label {
   flex: none;
-  width: 56px;
   text-align: right;
   font-size: 11px;
   letter-spacing: 0.06em;
@@ -3946,6 +3945,7 @@ a.icon-btn.sv-newtab {
   }
 
   .sv-actions {
+    display: flex;
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
@@ -3954,6 +3954,9 @@ a.icon-btn.sv-newtab {
   }
 
   .sv-act-group {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 8px;
     justify-content: flex-start;
   }
 
