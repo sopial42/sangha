@@ -3,8 +3,11 @@
 export type Vec = { x: number; y: number }
 export type BeardPoint = Vec & { px: number; py: number }
 
-export const BEARD_LINKS = 26
+export const BEARD_LINKS = 55
 export const BEARD_LINK_LEN = 7
+/** Links spent falling down the chest, chin to lap, before the coil begins: exported so the drawing
+ *  side can render that stretch thicker — bushy under the chin — tapering out over the rest. */
+export const BEARD_DROP = 11
 
 const GRAVITY = 55
 const DAMPING = 0.88
@@ -19,29 +22,38 @@ const CONSTRAINT_PASSES = 8
 const SETTLE_EPS = 0.3
 
 /**
- * Where every link sits, coiled, when nothing pulls on it: point 0 at `anchor` (the chin), the rest
- * spiralling outward around it. Each angle step is solved exactly (law of cosines) so the chord to the
- * previous point is exactly `len`, whatever the current radius — so this rest shape and the chain's own
- * distance constraint (see `step`) never fight each other, and the coil holds its shape instead of
- * jittering or drifting off `rest` forever.
+ * Where every link sits when nothing pulls on it: point 0 at `anchor` (the chin), falling in a
+ * straight line down the chest for `BEARD_DROP` links, then coiling into a big spiral resting on the
+ * ground in front of him. Every angle step past the fall is solved exactly (law of cosines) so the
+ * chord to the previous point is exactly `len`, whatever the current radius — so this rest shape and
+ * the chain's own distance constraint (see `step`) never fight each other, and the coil holds its
+ * shape instead of jittering or drifting off `rest` forever.
  */
 export function beardRest(anchor: Vec, links = BEARD_LINKS, len = BEARD_LINK_LEN): Vec[] {
+  const dir = { x: 0.4, y: 1 } // down and to one side, clear of his crossed legs and feet
+  const n = Math.hypot(dir.x, dir.y)
+  const ux = dir.x / n
+  const uy = dir.y / n
   const pts: Vec[] = [{ ...anchor }]
-  let angle = -Math.PI / 2 // starts pointing straight up from the chin
+  const drop = Math.min(BEARD_DROP, links - 2)
+  for (let i = 1; i <= drop; i++) pts.push({ x: anchor.x + ux * len * i, y: anchor.y + uy * len * i })
+  const center = pts[pts.length - 1]! // where the beard lands and starts coiling
+  let angle = 0.4 // opens to the side, not straight back up through the fall
   let radius = len
-  pts.push({ x: anchor.x + Math.cos(angle) * radius, y: anchor.y + Math.sin(angle) * radius })
-  const growth = len * 0.12 // how much looser each successive loop sits
-  for (let i = 2; i < links; i++) {
-    const prevRadius = radius
-    radius += growth
-    const cosDTheta = (prevRadius * prevRadius + radius * radius - len * len) / (2 * prevRadius * radius)
-    angle += Math.acos(Math.min(1, Math.max(-1, cosDTheta)))
-    pts.push({ x: anchor.x + Math.cos(angle) * radius, y: anchor.y + Math.sin(angle) * radius })
+  const growth = len * 0.1 // how much looser each successive loop sits: a big coil, 2-3 turns wide
+  for (let i = drop + 1; i < links; i++) {
+    if (i > drop + 1) {
+      const prevRadius = radius
+      radius += growth
+      const cosDTheta = (prevRadius * prevRadius + radius * radius - len * len) / (2 * prevRadius * radius)
+      angle += Math.acos(Math.min(1, Math.max(-1, cosDTheta)))
+    }
+    pts.push({ x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius })
   }
   return pts
 }
 
-/** A beard already at rest, coiled under the chin: Verlet pairs with no initial velocity. */
+/** A beard already at rest, fallen and coiled on the ground: Verlet pairs with no initial velocity. */
 export function initBeard(anchor: Vec, links = BEARD_LINKS, len = BEARD_LINK_LEN): BeardPoint[] {
   return beardRest(anchor, links, len).map((p) => ({ ...p, px: p.x, py: p.y }))
 }

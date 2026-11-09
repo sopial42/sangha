@@ -549,7 +549,7 @@ export function Monastery() {
 
       {/* Ananda, in the courtyard's free corner: a wrapping translate (no transform of his own), same
           pattern as a pavilion, so his hover-grow can scale him directly. */}
-      <g transform={`translate(${elderSpot.x} ${elderSpot.y})`}>
+      <g transform={`translate(${elderSpot.x} ${elderSpot.y}) scale(${elderSpot.scale})`}>
         <Elder proposed={elderBadge?.proposed ?? 0} running={elderBadge?.running ?? false} onOpen={() => set({ dialog: { kind: 'elder' } })} />
       </g>
 
