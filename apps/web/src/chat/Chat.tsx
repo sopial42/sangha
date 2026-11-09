@@ -25,6 +25,15 @@ const ReplyButton = ({ onReply }: { onReply: (msg: HTMLElement | null) => void }
   </button>
 )
 
+/** Ananda in a glyph: an old sage, bushy brows over a long pointed beard. Takes the button's colour. */
+const AnandaIcon = () => (
+  <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <circle cx="8" cy="5.4" r="3.6" />
+    <path d="M5.7 4.8q.8-.6 1.6 0M8.7 4.8q.8-.6 1.6 0" />
+    <path d="M4.5 6.6Q3.5 8.8 4.6 10.8Q5.8 13.4 8 15.2Q10.2 13.4 11.4 10.8Q12.5 8.8 11.5 6.6Q10.8 8.2 9.5 7.8Q8.6 7.5 8 8Q7.4 7.5 6.5 7.8Q5.2 8.2 4.5 6.6Z" fill="currentColor" strokeWidth="0.9" />
+  </svg>
+)
+
 const Time = ({ at }: { at: number }) =>
   at ? (
     <time className="msg-time" dateTime={new Date(at).toISOString()}>
@@ -105,7 +114,7 @@ export function FeedbackControl({ sessionId, eventSeq, commented, onDone }: { se
         aria-label={commented ? 'Déjà commenté pour Ananda : ajouter un mot de plus' : 'Commenter pour Ananda'}
         title={commented ? 'Déjà commenté pour Ananda' : 'Commenter ce message pour Ananda'}
       >
-        💬
+        <AnandaIcon />
       </button>
       {open && (
         <form
@@ -261,7 +270,7 @@ const screenshotContext = (path: string) =>
 export function Chat({ author, external = null }: { author: string; external?: { alive: boolean } | null }) {
   const { view, selectedId: sessionId, profiles, dialog, set } = useApp()
   const queued = useApp((s) => (sessionId ? s.sessions[sessionId]?.queued : undefined)) ?? NO_QUEUED
-  // Which messages already carry a word for Ananda, so their 💬 stays lit: his eventSeqs, fetched once per session.
+  // Which messages already carry a word for Ananda, so their Ananda button stays lit: his eventSeqs, fetched once per session.
   const [commented, setCommented] = useState<Set<number>>(new Set())
   useEffect(() => {
     if (!sessionId) return void setCommented(new Set())

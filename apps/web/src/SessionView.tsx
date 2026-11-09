@@ -305,7 +305,7 @@ function ReminderBox({ id, saved }: { id: string; saved: string | null }) {
 /**
  * Your word on this whole conversation, for Ananda: a 👍/👎 lands the instant you click it (he only
  * ever reads it later, in bulk — nothing happens right away), a comment is one click further and
- * optional. Unlike a message's own 💬 (which opens a little form first), a thumb here is never a
+ * optional. Unlike a message's own Ananda button (which opens a little form first), a thumb here is never a
  * maybe: click it and it's sent.
  */
 function ConversationFeedback({ sessionId }: { sessionId: string }) {

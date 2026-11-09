@@ -3569,7 +3569,7 @@ input[type='range']:disabled::-moz-range-thumb {
   border-color: var(--gold);
 }
 
-/* A quiet note for Ananda on one exact message: 💬 beside ↩, same corner, one step further in —
+/* A quiet note for Ananda on one exact message: his little bearded face beside ↩, same corner, one step further in —
    hidden until you point at the message, except once it already carries a comment, where it stays
    lit (dimly) so you can tell at a glance which messages you've already flagged for him. */
 .msg-feedback {
@@ -3582,8 +3582,9 @@ input[type='range']:disabled::-moz-range-thumb {
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--muted);
-  font-size: 13px;
-  line-height: 1;
+  display: grid;
+  place-items: center;
+  padding: 0;
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.15s, color 0.15s, border-color 0.15s;
