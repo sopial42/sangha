@@ -4373,3 +4373,13 @@ a.icon-btn.sv-newtab {
   flex: 1 1 140px;
   min-width: 0;
 }
+
+/* Ananda sits far back and rarely stirs: a little faded, fully there when hovered or focused. */
+.elder-far {
+  opacity: 0.82;
+  transition: opacity 0.3s ease;
+}
+.elder-far:hover,
+.elder-far:focus-within {
+  opacity: 1;
+}

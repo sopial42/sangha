@@ -467,7 +467,7 @@ export function Monastery() {
   // Tall panels (many priests set aside) can reach below the courtyard's usual bottom: grow the
   // viewBox to fit rather than let it clip.
   const effectiveHeight = panelAt && openSize ? Math.max(height, panelAt.y + openSize.h / 2 + 60) : height
-  const elderSpot = elderPosition(width, mobile, effectiveHeight)
+  const elderSpot = elderPosition(width, mobile, moon)
 
   return (
     <>
@@ -485,6 +485,12 @@ export function Monastery() {
         onSelect={() => select(BUDDHA_SESSION_ID)}
         ackToken={closingAck?.id === BUDDHA_SESSION_ID ? closingAck.token : undefined}
       />
+      </g>
+
+      {/* Ananda, far back below the moon: drawn right after the hall, so everything in the courtyard
+          passes in front of him. A wrapping translate (no transform of his own), as for a pavilion. */}
+      <g className="elder-far" transform={`translate(${elderSpot.x} ${elderSpot.y}) scale(${elderSpot.scale})`}>
+        <Elder proposed={elderBadge?.proposed ?? 0} running={elderBadge?.running ?? false} onOpen={() => set({ dialog: { kind: 'elder' } })} />
       </g>
 
       {pavilions.map((p, i) => (
@@ -546,12 +552,6 @@ export function Monastery() {
       </AnimatePresence>
 
       <Moon x={moon.x} y={moon.y} r={moon.r} arrivalTick={moonArrivals} onOpen={() => set({ dialog: { kind: 'nirvana' } })} />
-
-      {/* Ananda, in the courtyard's free corner: a wrapping translate (no transform of his own), same
-          pattern as a pavilion, so his hover-grow can scale him directly. */}
-      <g transform={`translate(${elderSpot.x} ${elderSpot.y}) scale(${elderSpot.scale})`}>
-        <Elder proposed={elderBadge?.proposed ?? 0} running={elderBadge?.running ?? false} onOpen={() => set({ dialog: { kind: 'elder' } })} />
-      </g>
 
       {/* An open pond, last of all: a panel over the whole courtyard — nothing beneath should catch a
           click meant to close it. */}

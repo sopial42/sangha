@@ -1,11 +1,13 @@
+import { FLOOR_Y } from './Backdrop'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { BEARD_DROP, beardPath, beardRest, initBeard, isDragGesture, isSettled, step, type BeardPoint, type Vec } from './elderBeard'
 
-/** Where Ananda sits: a corner of the courtyard left free of pavilions, lotus ponds and the moon.
- *  `scale`: shrinks him (and his canopy) to fit a narrow phone screen without running off its edge. */
-export function elderPosition(width: number, mobile: boolean, height: number): { x: number; y: number; scale: number } {
-  return mobile ? { x: 76, y: height - 70, scale: 0.6 } : { x: 128, y: height - 132, scale: 1 }
+/** Where Ananda sits: in the background, on the courtyard's back edge below and right of the moon.
+ *  `scale`: shrinks him (and his canopy) with the distance, more on a narrow phone screen. */
+export function elderPosition(width: number, mobile: boolean, moon: { x: number; y: number }): { x: number; y: number; scale: number } {
+  // Far back, below and right of the moon, on the courtyard's back edge: small, he rarely stirs.
+  return mobile ? { x: width - 34, y: FLOOR_Y + 56, scale: 0.34 } : { x: Math.min(width - 70, moon.x + 60), y: FLOOR_Y + 24, scale: 0.55 }
 }
 
 /** His chin, relative to his own seat (local to his `<g>`): where the beard falls from. */
