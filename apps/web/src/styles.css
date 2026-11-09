@@ -3357,6 +3357,13 @@ input[type='range']:disabled::-moz-range-thumb {
   }
 }
 
+/* The courtyard's loops freeze where they are while nobody watches them (conversation open over the
+   scene, tab hidden): no frame to paint at all. Important: the loops' busy/awake variants reset the
+   whole `animation` shorthand further down. */
+.scene-paused .amb {
+  animation-play-state: paused !important;
+}
+
 @media (max-width: 900px) {
   .app {
     height: auto;
@@ -4382,4 +4389,272 @@ a.icon-btn.sv-newtab {
 .elder-far:hover,
 .elder-far:focus-within {
   opacity: 1;
+}
+
+/* Scene ambient loops (CSS, not motion: no JS per frame; paused by .scene-paused) */
+
+/* Backdrop: the hall's two lanterns, breathing faster and brighter while busy. */
+.amb-lantern-glow {
+  animation: ambLanternGlow 4s ease-in-out infinite;
+}
+.amb-lantern-glow.is-busy {
+  animation: ambLanternGlowBusy 1.6s ease-in-out infinite;
+}
+@keyframes ambLanternGlow {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.5; }
+}
+@keyframes ambLanternGlowBusy {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.95; }
+}
+
+/* Backdrop: the hall's incense, three curls rising and fading. */
+.amb-smoke-hall {
+  animation: ambSmokeHall 5s ease-in-out infinite;
+}
+.amb-smoke-hall.is-busy {
+  animation: ambSmokeHallBusy 2.4s ease-in-out infinite;
+}
+@keyframes ambSmokeHall {
+  0% { opacity: 0; transform: translateY(0); }
+  50% { opacity: 0.25; transform: translateY(-12px); }
+  100% { opacity: 0; transform: translateY(-24px); }
+}
+@keyframes ambSmokeHallBusy {
+  0% { opacity: 0; transform: translateY(0); }
+  50% { opacity: 0.6; transform: translateY(-12px); }
+  100% { opacity: 0; transform: translateY(-24px); }
+}
+
+/* Buddha: the wide aura around his whole seat, breathing, flaring while he works. */
+.amb-halo-outer {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ambHaloOuter 6s ease-in-out infinite;
+}
+.amb-halo-outer.is-busy {
+  animation: ambHaloOuterBusy 1.8s ease-in-out infinite;
+}
+@keyframes ambHaloOuter {
+  0%, 100% { transform: scale(1); opacity: 0.55; }
+  50% { transform: scale(1.03); opacity: 0.7; }
+}
+@keyframes ambHaloOuterBusy {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.12); opacity: 1; }
+}
+
+/* Buddha: the tight nimbus close behind his head. */
+.amb-halo-inner {
+  animation: ambHaloInner 5s ease-in-out infinite;
+  animation-delay: 0.3s;
+}
+.amb-halo-inner.is-busy {
+  animation: ambHaloInnerBusy 1.8s ease-in-out infinite;
+  animation-delay: 0.3s;
+}
+@keyframes ambHaloInner {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.75; }
+}
+@keyframes ambHaloInnerBusy {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* Buddha: rays turning behind his head while he speaks. */
+.amb-rays {
+  transform-origin: 0px -147px;
+  animation: ambRaysRotate 24s linear infinite;
+}
+@keyframes ambRaysRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Buddha: his seated figure breathing as one piece, at rest. */
+.amb-buddha-body {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: ambBreathe 4.4s ease-in-out infinite;
+}
+@keyframes ambBreathe {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.014); }
+}
+
+/* Buddha: the parting of his lips while he speaks — a vertical stretch from the mouth's own line,
+   not a path morph, so it never touches the main thread per frame. */
+.amb-mouth {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+  animation: ambMouth 0.5s ease-in-out infinite;
+}
+@keyframes ambMouth {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(3.818); }
+}
+
+/* Incense: the ember's own glow, pulsing while lit; a plain transition when it goes out. */
+.amb-ember-glow {
+  animation: ambEmberGlow 1.6s ease-in-out infinite;
+}
+.amb-ember-glow-off {
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+@keyframes ambEmberGlow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.85; }
+}
+
+/* Incense: a brighter core layered over the ember, fading in and out — stands in for a colour
+   interpolation (fill can't be a CSS keyframe target here without reintroducing a JS tween). */
+.amb-ember-core {
+  animation: ambEmberCore 1.6s ease-in-out infinite;
+}
+@keyframes ambEmberCore {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+/* Incense: a curl of smoke rising and fading, faster and taller once the burner is awake. */
+.amb-incense-smoke {
+  animation: ambIncenseSmoke 3.2s ease-in-out infinite;
+}
+.amb-incense-smoke.is-awake {
+  animation: ambIncenseSmokeAwake 1.6s ease-in-out infinite;
+}
+@keyframes ambIncenseSmoke {
+  0% { opacity: 0; transform: translateY(0); }
+  50% { opacity: 0.7; transform: translateY(-6px); }
+  100% { opacity: 0; transform: translateY(-12px); }
+}
+@keyframes ambIncenseSmokeAwake {
+  0% { opacity: 0; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-9px); }
+  100% { opacity: 0; transform: translateY(-18px); }
+}
+
+/* Priest: the three dots of a closed bubble, breathing while he works. */
+.amb-dot {
+  animation: ambDot 1.2s ease-in-out infinite;
+}
+@keyframes ambDot {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+
+/* Priest: a novice's tool icon, bobbing gently above his head. */
+.amb-novice-icon {
+  animation: ambNoviceBob 1.2s ease-in-out infinite;
+}
+@keyframes ambNoviceBob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+/* Priest: the halo behind a priest waiting, unread, for you. */
+.amb-priest-halo {
+  animation: ambPriestHalo 1.4s ease-in-out infinite;
+}
+@keyframes ambPriestHalo {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+/* Priest: his body breathing a little faster while he works. */
+.amb-priest-body-working {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: ambPriestBreathe 3.6s ease-in-out infinite;
+}
+@keyframes ambPriestBreathe {
+  0%, 100% { transform: scaleY(1); }
+  50% { transform: scaleY(1.03); }
+}
+
+/* Lotus pond: a priest at rest, swaying slowly, and the thread of steam off his tea. */
+.amb-chill-sway {
+  transform-origin: 0px 0px;
+  animation: ambChillSway 5.2s ease-in-out infinite;
+}
+@keyframes ambChillSway {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+.amb-tea-steam {
+  animation: ambTeaSteam 3s ease-in-out infinite;
+}
+@keyframes ambTeaSteam {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.8; }
+}
+
+/* Lotus pond: the floating lantern drifting side to side, its glow pulsing through five beats. */
+.amb-lantern-bob {
+  animation: ambLanternBob 9s ease-in-out infinite;
+}
+@keyframes ambLanternBob {
+  0%, 100% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+}
+.amb-lantern-glow-pond {
+  animation: ambLanternGlowPond 2.6s ease-in-out infinite;
+}
+@keyframes ambLanternGlowPond {
+  0% { opacity: 0.45; }
+  25% { opacity: 0.85; }
+  50% { opacity: 0.55; }
+  75% { opacity: 0.8; }
+  100% { opacity: 0.45; }
+}
+
+/* Lotus pond: drifting mist over the water. */
+.amb-mist {
+  animation: ambMist 7s ease-in-out infinite;
+}
+@keyframes ambMist {
+  0%, 100% { opacity: 0.1; transform: translateX(-6px); }
+  50% { opacity: 0.3; transform: translateX(6px); }
+}
+
+/* Lotus pond: the closed basin's "someone needs you" glow. */
+.amb-pond-attention {
+  animation: ambPondAttention 1.6s ease-in-out infinite;
+}
+@keyframes ambPondAttention {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
+
+/* Lotus pond: the ring that pulses while a dragged priest hovers, ready to be dropped in. */
+.amb-pond-drop-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ambPondDropRing 1s ease-in-out infinite;
+}
+@keyframes ambPondDropRing {
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50% { transform: scale(1.07); opacity: 1; }
+}
+/* Ananda: sage glow while he meditates on a pass, and his slow sway at rest. */
+.amb-elder-glow {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ambElderGlow 2.6s ease-in-out infinite;
+}
+@keyframes ambElderGlow {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.08); }
+}
+.amb-elder-sway {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: ambElderSway 7s ease-in-out infinite;
+}
+@keyframes ambElderSway {
+  0%, 100% { transform: rotate(-1deg); }
+  50% { transform: rotate(1deg); }
 }

@@ -19,11 +19,7 @@ const truncate = (text: string, n: number) => (text.length > n ? `${text.slice(0
  */
 function ChillingPriest({ robe, delay, tea, still }: { robe: string; delay: number; tea: boolean; still: boolean }) {
   return (
-    <motion.g
-      style={{ originX: '0px', originY: '0px' }}
-      animate={still ? undefined : { rotate: [-3, 3, -3] }}
-      transition={{ duration: 5.2, repeat: Infinity, ease: 'easeInOut', delay }}
-    >
+    <g className={still ? undefined : 'amb amb-chill-sway'} style={still ? undefined : { animationDelay: `${delay}s` }}>
       <ellipse cy="2" rx="15" ry="3.6" fill="#00000045" />
       {/* crossed legs, then the robe leaning back */}
       <path d="M-14 1 Q-13 -6 0 -6 Q13 -6 14 1 Z" fill={robe} opacity="0.85" />
@@ -32,18 +28,18 @@ function ChillingPriest({ robe, delay, tea, still }: { robe: string; delay: numb
       {tea && (
         <g transform="translate(6 -9)">
           <path d="M-3.5 0 L3.5 0 L2.5 3.5 L-2.5 3.5 Z" fill="#e8dccb" />
-          <motion.path
+          <path
             d="M0 -2 Q-2 -6 0 -9 Q2 -12 0 -15"
             fill="none"
             stroke="#e8dccb"
             strokeOpacity="0.45"
             strokeWidth="1"
-            animate={still ? undefined : { opacity: [0, 0.8, 0] }}
-            transition={{ duration: 3, repeat: Infinity, delay }}
+            className={still ? undefined : 'amb amb-tea-steam'}
+            style={still ? undefined : { animationDelay: `${delay}s` }}
           />
         </g>
       )}
-    </motion.g>
+    </g>
   )
 }
 
@@ -62,21 +58,21 @@ const BANK = [
 /** A paper lantern floating on the water, its candle flickering. */
 function FloatingLantern({ x, y, reducedMotion }: { x: number; y: number; reducedMotion: boolean }) {
   return (
-    <motion.g
-      transform={`translate(${x} ${y})`}
-      animate={reducedMotion ? undefined : { x: [x - 3, x + 3, x - 3] }}
-      transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      <motion.ellipse
-        rx="16"
-        ry="7"
-        fill="url(#pondGlow)"
-        animate={reducedMotion ? { opacity: 0.6 } : { opacity: [0.45, 0.85, 0.55, 0.8, 0.45] }}
-        transition={{ duration: 2.6, repeat: Infinity }}
-      />
-      <path d="M-5 0 L-4 -8 L4 -8 L5 0 Z" fill="#f2c46d" opacity="0.92" />
-      <rect x="-5.5" y="-1" width="11" height="2" rx="1" fill="#8a5a2b" />
-    </motion.g>
+    // The outer <g> carries the fixed position (a `transform` attribute): the CSS bob below lives on
+    // a plain inner group instead, so it never fights that attribute.
+    <g transform={`translate(${x} ${y})`}>
+      <g className={reducedMotion ? undefined : 'amb amb-lantern-bob'}>
+        <ellipse
+          rx="16"
+          ry="7"
+          fill="url(#pondGlow)"
+          opacity={reducedMotion ? 0.6 : undefined}
+          className={reducedMotion ? undefined : 'amb amb-lantern-glow-pond'}
+        />
+        <path d="M-5 0 L-4 -8 L4 -8 L5 0 Z" fill="#f2c46d" opacity="0.92" />
+        <rect x="-5.5" y="-1" width="11" height="2" rx="1" fill="#8a5a2b" />
+      </g>
+    </g>
   )
 }
 
@@ -103,15 +99,16 @@ function Mist({ reducedMotion }: { reducedMotion: boolean }) {
   return (
     <g opacity="0.5">
       {puffs.map((p, i) => (
-        <motion.ellipse
+        <ellipse
           key={i}
           cx={p.x}
           cy={p.y}
           rx={p.r}
           ry={p.r * 0.45}
           fill="url(#pondMist)"
-          animate={reducedMotion ? { opacity: 0.22 } : { opacity: [0.1, 0.3, 0.1], x: [p.x - 6, p.x + 6, p.x - 6] }}
-          transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut', delay: p.delay }}
+          opacity={reducedMotion ? 0.22 : undefined}
+          className={reducedMotion ? undefined : 'amb amb-mist'}
+          style={reducedMotion ? undefined : { animationDelay: `${p.delay}s` }}
         />
       ))}
     </g>
@@ -196,18 +193,9 @@ export function PondClosed({
       <title>{label}</title>
       {/* generous invisible tap target, well past the drawing itself */}
       <ellipse cy={POND_CENTER_Y} rx={POND_HIT_RX} ry={POND_HIT_RY} fill="transparent" />
-      {needsAttention && (
-        <motion.ellipse
-          cy={POND_CENTER_Y}
-          rx="96"
-          ry="50"
-          fill="url(#pondGlow)"
-          animate={{ opacity: [0.4, 0.9, 0.4] }}
-          transition={{ duration: 1.6, repeat: Infinity }}
-        />
-      )}
+      {needsAttention && <ellipse cy={POND_CENTER_Y} rx="96" ry="50" fill="url(#pondGlow)" className="amb amb-pond-attention" />}
       {dropHover && (
-        <motion.ellipse
+        <ellipse
           cy={POND_CENTER_Y}
           rx="90"
           ry="38"
@@ -215,8 +203,8 @@ export function PondClosed({
           stroke="#ffe9a8"
           strokeWidth="3"
           strokeDasharray="7 6"
-          animate={reducedMotion ? { opacity: 0.9 } : { scale: [1, 1.07, 1], opacity: [0.7, 1, 0.7] }}
-          transition={{ duration: 1, repeat: Infinity }}
+          opacity={reducedMotion ? 0.9 : undefined}
+          className={reducedMotion ? undefined : 'amb amb-pond-drop-ring'}
         />
       )}
       <Mist reducedMotion={reducedMotion} />

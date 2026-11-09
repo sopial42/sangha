@@ -108,14 +108,15 @@ function DotsBubble({ side, working, compact }: { side: 1 | -1; working: boolean
   return (
     <Callout w={w} h={20} side={side} near={compact ? 34 : 56}>
       {[0, 1, 2].map((i) => (
-        <motion.circle
+        <circle
           key={i}
           cx={w / 2 + (i - 1) * 8}
           cy={10}
           r={2.2}
           fill="#6b5325"
-          animate={working ? { opacity: [0.25, 1, 0.25] } : { opacity: 0.8 }}
-          transition={working ? { duration: 1.2, repeat: Infinity, delay: i * 0.2 } : undefined}
+          opacity={working ? undefined : 0.8}
+          className={working ? 'amb amb-dot' : undefined}
+          style={working ? { animationDelay: `${i * 0.2}s` } : undefined}
         />
       ))}
     </Callout>
@@ -177,9 +178,9 @@ function Novice({ n, profile, x, y, onSelect }: { n: NoviceSummary; profile: Mon
           <ellipse rx="13" ry="4" fill="#00000040" />
           <path d="M-9 0 L-10 -26 Q0 -36 10 -26 L9 0 Z" fill={profile.robe} />
           <circle cy="-34" r="6" fill="#d9a577" />
-          <motion.text y="-46" textAnchor="middle" fontSize="11" animate={{ y: [-46, -50, -46] }} transition={{ duration: 1.2, repeat: Infinity }}>
+          <text y="-46" textAnchor="middle" fontSize="11" className="amb amb-novice-icon">
             {n.lastTool ? toolIcon(n.lastTool.tool) : '🙏'}
-          </motion.text>
+          </text>
         </g>
       </g>
     </motion.g>
@@ -380,16 +381,7 @@ export function Priest({
           <title>{label}</title>
           {selected && <ellipse cx="0" cy="0" rx="58" ry="16" fill="none" stroke="#ffe9a8" strokeWidth="2.5" strokeDasharray="6 5" />}
           {/* Halo: he stopped and you have not read his last words yet. */}
-          {unread && (
-            <motion.ellipse
-              cy="-48"
-              rx="66"
-              ry="84"
-              fill="url(#priestHalo)"
-              animate={{ opacity: [0.45, 1, 0.45] }}
-              transition={{ duration: 1.4, repeat: Infinity }}
-            />
-          )}
+          {unread && <ellipse cy="-48" rx="66" ry="84" fill="url(#priestHalo)" className="amb amb-priest-halo" />}
           {/* You just closed his conversation: a thin ring in his own robe colour, expanding once and
               fading — never repeats, and never confused with the "waiting for you" halo above. */}
           {ackToken != null &&
@@ -416,11 +408,7 @@ export function Priest({
             transition={{ duration: 1.5, ease: 'easeInOut' }}
             style={{ originX: '50%', originY: '100%' }}
           >
-          <motion.g
-            animate={working ? { scaleY: [1, 1.03, 1] } : { scaleY: 1 }}
-            transition={working ? { duration: 3.6, repeat: Infinity, ease: 'easeInOut' } : { duration: 1 }}
-            style={{ originX: '50%', originY: '100%' }}
-          >
+          <g className={working ? 'amb amb-priest-body-working' : undefined}>
             <path d="M-40 -2 L-37 -34 Q0 -78 37 -34 L40 -2 Z" fill={robe} />
             <path d="M-26 -42 Q4 -24 34 -4" fill="none" stroke="#00000045" strokeWidth="8" />
             {/* Joined in meditation; tired, the hands part and slide down toward his knees. */}
@@ -436,7 +424,7 @@ export function Priest({
               <circle cy="-72" r="16" fill="#d9a577" />
               <Eyes y={-72} open={!working} tired={tired} />
             </g>
-          </motion.g>
+          </g>
           </motion.g>
           {status === 'error' && (
             <g transform="translate(-50 -52)">

@@ -92,19 +92,17 @@ export function Buddha({
       {/* This outer <g> already carries its own translate(x, 360): the hover grow lives on this
           plain child group instead, so our CSS transform never replaces that positioning. */}
       <g className="hover-grow">
-      <motion.circle
+      <circle
         cy="-120"
         r="110"
         fill="url(#halo)"
-        animate={{ scale: busy ? [1, 1.12, 1] : [1, 1.03, 1], opacity: busy ? [0.8, 1, 0.8] : [0.55, 0.7, 0.55] }}
-        transition={{ duration: busy ? 1.8 : 6, repeat: Infinity, ease: 'easeInOut' }}
+        className={`amb amb-halo-outer${busy ? ' is-busy' : ''}`}
       />
-      <motion.circle
+      <circle
         cy="-147"
         r="42"
         fill="url(#haloInner)"
-        animate={{ opacity: busy ? [0.7, 1, 0.7] : [0.45, 0.75, 0.45] }}
-        transition={{ duration: busy ? 1.8 : 5, repeat: Infinity, ease: 'easeInOut', delay: 0.3 }}
+        className={`amb amb-halo-inner${busy ? ' is-busy' : ''}`}
       />
       {/* You just closed his conversation: a thin gold ring, expanding once and fading — never
           repeats, and never confused with the halos above (which breathe continuously). */}
@@ -126,11 +124,11 @@ export function Buddha({
           />
         ))}
       {speaking && (
-        <motion.g animate={{ rotate: 360 }} transition={{ duration: 24, repeat: Infinity, ease: 'linear' }}>
+        <g className="amb amb-rays">
           {Array.from({ length: 12 }, (_, i) => (
             <line key={i} x1="0" y1="-178" x2="0" y2="-197" stroke="#ffe9a8" strokeWidth="3" strokeLinecap="round" opacity="0.6" transform={`rotate(${i * 30} 0 -147)`} />
           ))}
-        </motion.g>
+        </g>
       )}
 
       {/* lotus throne: below his crossed legs, wide enough to stay visible all around them */}
@@ -148,7 +146,7 @@ export function Buddha({
       ))}
 
       {/* his seated figure breathes as one piece, at rest */}
-      <motion.g animate={{ scaleY: [1, 1.014, 1] }} transition={{ duration: 4.4, repeat: Infinity, ease: 'easeInOut' }} style={{ originX: '50%', originY: '100%' }}>
+      <g className="amb amb-buddha-body">
         {/* crossed legs: a wide flat seat, the robe's hem draped over them in nested folds */}
         <path
           d="M-72 -22 Q-80 -6 -66 6 Q-40 16 0 17 Q40 16 66 6 Q80 -6 72 -22 Q40 -26 0 -26 Q-40 -26 -72 -22 Z"
@@ -264,19 +262,17 @@ export function Buddha({
         <path d="M-5 -121 Q-2.5 -123.3 0 -122.3 Q2.5 -123.3 5 -121 Q0 -120.2 -5 -121 Z" fill="#c07a3e" opacity="0.6" />
         <path d="M-4.6 -120.8 Q0 -120.1 4.6 -120.8 Q3.6 -117.5 0 -117.3 Q-3.6 -117.5 -4.6 -120.8 Z" fill="#d49050" opacity="0.5" />
         <path d="M-2 -118.5 Q0 -118.1 2 -118.5" fill="none" stroke="#ffe6b5" strokeWidth="0.7" strokeLinecap="round" opacity="0.6" />
-        <motion.path
+        <path
           d="M-5 -121 Q0 -119.9 5 -121"
           fill="none"
           stroke="#7a4d10"
           strokeWidth="0.9"
           strokeLinecap="round"
           opacity="0.85"
-          initial={false}
-          animate={{ d: speaking ? ['M-5 -121 Q0 -119.9 5 -121', 'M-5 -121 Q0 -116.8 5 -121', 'M-5 -121 Q0 -119.9 5 -121'] : 'M-5 -121 Q0 -119.9 5 -121' }}
-          transition={speaking ? { duration: 0.5, repeat: Infinity } : { duration: 0.2 }}
+          className={speaking ? 'amb amb-mouth' : undefined}
         />
         <path d="M-5.7 -121.7 Q-5.3 -120.9 -4.7 -120.8 M5.7 -121.7 Q5.3 -120.9 4.7 -120.8" fill="none" stroke="#7a4d10" strokeWidth="0.6" strokeLinecap="round" opacity="0.45" />
-      </motion.g>
+      </g>
 
       {selected && <ellipse cy="4" rx="90" ry="22" fill="none" stroke="#ffe9a8" strokeWidth="2.5" strokeDasharray="6 5" />}
       <text y="48" textAnchor="middle" className="scene-name">

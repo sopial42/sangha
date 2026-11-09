@@ -1,5 +1,3 @@
-import { motion } from 'motion/react'
-
 export const FLOOR_Y = 400
 /** Buddha's hall is drawn a bit smaller, from the floor line up, to leave room to the pavilions. */
 export const HALL_SCALE = 0.82
@@ -82,13 +80,13 @@ export function Backdrop({ width, height, busy, hallScale = HALL_SCALE }: { widt
         {[200, 800].map((x, i) => (
           <g key={x}>
             <line x1={x} y1="178" x2={x} y2="210" stroke="#1c0f0d" strokeWidth="2" />
-            <motion.circle
+            <circle
               cx={x}
               cy="232"
               r="46"
               fill="url(#lanternGlow)"
-              animate={{ opacity: busy ? [0.55, 0.95, 0.55] : [0.35, 0.5, 0.35] }}
-              transition={{ duration: busy ? 1.6 : 4, repeat: Infinity, delay: i * 0.4 }}
+              className={`amb amb-lantern-glow${busy ? ' is-busy' : ''}`}
+              style={{ animationDelay: `${i * 0.4}s` }}
             />
             <ellipse cx={x} cy="232" rx="15" ry="21" fill="#d2452d" />
             <rect x={x - 9} y="208" width="18" height="5" fill="#2a1712" />
@@ -102,14 +100,14 @@ export function Backdrop({ width, height, busy, hallScale = HALL_SCALE }: { widt
           {[-10, 0, 10].map((dx, i) => (
             <g key={dx}>
               <line x1={dx} y1="-20" x2={dx} y2="-48" stroke="#8b3a1e" strokeWidth="2" />
-              <motion.path
+              <path
                 d={`M${dx} -50 q-8 -18 0 -36 q8 -18 0 -36`}
                 fill="none"
                 stroke="#e8dccb"
                 strokeWidth="2"
                 strokeLinecap="round"
-                animate={{ opacity: busy ? [0, 0.6, 0] : [0, 0.25, 0], y: [0, -24] }}
-                transition={{ duration: busy ? 2.4 : 5, repeat: Infinity, delay: i * 0.7 }}
+                className={`amb amb-smoke-hall${busy ? ' is-busy' : ''}`}
+                style={{ animationDelay: `${i * 0.7}s` }}
               />
             </g>
           ))}

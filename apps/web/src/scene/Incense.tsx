@@ -84,40 +84,46 @@ export function Incense({
       {sticks.map((x, i) => (
         <g key={x} transform={`rotate(${(i - 1) * 9} ${x} -9)`}>
           <line x1={x} y1="-9" x2={x - 0.4} y2="-30" stroke="url(#incenseStick)" strokeWidth="1.6" strokeLinecap="round" />
-          <motion.circle
+          <circle
             cx={x}
             cy="-31"
             r="5.5"
             fill="url(#emberGlow)"
-            animate={{ opacity: lit ? [0.4, 0.85, 0.4] : 0 }}
-            transition={lit ? { duration: 1.6, repeat: Infinity, delay: i * 0.3 } : { duration: 0.4 }}
+            className={lit ? 'amb amb-ember-glow' : 'amb-ember-glow-off'}
+            style={lit ? { animationDelay: `${i * 0.3}s` } : undefined}
           />
-          <motion.circle
-            cx={x}
-            cy="-31"
-            r="1.6"
-            animate={lit ? { fill: ['#ff8a3d', '#ffd08a', '#ff8a3d'] } : { fill: '#5a5048' }}
-            transition={lit ? { duration: 1.6, repeat: Infinity, delay: i * 0.3 } : { duration: 0.4 }}
-          />
+          <circle cx={x} cy="-31" r="1.6" fill={lit ? '#ff8a3d' : '#5a5048'} />
+          {/* the ember's colour cycle is a brighter overlay fading in and out, not a fill interpolation */}
+          {lit && (
+            <circle
+              cx={x}
+              cy="-31"
+              r="1.6"
+              fill="#ffd08a"
+              className="amb amb-ember-core"
+              style={{ animationDelay: `${i * 0.3}s` }}
+            />
+          )}
         </g>
       ))}
       </motion.g>
       <AnimatePresence>
         {lit &&
           sticks.map((x, i) => (
-            <motion.path
-              key={`smoke${x}`}
-              d={`M${x + (i - 1) * 4} -33 q-5 -10 0 -20 q5 -10 0 -20`}
-              fill="none"
-              stroke="url(#smokeFade)"
-              strokeWidth="1.4"
-              strokeLinecap="round"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: awake ? [0, 1, 0] : [0, 0.7, 0], y: [0, awake ? -18 : -12] }}
-              // Its own finite transition: otherwise the exit inherits "repeat: Infinity" and the smoke never goes.
-              exit={{ opacity: 0, transition: { duration: 0.3 } }}
-              transition={{ duration: awake ? 1.6 : 3.2, repeat: Infinity, delay: i * (awake ? 0.4 : 0.9) }}
-            />
+            // The mount/unmount fade stays on this outer motion.g (its own finite transition: otherwise
+            // the exit would inherit the inner loop's "repeat: Infinity" and the smoke would never go);
+            // the endless rise-and-fade itself is the plain inner path's CSS loop.
+            <motion.g key={`smoke${x}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.3 } }}>
+              <path
+                d={`M${x + (i - 1) * 4} -33 q-5 -10 0 -20 q5 -10 0 -20`}
+                fill="none"
+                stroke="url(#smokeFade)"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                className={`amb amb-incense-smoke${awake ? ' is-awake' : ''}`}
+                style={{ animationDelay: `${i * (awake ? 0.4 : 0.9)}s` }}
+              />
+            </motion.g>
           ))}
         {!lit && puff && (
           <motion.path

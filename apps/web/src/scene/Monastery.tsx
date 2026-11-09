@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { BUDDHA_SESSION_ID, type ProjectInfo, type SessionSummary } from '@sangha/shared'
 import { api, lotusFailure, openSession } from '../api'
 import { agentTitle, priestsOf, robeOfAgent } from '../priests'
@@ -201,8 +202,21 @@ function resolveBubbleSides(seated: Seated[]): Record<string, 1 | -1> {
   return sides
 }
 
+function onVisibility(cb: () => void) {
+  document.addEventListener('visibilitychange', cb)
+  return () => document.removeEventListener('visibilitychange', cb)
+}
+
 export function Monastery() {
-  const { sessions, projects, profiles, selectedId, view, set, moonArrivals, closing, closingAck, elderBadge } = useApp()
+  // Picked field by field: the stream rewrites `view` every frame while a priest writes, and the
+  // courtyard only needs to know whether the Buddha is speaking, not to re-render with each word.
+  const { sessions, projects, profiles, selectedId, set, moonArrivals, closing, closingAck, elderBadge } = useApp(
+    useShallow((s) => ({ sessions: s.sessions, projects: s.projects, profiles: s.profiles, selectedId: s.selectedId, set: s.set, moonArrivals: s.moonArrivals, closing: s.closing, closingAck: s.closingAck, elderBadge: s.elderBadge })),
+  )
+  const draftStarted = useApp((s) => s.view.draft.length > 0)
+  // Its ambient loops stand still while nobody sees them: under an open conversation, or in a hidden tab.
+  const hidden = useSyncExternalStore(onVisibility, () => document.hidden)
+  const paused = hidden || (selectedId !== null && !closing)
   const priests: SessionSummary[] = priestsOf(sessions)
   const buddha = sessions[BUDDHA_SESSION_ID]
   const reducedMotion = !!useReducedMotion()
@@ -266,7 +280,7 @@ export function Monastery() {
   const moon = moonPosition(width, mobile, top)
 
   const anyWorking = priests.some((p) => p.status === 'working') || buddha?.status === 'working'
-  const buddhaSpeaking = selectedId === BUDDHA_SESSION_ID && view.draft.length > 0
+  const buddhaSpeaking = selectedId === BUDDHA_SESSION_ID && draftStarted
 
   // Snuffing out a pavilion's big burner removes the project: always confirmed, it is a big step.
   const removeProject = async (name: string) => {
@@ -471,7 +485,7 @@ export function Monastery() {
 
   return (
     <>
-    <svg ref={svgRef} className="scene" viewBox={`0 ${top} ${width} ${effectiveHeight - top}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label="Le monastère">
+    <svg ref={svgRef} className={paused ? 'scene scene-paused' : 'scene'} viewBox={`0 ${top} ${width} ${effectiveHeight - top}`} preserveAspectRatio="xMidYMid meet" role="group" aria-label="Le monastère">
       <IncenseDefs />
       <PondDefs />
       <Backdrop width={width} height={effectiveHeight} busy={anyWorking} hallScale={hallScale} />

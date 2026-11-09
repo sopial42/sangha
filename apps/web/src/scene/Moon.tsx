@@ -28,12 +28,15 @@ export function Moon({ x, y, r, arrivalTick, onOpen }: { x: number; y: number; r
       return
     }
     // A priest's flight takes a few seconds: the glow lands roughly when he does, not the instant he leaves.
+    let off: ReturnType<typeof setTimeout> | undefined
     const delay = setTimeout(() => {
       setPulsing(true)
-      const off = setTimeout(() => setPulsing(false), 1100)
-      return () => clearTimeout(off)
+      off = setTimeout(() => setPulsing(false), 1100)
     }, 2600)
-    return () => clearTimeout(delay)
+    return () => {
+      clearTimeout(delay)
+      clearTimeout(off)
+    }
   }, [arrivalTick])
 
   return (

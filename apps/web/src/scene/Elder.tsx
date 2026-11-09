@@ -1,6 +1,6 @@
 import { FLOOR_Y } from './Backdrop'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { motion, useReducedMotion } from 'motion/react'
+import { useReducedMotion } from 'motion/react'
 import { BEARD_DROP, beardPath, beardRest, initBeard, isDragGesture, isSettled, step, type BeardPoint, type Vec } from './elderBeard'
 
 /** Where Ananda sits: in the background, on the courtyard's back edge below and right of the moon.
@@ -171,7 +171,7 @@ export function Elder({ proposed, running, onOpen }: { proposed: number; running
         (reducedMotion ? (
           <circle cy="-90" r="90" fill="url(#elderGlow)" opacity="0.7" />
         ) : (
-          <motion.circle cy="-90" r="90" fill="url(#elderGlow)" animate={{ opacity: [0.4, 0.8, 0.4], scale: [1, 1.08, 1] }} transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }} />
+          <circle className="amb amb-elder-glow" cy="-90" r="90" fill="url(#elderGlow)" />
         ))}
 
       {/* the Bodhi tree: Ananda sits at its foot, the trunk standing beside him (never behind his own
@@ -206,11 +206,7 @@ export function Elder({ proposed, running, onOpen }: { proposed: number; running
       <path d="M-36 6 Q0 12 36 6 M-30 2 Q0 7 30 2" fill="none" stroke="#4a3c26" strokeWidth="1" opacity="0.4" />
 
       {/* the old sage himself, breathing gently at rest (never while his beard is held) */}
-      <motion.g
-        animate={!reducedMotion && !dragging ? { rotate: [-1, 1, -1] } : { rotate: 0 }}
-        transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }}
-        style={{ originX: '50%', originY: '100%' }}
-      >
+      <g className={!reducedMotion && !dragging ? 'amb amb-elder-sway' : undefined}>
         {/* His whole body, at Buddha's own proportions scaled down by 0.55 (chin lands exactly on
             `ANCHOR`): a wide crossed-leg seat, a torso robed over one shoulder, the other arm bare —
             skin against robe is what reads as an actual body, not a barrel. */}
@@ -295,7 +291,7 @@ export function Elder({ proposed, running, onOpen }: { proposed: number; running
             itself: sitting exactly on top of the grip circles, it would otherwise steal the very
             pointerdown they exist to catch. */}
         <circle cx={tip.x} cy={tip.y} r="2.8" fill="#f7f3e6" opacity="0.95" style={{ pointerEvents: 'none' }} />
-      </motion.g>
+      </g>
 
       {proposed > 0 && (
         <g transform="translate(30 -98)">
