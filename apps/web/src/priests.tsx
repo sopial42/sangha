@@ -125,12 +125,32 @@ export const priestsOf = (sessions: Record<string, SessionSummary>) =>
     .filter((s) => s.id !== BUDDHA_SESSION_ID)
     .sort((a, b) => a.createdAt - b.createdAt)
 
-/** Every priest in the courtyard's own order: pavilion by pavilion, left to right, each one's priests row by row. */
+/**
+ * `list` with each session's own headless children (its `parent`, when it's also in `list`) moved to
+ * sit right after it — grandchildren after their own parent in turn — so a `claude -p` launched from a
+ * priest's shell never scatters away from him. A child whose launcher isn't in `list` (elsewhere, or
+ * gone) keeps its place among the top-level ones. Order within each sibling group stays as given (by
+ * createdAt, same as `priestsOf`).
+ */
+export function groupChildren<T extends { id: string; parent?: string | null }>(list: T[]): T[] {
+  const byParent = new Map<string | null, T[]>()
+  for (const s of list) {
+    const key = s.parent && list.some((x) => x.id === s.parent) ? s.parent : null
+    const siblings = byParent.get(key)
+    if (siblings) siblings.push(s)
+    else byParent.set(key, [s])
+  }
+  const emit = (parent: string | null): T[] => (byParent.get(parent) ?? []).flatMap((s) => [s, ...emit(s.id)])
+  return emit(null)
+}
+
+/** Every priest in the courtyard's own order: pavilion by pavilion, left to right, each one's priests
+ *  row by row, headless children grouped right after whoever launched them. */
 export function courtyardOrder(sessions: Record<string, SessionSummary>, projects: ProjectInfo[]): SessionSummary[] {
   const priests = priestsOf(sessions)
   const names = projects.map((p) => p.name)
   for (const p of priests) if (!names.includes(p.project)) names.push(p.project)
-  return names.flatMap((n) => priests.filter((s) => s.project === n))
+  return names.flatMap((n) => groupChildren(priests.filter((s) => s.project === n)))
 }
 
 /**

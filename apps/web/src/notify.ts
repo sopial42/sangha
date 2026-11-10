@@ -143,8 +143,9 @@ export function watchPriests() {
 
   const unsubscribe = useApp.subscribe((state) => {
     const { sessions, selectedId, interruptedIds, clearInterrupted } = state
-    // Silenced priests (incense out) never call for you.
-    const waiting = Object.values(sessions).filter((s) => ATTENTION.includes(s.status) && !s.silenced)
+    // Silenced priests (incense out) never call for you; neither do headless children (`parent` set)
+    // — their parent answers to you, even once their own `claude -p` exits and they sit waiting.
+    const waiting = Object.values(sessions).filter((s) => ATTENTION.includes(s.status) && !s.silenced && !s.parent)
     // The tab itself says who you're looking at — his note first — so a pile of tabs, one per
     // priest, still reads apart from the outside, exactly like everywhere else he's named.
     const openLabel = selectedId === BUDDHA_SESSION_ID ? 'Bouddha' : selectedId && sessions[selectedId] ? priestLabel(sessions[selectedId]!) : null

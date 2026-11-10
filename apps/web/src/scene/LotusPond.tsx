@@ -233,7 +233,8 @@ export function PondClosed({
             <g transform="scale(1.2)">
               <ChillingPriest robe={robeOfAgent(p.agent)} delay={i * 0.7} tea={i % 2 === 1} still={reducedMotion} />
             </g>
-            {((p.status === 'waiting' && !p.silenced) || p.status === 'error') && (
+            {/* A headless child never needs attention of his own: his parent answers to you. */}
+            {!p.parent && ((p.status === 'waiting' && !p.silenced) || p.status === 'error') && (
               <circle cy="-42" r="4.5" fill="#ffb347" stroke="#2a2019" strokeWidth="1.5" />
             )}
           </g>

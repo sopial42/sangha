@@ -248,6 +248,8 @@ export function Priest({
   ackToken,
   onDragStart,
   beingDragged = false,
+  parentLabel = null,
+  childCount = 0,
 }: {
   x: number
   y: number
@@ -269,6 +271,11 @@ export function Priest({
   compact?: boolean
   /** The moon's scene coordinates: where he flies to when sent to nirvana. */
   moon?: { x: number; y: number }
+  /** For a headless child (`session.parent` set): who launched him, named in full — even when that
+   *  session isn't drawn beside him right now (set aside, or gone), so his tooltip still says whose. */
+  parentLabel?: string | null
+  /** How many headless children this priest himself launched (0: none, no badge). */
+  childCount?: number
   /** Set right after you've closed his conversation: a brief acknowledgement glow. A fresh value
    *  (even the same priest closed twice in a row) always retriggers it. */
   ackToken?: number
@@ -281,8 +288,9 @@ export function Priest({
 }) {
   const { status } = session
   const working = status === 'working'
-  // Waiting for you glows, unless you silenced him (his incense is out).
-  const unread = status === 'waiting' && !session.silenced
+  // Waiting for you glows, unless you silenced him (his incense is out) — or he's a headless child:
+  // his parent answers to you, so he never calls for you himself, even once his own `claude -p` exits.
+  const unread = status === 'waiting' && !session.silenced && !session.parent
   // His bubble stays closed ("…") and opens on hover; only while he waits for you does it show, open,
   // what he waits for. Snuffing his incense closes it again.
   const [peek, setPeek] = useState(false)
@@ -298,7 +306,12 @@ export function Priest({
   const tired = session.context == null ? 0 : Math.max(0, Math.min(1, (session.context - 200_000) / 600_000))
   // His note first — already visible under him once written, but the tooltip and screen-reader label
   // say it too, so hovering or focusing him alone is enough to tell him apart.
-  const label = `${session.note ? `${session.note} — ` : ''}${title} sur ${session.project}${session.branch ? ` (${session.branch})` : ''} : ${session.title} (${status})${session.external ? ', lancé hors de Sangha' : ''}`
+  const label = `${session.note ? `${session.note} — ` : ''}${title} sur ${session.project}${session.branch ? ` (${session.branch})` : ''} : ${session.title} (${status})${
+    parentLabel ? `, agent lancé par ${parentLabel}` : session.external ? ', lancé hors de Sangha' : ''
+  }${childCount > 0 ? `, ${childCount} moine${childCount > 1 ? 's' : ''} à sa suite` : ''}`
+  // A headless child (`claude -p` from his launcher's own shell) marks himself apart from a plain
+  // terminal session, whether or not his launcher is drawn beside him right now.
+  const originMark = session.parent ? '↳ ' : session.external ? '⌨ ' : '⎇ '
   // Once he has a pull request, its branch is the real one checked out (may differ from session.branch,
   // the one Sangha created for him). The chip rides the same line when it fits, else drops just below —
   // char-budget heuristic, no DOM measurement available for centered SVG text.
@@ -439,6 +452,17 @@ export function Priest({
               ⟳
             </text>
           )}
+          {/* Launched his own headless children: a small, sober count at his shoulder — not a bubble,
+              nothing that competes with his own activity/recap one. */}
+          {childCount > 0 && (
+            <g transform="translate(48 -54)">
+              <title>{`${childCount} moine${childCount > 1 ? 's' : ''} à sa suite`}</title>
+              <circle r="10" fill="#2a1d12" stroke={robe} strokeWidth="1.5" />
+              <text y="3.5" textAnchor="middle" className="scene-child-count">
+                {childCount}
+              </text>
+            </g>
+          )}
           <AnimatePresence>
             {activity && peek && (
               <motion.g key="activity" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
@@ -472,14 +496,14 @@ export function Priest({
             {pr && chipInline ? (
               <>
                 <text y={48 + noteShift} x="-3" textAnchor="end" className="scene-repo">
-                  {session.external ? '⌨ ' : '⎇ '}
+                  {originMark}
                   {shownBranch}
                 </text>
                 <PRChip x={3} y={48 + noteShift} align="start" pr={pr} />
               </>
             ) : (
               <text y={48 + noteShift} textAnchor="middle" className="scene-repo">
-                {session.external ? '⌨ ' : '⎇ '}
+                {originMark}
                 {shownBranch}
               </text>
             )}

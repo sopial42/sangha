@@ -821,7 +821,14 @@ export function SessionView() {
                       </a>
                     </>
                   )}
-                  {s.external && ' · ⌨ lancée hors de Sangha'}
+                  {s.parent && sessions[s.parent] ? (
+                    <>
+                      {' · ↳ fils de '}
+                      {priestLabel(sessions[s.parent]!)}
+                    </>
+                  ) : (
+                    s.external && ' · ⌨ lancée hors de Sangha'
+                  )}
                 </>
               )}
             </p>

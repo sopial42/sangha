@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { BUDDHA_SESSION_ID, type ProjectInfo, type SessionSummary } from '@sangha/shared'
 import { api, lotusFailure, openSession } from '../api'
-import { agentTitle, priestsOf, robeOfAgent } from '../priests'
+import { agentTitle, groupChildren, priestLabel, priestsOf, robeOfAgent } from '../priests'
 import { useApp } from '../store'
 import { Backdrop, FLOOR_Y, HALL_SCALE, hallTransform } from './Backdrop'
 import { Buddha } from './Buddha'
@@ -23,6 +23,10 @@ const BOTTOM = 265 // room under the last row for priests, their labels, context
 const HALL_W = 1000 // Buddha's hall needs this much courtyard
 const PRIEST_W = 196 // a priest with his novices, incense and recap bubble
 const PRIEST_SCALE = 0.85
+// A headless child (a `claude -p` launched from his parent's shell) draws smaller than the priest who
+// launched him, by generation — only while that parent is actually seated beside him (see `depthBeside`).
+const CHILD_SHRINK = 0.78
+const MIN_CHILD_SCALE = 0.5
 const TOP = 110 // empty sky above the hall, cropped out (mobile reference)
 // On desktop, cropped closer to the hall's roof: the courtyard, not the sky, gets the screen.
 const DESKTOP_TOP = 175
@@ -168,6 +172,30 @@ const bodySpan = (x: number, s: number): [number, number] => [x - PRIEST_BODY_HA
 const spanOverlap = (a: [number, number], b: [number, number]) => Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]))
 
 /**
+ * How many generations `s` sits below a parent actually drawn beside him in `list` (0 for a
+ * top-level priest, or a child whose own launcher isn't in `list` — set aside in the lotus pond,
+ * or gone: he then draws at full size, same as any other priest). `seen` guards against a cycle.
+ */
+function depthBeside(list: SessionSummary[], s: SessionSummary, seen = new Set<string>()): number {
+  if (!s.parent || seen.has(s.id)) return 0
+  const parent = list.find((x) => x.id === s.parent)
+  if (!parent) return 0
+  return 1 + depthBeside(list, parent, new Set(seen).add(s.id))
+}
+
+/**
+ * A thin golden cord between a child and the parent he sits beside — a prayer-bead thread, not a
+ * taut line: it sags a little, more so the further apart they are. Anchored at hand height (where
+ * his own joined hands sit), not his feet.
+ */
+function cordPath(from: { x: number; y: number; scale: number }, to: { x: number; y: number; scale: number }): string {
+  const a = { x: from.x, y: from.y - 20 * from.scale }
+  const b = { x: to.x, y: to.y - 20 * to.scale }
+  const sag = Math.min(46, Math.abs(b.x - a.x) * 0.22) + 14
+  return `M${a.x} ${a.y} Q${(a.x + b.x) / 2} ${(a.y + b.y) / 2 + sag} ${b.x} ${b.y}`
+}
+
+/**
  * Bubbles from neighbouring priests can land stacked in the gap between two pavilions: seats() only
  * knows a priest's offset in front of his own pavilion, not who else sits at the same height nearby.
  * Here, once every priest's seat is placed in scene coordinates, group them by row and settle it:
@@ -306,16 +334,35 @@ export function Monastery() {
 
   // Every priest's seat, across all pavilions, in scene coordinates: needed once, both to render
   // them and to settle bubble sides between neighbours of different pavilions (only on desktop —
-  // the mobile column stacks one priest per row, where this collision never arises).
+  // the mobile column stacks one priest per row, where this collision never arises). Within a
+  // pavilion, headless children are grouped right after whoever launched them (`groupChildren`),
+  // then draw a little smaller than him (`depthBeside`) — same seats() slots, just shrunk in place.
   const seatsByPavilion = pavilions.map((p, i) => {
-    const mine = seated.filter((s) => s.project === p.name)
-    return { p, mine, spots: seats(mine.length, places[i]!.x, places[i]!.y, mobilePerRow ?? perRowFor(mine.length), mobile ? MOBILE_ROW_GAP : ROW_GAP) }
+    const mine = groupChildren(seated.filter((s) => s.project === p.name))
+    const raw = seats(mine.length, places[i]!.x, places[i]!.y, mobilePerRow ?? perRowFor(mine.length), mobile ? MOBILE_ROW_GAP : ROW_GAP)
+    const spots = raw.map((spot, j) => {
+      const depth = depthBeside(mine, mine[j]!)
+      return depth ? { ...spot, scale: Math.max(MIN_CHILD_SCALE, spot.scale * CHILD_SHRINK ** depth) } : spot
+    })
+    return { p, mine, spots }
   })
   const bubbleSides = mobile
     ? {}
     : resolveBubbleSides(
         seatsByPavilion.flatMap(({ mine, spots }) => mine.map((s, j) => ({ id: s.id, x: spots[j]!.x, y: spots[j]!.y, scale: spots[j]!.scale, side: spots[j]!.bubbleSide }))),
       )
+  // A cord for every child whose own launcher is drawn beside him here (none otherwise: he just
+  // reads as a normal priest, per `depthBeside`/`groupChildren`'s own fallback to the top level).
+  const childCords = seatsByPavilion.flatMap(({ mine, spots }) =>
+    mine.flatMap((s, j) => {
+      const pi = s.parent ? mine.findIndex((m) => m.id === s.parent) : -1
+      return pi < 0 ? [] : [{ id: s.id, from: spots[pi]!, to: spots[j]! }]
+    }),
+  )
+  // How many headless children a priest has, counted from every session (not only those seated
+  // here: set one aside in the lotus pond and the count beside his launcher still holds).
+  const childCountOf = new Map<string, number>()
+  for (const p of priests) if (p.parent) childCountOf.set(p.parent, (childCountOf.get(p.parent) ?? 0) + 1)
 
   // --- The temples' lotus ponds: open/close, and dragging a priest in or out ---------------------
   // A priest goes into his own temple's pond, and only that one: `pond` is where it lies.
@@ -477,7 +524,8 @@ export function Monastery() {
     return () => window.removeEventListener('keydown', onKey)
   }, [openPond])
 
-  const needsAttention = (p: SessionSummary) => (p.status === 'waiting' && !p.silenced) || p.status === 'error'
+  // A headless child never needs attention of his own: his parent answers to you.
+  const needsAttention = (p: SessionSummary) => !p.parent && ((p.status === 'waiting' && !p.silenced) || p.status === 'error')
   // Tall panels (many priests set aside) can reach below the courtyard's usual bottom: grow the
   // viewBox to fit rather than let it clip.
   const effectiveHeight = panelAt && openSize ? Math.max(height, panelAt.y + openSize.h / 2 + 60) : height
@@ -536,6 +584,21 @@ export function Monastery() {
         <AddProjectMarker onClick={() => set({ dialog: { kind: 'add-project' } })} />
       </g>
 
+      {/* The cords, first: every monk below draws on top of his own thread, never under it. */}
+      <AnimatePresence>
+        {childCords.map((c) => (
+          <motion.path
+            key={c.id}
+            d={cordPath(c.from, c.to)}
+            className="child-cord"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.4 }}
+          />
+        ))}
+      </AnimatePresence>
+
       <AnimatePresence>
         {seatsByPavilion.flatMap(({ mine, spots }) =>
           mine.map((s, j) => (
@@ -549,6 +612,8 @@ export function Monastery() {
               title={agentTitle(s, projects)}
               profiles={profiles}
               selected={s.id === selectedId}
+              parentLabel={s.parent && sessions[s.parent] ? priestLabel(sessions[s.parent]!) : null}
+              childCount={childCountOf.get(s.id) ?? 0}
               onSelect={() => guardedSelect(s.id)}
               onSelectNovice={(monkId) => {
                 select(s.id)
