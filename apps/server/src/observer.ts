@@ -6,6 +6,7 @@ import type { NoviceSummary, SessionSummary } from '@sangha/shared'
 import { readHead, readTailLines } from './files'
 import { currentBranch } from './git'
 import { CLAUDE_PROJECTS, encodeDir, type Projects } from './projects'
+import { claudeAncestor, isClaude, parseProcs, sessionIdOf } from './processes'
 import type { Store } from './db'
 import { recap, type Recap } from './recap'
 import { aiTitle, contextTokens, firstPrompt, lastTool, lastUserMessageAt, latestPrompt, mainAgent, parseLine, TranscriptReader } from './transcript'
@@ -20,32 +21,30 @@ export const EXTERNAL_PREFIX = 'ext:'
 type Found = { summary: SessionSummary; file: string; proc: { pid: number; cwd: string } | null }
 
 const exec = promisify(execFile)
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
-
-type Live = { pid: number; cwd: string; file: string | null }
+/** `parent`: the Claude Code session id of the `claude` process that launched this one (a headless `claude -p`). */
+type Live = { pid: number; cwd: string; file: string | null; parent: string | null }
 
 /**
  * `claude` processes running on this machine, with their folder and transcript, so an open but idle
- * session is still seen. SDK-driven processes (Sangha's own) are left out.
+ * session is still seen. SDK-driven processes (Sangha's own) are left out, but each one left is tied to
+ * the `claude` process above it, if any: the session that launched it.
  */
 async function liveClaudes(): Promise<Live[]> {
   let out = ''
   try {
-    out = (await exec('ps', ['-axo', 'pid=,command='], { maxBuffer: 8 * 1024 * 1024 })).stdout
+    out = (await exec('ps', ['-axo', 'pid=,ppid=,command='], { maxBuffer: 8 * 1024 * 1024 })).stdout
   } catch {
     return []
   }
-  const found: Live[] = []
-  for (const line of out.split('\n')) {
-    const m = /^\s*(\d+)\s+(\S+)(.*)$/.exec(line)
-    if (!m || basename(m[2]!) !== 'claude' || m[0].includes('claude-agent-sdk') || m[3]!.includes('stream-json')) continue
-    const pid = Number(m[1])
-    const cwd = await cwdOf(pid)
+  const procs = parseProcs(out)
+  const found: (Live & { above: number | null })[] = []
+  for (const p of procs.values()) {
+    if (!isClaude(p.command) || p.command.includes('claude-agent-sdk') || p.command.includes('stream-json')) continue
+    const cwd = await cwdOf(p.pid)
     if (!cwd) continue
-    const args = m[3]!.trim().split(/\s+/)
-    const flag = args.findIndex((a) => a === '--resume' || a === '-r' || a === '--session-id')
-    const id = flag >= 0 && UUID.test(args[flag + 1] ?? '') ? args[flag + 1]! : null
+    const id = sessionIdOf(p.command)
+    const above = claudeAncestor(p.pid, procs)
     const dir = join(CLAUDE_PROJECTS, encodeDir(cwd))
     let file: string | null = id && existsSync(join(dir, `${id}.jsonl`)) ? join(dir, `${id}.jsonl`) : null
     if (!file && existsSync(dir)) {
@@ -56,9 +55,13 @@ async function liveClaudes(): Promise<Live[]> {
         .sort((a, b) => b.t - a.t)[0]
       file = newest?.f ?? null
     }
-    found.push({ pid, cwd, file })
+    found.push({ pid: p.pid, cwd, file, parent: above ? sessionIdOf(above.command) : null, above: above?.pid ?? null })
   }
-  return found
+  // A launcher started without an explicit id: its session is the transcript its own process writes.
+  return found.map(({ above, ...l }) => ({
+    ...l,
+    parent: l.parent ?? (above === null ? null : (found.find((f) => f.pid === above)?.file?.replace(/^.*\/|\.jsonl$/g, '') ?? null)),
+  }))
 }
 
 async function cwdOf(pid: number): Promise<string | null> {
@@ -87,13 +90,17 @@ export class Observer {
   private recapQueue: string[] = []
   private recapping = false
   private agents = new Map<string, string>()
+  // Headless sessions launched by another one (transcript → parent's Claude Code session id), remembered
+  // past their process so a finished one stays by its parent, like any session, until it ages out.
+  private children = new Map<string, string>()
   private first = true
   private timer: NodeJS.Timeout | undefined
 
   constructor(
     private store: Store,
     private projects: Projects,
-    private ownSessionIds: () => Set<string>,
+    /** Claude Code session id → Sangha session id, for Sangha's own priests. */
+    private ownSessionIds: () => Map<string, string>,
     private onChange: (changed: SessionSummary[], removed: string[]) => void,
     private onProjectsAdded: () => void,
     /** An outside session's folder, once it stops working (it may just have run `gh pr create`). */
@@ -185,13 +192,16 @@ export class Observer {
       for (const f of files) {
         const sessionId = basename(f.path, '.jsonl')
         if (own.has(sessionId)) continue
+        const proc = live.find((l) => l.file === f.path)
+        if (proc?.parent) this.children.set(f.path, proc.parent)
+        const launcher = this.children.get(f.path) ?? null
         const tail = readTailLines(f.path, 256 * 1024).map(parseLine).filter((l) => l !== null)
-        // Sessions driven through an SDK (Sangha itself, other tools) are not someone at a terminal.
-        if (tail.some((l) => l.entrypoint?.startsWith('sdk'))) continue
+        // Sessions driven through an SDK (Sangha itself, other tools) are not someone at a terminal; unless a
+        // session launched it (`claude -p` from his shell): then it is one of his own monks.
+        if (!launcher && tail.some((l) => l.entrypoint?.startsWith('sdk'))) continue
         // The latest folder that belongs to a project (tools may briefly cd into scratch folders);
         // if none does yet, the session's own folder becomes a project: every agent gets its pavilion.
         const cwds = [...new Set([...tail].reverse().flatMap((l) => (l.cwd ? [l.cwd] : [])))]
-        const proc = live.find((l) => l.file === f.path)
         if (proc && !cwds.includes(proc.cwd)) cwds.push(proc.cwd)
         let cwd: string | null = null
         let project: string | undefined
@@ -219,10 +229,13 @@ export class Observer {
         const novices = this.novices(f.path, now)
         const lastMove = Math.max(f.mtime, ...novices.map((n) => n.mtime))
         // Sent away: it comes back only once you wrote to it after that, not because it keeps working.
-        if ((this.hidden.get(id) ?? 0) >= (lastUserMessageAt(tail) ?? 0)) continue
-        const working = now - lastMove < WORKING_MS
-        // Sessions found at startup count as already seen: only new activity should call for you.
-        if (this.first && !this.seenAt.has(id)) this.seenAt.set(id, lastMove)
+        const hiddenAt = this.hidden.get(id)
+        if (hiddenAt !== undefined && hiddenAt >= (lastUserMessageAt(tail) ?? 0)) continue
+        // A headless monk works as long as his process runs: it ends with his task.
+        const working = now - lastMove < WORKING_MS || (!!launcher && !!proc)
+        // Sessions found at startup count as already seen: only new activity should call for you. A launched
+        // monk never calls for you: he answers to the session that launched him.
+        if (launcher || (this.first && !this.seenAt.has(id))) this.seenAt.set(id, lastMove)
         // Not working: it ended its turn and waits for your input.
         const status = working ? 'working' : 'waiting'
         if (!this.first && this.found.get(id)?.summary.status === 'working' && status !== 'working') this.onStoppedWorking(cwd)
@@ -267,11 +280,21 @@ export class Observer {
             cwd,
             pr: null, // decorated by Sessions
             scripts: [], // outside sessions: not followed live, so no script tracking
+            parent: launcher && (own.get(launcher) ?? EXTERNAL_PREFIX + launcher),
           },
         })
       }
     }
     this.first = false
+    // A launcher Sangha does not see (gone, hidden, outside any project): his monks stand on their own.
+    for (const f of next.values()) {
+      const p = f.summary.parent
+      if (p?.startsWith(EXTERNAL_PREFIX) && !next.has(p)) f.summary = { ...f.summary, parent: null }
+    }
+    const shown = new Set([...next.values()].map((f) => f.file))
+    for (const file of this.children.keys()) {
+      if (!shown.has(file) && (!existsSync(file) || now - statSync(file).mtimeMs > WINDOW_MS)) this.children.delete(file)
+    }
     if (added) this.onProjectsAdded()
     // Stopped sessions without a current recap get one, one call at a time.
     for (const f of next.values()) {

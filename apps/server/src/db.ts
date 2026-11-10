@@ -644,9 +644,10 @@ export class Store {
   }
 
   /** Claude session ids driven by Sangha itself, so the observer does not mistake them for outside sessions. */
-  claudeSessionIds(): Set<string> {
-    const rows = this.db.prepare('SELECT claude_session_id AS id FROM sessions WHERE claude_session_id IS NOT NULL').all() as { id: string }[]
-    return new Set(rows.map((r) => r.id))
+  /** Claude Code session id → Sangha session id, for every priest Sangha started. */
+  claudeSessionIds(): Map<string, string> {
+    const rows = this.db.prepare('SELECT claude_session_id AS claude, id FROM sessions WHERE claude_session_id IS NOT NULL').all() as { claude: string; id: string }[]
+    return new Map(rows.map((r) => [r.claude, r.id]))
   }
 
   /** Stable robe color per project: the first palette color no other project wears. */

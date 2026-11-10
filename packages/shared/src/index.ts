@@ -227,6 +227,8 @@ export type SessionSummary = SessionInfo & {
   remote?: string | null
   /** You asked for Remote Control while he worked: it starts by itself once his turn ends (nothing is cut). */
   remotePending?: boolean
+  /** The session whose process launched this one (a headless `claude -p` started from its shell); null/absent for a top-level session. */
+  parent?: string | null
 }
 
 /** An MCP server of a priest: 'disabled' = loaded but switched off, 'off' = in your Claude config, not loaded. */
