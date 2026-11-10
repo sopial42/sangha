@@ -37,3 +37,14 @@ export function claudeAncestor(pid: number, procs: Map<number, Proc>): Proc | nu
   }
   return null
 }
+
+const SESSION_ENV = /(?:^|[\s\0])CLAUDE_CODE_SESSION_ID=([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?=[\s\0]|$)/
+
+/**
+ * The session a process was launched from, as Claude Code leaves it in the environment of everything
+ * its tools start (`CLAUDE_CODE_SESSION_ID`): it survives the launcher's death or a detached `nohup … &`.
+ * `env` is `ps eww` output or /proc/<pid>/environ.
+ */
+export function launcherFromEnv(env: string): string | null {
+  return SESSION_ENV.exec(env)?.[1] ?? null
+}

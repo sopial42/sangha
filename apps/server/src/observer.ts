@@ -6,7 +6,7 @@ import type { NoviceSummary, SessionSummary } from '@sangha/shared'
 import { readHead, readTailLines } from './files'
 import { currentBranch } from './git'
 import { CLAUDE_PROJECTS, encodeDir, type Projects } from './projects'
-import { claudeAncestor, isClaude, parseProcs, sessionIdOf } from './processes'
+import { claudeAncestor, isClaude, launcherFromEnv, parseProcs, sessionIdOf } from './processes'
 import type { Store } from './db'
 import { recap, type Recap } from './recap'
 import { aiTitle, contextTokens, firstPrompt, lastTool, lastUserMessageAt, latestPrompt, mainAgent, parseLine, TranscriptReader } from './transcript'
@@ -45,6 +45,7 @@ async function liveClaudes(): Promise<Live[]> {
     if (!cwd) continue
     const id = sessionIdOf(p.command)
     const above = claudeAncestor(p.pid, procs)
+    const launcher = await launcherOf(p.pid)
     const dir = join(CLAUDE_PROJECTS, encodeDir(cwd))
     let file: string | null = id && existsSync(join(dir, `${id}.jsonl`)) ? join(dir, `${id}.jsonl`) : null
     if (!file && existsSync(dir)) {
@@ -55,13 +56,26 @@ async function liveClaudes(): Promise<Live[]> {
         .sort((a, b) => b.t - a.t)[0]
       file = newest?.f ?? null
     }
-    found.push({ pid: p.pid, cwd, file, parent: above ? sessionIdOf(above.command) : null, above: above?.pid ?? null })
+    found.push({ pid: p.pid, cwd, file, parent: launcher && launcher !== (id ?? file?.replace(/^.*\/|\.jsonl$/g, '')) ? launcher : above ? sessionIdOf(above.command) : null, above: above?.pid ?? null })
   }
   // A launcher started without an explicit id: its session is the transcript its own process writes.
   return found.map(({ above, ...l }) => ({
     ...l,
     parent: l.parent ?? (above === null ? null : (found.find((f) => f.pid === above)?.file?.replace(/^.*\/|\.jsonl$/g, '') ?? null)),
   }))
+}
+
+/** The session that launched this process, from its environment (see `launcherFromEnv`). */
+async function launcherOf(pid: number): Promise<string | null> {
+  try {
+    return launcherFromEnv(readFileSync(`/proc/${pid}/environ`, 'utf8')) // Linux
+  } catch {
+    try {
+      return launcherFromEnv((await exec('ps', ['eww', '-o', 'command=', '-p', String(pid)], { maxBuffer: 4 * 1024 * 1024 })).stdout) // macOS
+    } catch {
+      return null
+    }
+  }
 }
 
 async function cwdOf(pid: number): Promise<string | null> {

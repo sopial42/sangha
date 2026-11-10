@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { claudeAncestor, isClaude, parseProcs, sessionIdOf } from '../src/processes'
+import { claudeAncestor, isClaude, launcherFromEnv, parseProcs, sessionIdOf } from '../src/processes'
 
 const LEAD = 'd78d57f4-01ec-4669-94ab-e41169c267e4'
 
@@ -44,5 +44,17 @@ describe('processes', () => {
   it('survives a cycle in the process table', () => {
     const loop = parseProcs('10 11 zsh\n11 10 zsh\n')
     expect(claudeAncestor(10, loop)).toBeNull()
+  })
+})
+
+describe('launcherFromEnv', () => {
+  it('reads the launching session from ps eww output or /proc environ', () => {
+    expect(launcherFromEnv(`claude -p hi PATH=/bin CLAUDE_CODE_SESSION_ID=${LEAD} CLAUDECODE=1`)).toBe(LEAD)
+    expect(launcherFromEnv(`PATH=/bin\0CLAUDE_CODE_SESSION_ID=${LEAD}\0`)).toBe(LEAD)
+  })
+  it('ignores a missing or malformed id', () => {
+    expect(launcherFromEnv('claude PATH=/bin')).toBeNull()
+    expect(launcherFromEnv('XCLAUDE_CODE_SESSION_ID=' + LEAD)).toBeNull()
+    expect(launcherFromEnv(`CLAUDE_CODE_SESSION_ID=${LEAD}x`)).toBeNull()
   })
 })
