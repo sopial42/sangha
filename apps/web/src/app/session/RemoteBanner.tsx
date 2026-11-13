@@ -22,7 +22,7 @@ export function RemoteBanner({ url, busy, onStop }: { url: string; busy: boolean
       .catch(() => undefined)
   }
   return (
-    <div className="mx-auto w-full max-w-3xl px-8 pt-4">
+    <div className="mx-auto w-full max-w-3xl px-4 sm:px-8 pt-4">
       <section aria-live="polite" aria-label="Remote Control" className="flex items-center gap-3 rounded-xl border bg-card px-4 py-3">
         <HugeiconsIcon icon={SmartPhone01Icon} strokeWidth={1.8} className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">

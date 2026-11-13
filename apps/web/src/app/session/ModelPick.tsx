@@ -4,6 +4,7 @@ import { api } from '@/api'
 import { nameOf } from '@/lib/sessions'
 import { useApp } from '@/store'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { fromSelectValue, toSelectValue } from '@/lib/select'
 
 /**
  * The model the session thinks with, changeable at any time: within Claude (or within OVH) from its next reply on.
@@ -29,7 +30,11 @@ export function ModelPick({ session: s }: { session: SessionSummary }) {
   }
   return (
     <div className="flex min-w-0 flex-col items-end gap-1">
-      <Select items={models.map((m) => ({ value: m.id, label: m.label }))} value={current} onValueChange={change}>
+      <Select
+        items={models.map((m) => ({ value: toSelectValue(m.id), label: m.label }))}
+        value={current == null ? null : toSelectValue(current)}
+        onValueChange={(v) => change(v == null ? null : fromSelectValue(v))}
+      >
         <SelectTrigger
           size="sm"
           aria-label="Model for this session"
@@ -41,7 +46,7 @@ export function ModelPick({ session: s }: { session: SessionSummary }) {
         </SelectTrigger>
         <SelectContent align="end" alignItemWithTrigger={false}>
           {models.map((m) => (
-            <SelectItem key={m.id} value={m.id}>
+            <SelectItem key={m.id} value={toSelectValue(m.id)}>
               {m.label}
             </SelectItem>
           ))}

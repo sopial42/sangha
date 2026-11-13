@@ -615,7 +615,7 @@ function Conversation({ author, external = null }: ChatProps) {
   const feedback = (seq: number) =>
     sessionId && <FeedbackControl sessionId={sessionId} eventSeq={seq} commented={commented.has(seq)} onDone={() => setCommented((s) => new Set(s).add(seq))} />
 
-  const render = (item: Exclude<ChatItem, ToolItem>, i: number): ReactNode => {
+  const render = (item: Exclude<ChatItem, ToolItem>, _i: number): ReactNode => {
     switch (item.kind) {
       case 'user':
         return (
@@ -753,7 +753,7 @@ function Conversation({ author, external = null }: ChatProps) {
       <MessageScroller className="min-h-0 flex-1">
         <MessageScrollerViewport aria-label={`Messages with ${author}`}>
           {hiddenOlder > 0 && (
-            <div className="mx-auto w-full max-w-3xl px-8 pt-6">
+            <div className="mx-auto w-full max-w-3xl px-4 sm:px-8 pt-6">
               <Marker variant="separator" render={<button type="button" onClick={loadOlder} />} className="text-small hover:text-foreground">
                 <MarkerContent>
                   Show {Math.min(PAGE, hiddenOlder)} earlier messages ({hiddenOlder} hidden)
@@ -761,7 +761,7 @@ function Conversation({ author, external = null }: ChatProps) {
               </Marker>
             </div>
           )}
-          <MessageScrollerContent className="mx-auto w-full max-w-3xl px-8 py-6">
+          <MessageScrollerContent className="mx-auto w-full max-w-3xl px-4 sm:px-8 py-6">
             {empty && (
               <MessageScrollerItem>
                 <Empty>
@@ -795,7 +795,7 @@ function Conversation({ author, external = null }: ChatProps) {
         </MessageScrollerButton>
       </MessageScroller>
 
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-8 pb-6">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 sm:px-8 pb-6">
         {sessionId && queued.map((m) => <Queued key={m.id} sessionId={sessionId} author={author} m={m} />)}
         {external && (
           <p className="text-meta text-muted-foreground">

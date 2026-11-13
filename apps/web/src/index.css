@@ -198,6 +198,14 @@
   }
 }
 
+/* The sessions drawer on a phone: slides in from the edge with an iOS-like curve. */
+@utility motion-drawer {
+  transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
+  @starting-style {
+    transform: translateX(-100%);
+  }
+}
+
 /* Collapsible panels: the content below slides instead of jumping. */
 @utility motion-collapse {
   height: var(--collapsible-panel-height);
@@ -297,7 +305,8 @@
       transform: none;
     }
   }
-  .motion-land {
+  .motion-land,
+  .motion-drawer {
     @starting-style {
       transform: none;
     }

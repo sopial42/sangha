@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { api, openEvents, openSession } from './api'
 import { Dialogs } from './dialogs'
 import { currentId } from './lib/legacy'
@@ -6,14 +6,17 @@ import { useSessionNav } from './nav'
 import { keepAudioUnlocked, watchHostSuggestions, watchSessions } from './notify'
 import { useApp } from './store'
 import { Board } from './app/Board'
-import { FocusView } from './app/FocusView'
 import { Sidebar } from './app/Sidebar'
 import { TopBar } from './app/TopBar'
 import { Alert, AlertAction, AlertDescription } from './components/ui/alert'
 import { Button } from './components/ui/button'
 import { TooltipProvider } from './components/ui/tooltip'
+import { PHONE, useMedia } from './lib/useMedia'
 
 const SIDEBAR_KEY = 'sangha.sidebarCollapsed'
+
+// The session view (conversation, markdown, session cards) loads on first open: the board shows without it.
+const FocusView = lazy(() => import('./app/FocusView').then((m) => ({ default: m.FocusView })))
 
 export function App() {
   const set = useApp((s) => s.set)
@@ -24,11 +27,31 @@ export function App() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === '1')
   useSessionNav()
 
-  const toggleSidebar = () =>
+  // On a phone the sidebar is always a rail, and the full list opens as a drawer over the page.
+  const phone = useMedia(PHONE)
+  const [drawer, setDrawer] = useState(false)
+  useEffect(() => setDrawer(false), [selectedId, phone])
+  const phoneRef = useRef(phone)
+  phoneRef.current = phone
+  // Escape closes the drawer first (capture phase: before the session view's own Escape).
+  useEffect(() => {
+    if (!drawer) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      setDrawer(false)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [drawer])
+
+  const toggleSidebar = () => {
+    if (phoneRef.current) return setDrawer((d) => !d)
     setCollapsed((c) => {
       localStorage.setItem(SIDEBAR_KEY, c ? '0' : '1')
       return !c
     })
+  }
 
   // ⌘B / Ctrl+B: fold the sessions list into a rail, or unfold it.
   useEffect(() => {
@@ -90,8 +113,22 @@ export function App() {
           </Alert>
         )}
         <div className="flex min-h-0 flex-1">
-          <Sidebar collapsed={collapsed} />
-          <main className="flex min-w-0 flex-1 flex-col">{selectedId && selected ? <FocusView s={selected} /> : <Board />}</main>
+          <Sidebar collapsed={collapsed || phone} />
+          {phone && drawer && (
+            <div className="fixed inset-0 z-40 flex">
+              <button type="button" aria-label="Close sessions" className="absolute inset-0 bg-black/50 transition-opacity duration-200 starting:opacity-0" onClick={() => setDrawer(false)} />
+              <div className="relative flex h-full shadow-2xl motion-drawer">
+                <Sidebar collapsed={false} />
+              </div>
+            </div>
+          )}
+          <main className="flex min-w-0 flex-1 flex-col">{selectedId && selected ? (
+              <Suspense fallback={null}>
+                <FocusView s={selected} />
+              </Suspense>
+            ) : (
+              <Board />
+            )}</main>
         </div>
         <Dialogs />
       </div>

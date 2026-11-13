@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { fromSelectValue, toSelectValue } from '@/lib/select'
 
 const FORM_ID = 'new-session-form'
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
@@ -188,13 +189,17 @@ export function NewSession({ project: initial, onClose }: { project?: string; on
                   {models.length > 0 && (
                     <Field>
                       <FieldLabel htmlFor="ns-model">Model</FieldLabel>
-                      <Select items={models.map((x) => ({ value: x.id, label: x.label }))} value={model} onValueChange={(v) => v != null && setModel(v)}>
+                      <Select
+                        items={models.map((x) => ({ value: toSelectValue(x.id), label: x.label }))}
+                        value={toSelectValue(model)}
+                        onValueChange={(v) => v != null && setModel(fromSelectValue(v))}
+                      >
                         <SelectTrigger id="ns-model" className="w-full">
                           <SelectValue placeholder="Default model" />
                         </SelectTrigger>
                         <SelectContent>
                           {models.map((x) => (
-                            <SelectItem key={x.id} value={x.id}>
+                            <SelectItem key={x.id} value={toSelectValue(x.id)}>
                               {x.label}
                             </SelectItem>
                           ))}

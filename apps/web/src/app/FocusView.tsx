@@ -9,6 +9,7 @@ import { ConversationFeedback, McpPanel, ModelPick, Subagent, ProgressCard, Remi
 import { useApp } from '@/store'
 import { cn } from '@/lib/utils'
 import { clock } from '@/lib/time'
+import { NARROW, useMedia } from '@/lib/useMedia'
 import { agentName, duration, formatCost, formatTokens, FRESH_START_AT, nameOf, needsYou, pebbleOf, shortenPath, statusLine } from '@/lib/sessions'
 import { PebbleIcon } from '@/components/pebble/Pebble'
 import { Button } from '@/components/ui/button'
@@ -30,13 +31,15 @@ const DETAILS_KEY = 'sangha.details'
 export function FocusView({ s }: { s: SessionSummary }) {
   const projects = useApp((st) => st.projects)
   const dialog = useApp((st) => st.dialog)
-  const [details, setDetails] = useState(() => localStorage.getItem(DETAILS_KEY) !== '0')
+  // On a narrow screen the details open over the conversation, so they start closed there.
+  const narrow = useMedia(NARROW)
+  const [details, setDetails] = useState(() => !window.matchMedia(NARROW).matches && localStorage.getItem(DETAILS_KEY) !== '0')
   const [mcpOpen, setMcpOpen] = useState(false)
   const isOrchestrator = s.id === ORCHESTRATOR_SESSION_ID
   const agent = isOrchestrator ? 'Orchestrator' : agentName(s, projects)
 
   const toggleDetails = () => {
-    localStorage.setItem(DETAILS_KEY, details ? '0' : '1')
+    if (!narrow) localStorage.setItem(DETAILS_KEY, details ? '0' : '1')
     setDetails(!details)
   }
 
@@ -67,18 +70,18 @@ export function FocusView({ s }: { s: SessionSummary }) {
 
   // Picking a subagent from the conversation shows it in the details panel, opened if needed.
   useEffect(() => {
-    if (selectedSubagent && !details) setDetails(true)
+    if (selectedSubagent) setDetails(true)
   }, [selectedSubagent])
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="relative flex min-h-0 flex-1">
       <section aria-labelledby="focus-title" className="flex min-w-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-3 border-b px-6 py-4">
-          <Button variant="outline" onClick={closeSession} className="pl-2">
+        <header className="flex shrink-0 items-center gap-3 border-b px-4 py-4 sm:px-6">
+          <Button variant="outline" onClick={closeSession} className="pl-2 max-sm:px-2" aria-label="Back to the board">
             <HugeiconsIcon icon={ArrowLeft01Icon} strokeWidth={1.8} data-icon="inline-start" />
-            Board
+            <span className="max-sm:hidden">Board</span>
           </Button>
-          <Separator orientation="vertical" className="h-5" />
+          <Separator orientation="vertical" className="h-5 max-sm:hidden" />
           <PebbleIcon sprite={isOrchestrator ? 'icon-stone-open' : pebbleOf(s, true).sprite} size={34} />
           <div className="flex min-w-0 flex-1 flex-col gap-0.5">
             <h1 id="focus-title" className="truncate text-title font-semibold">
@@ -104,15 +107,15 @@ export function FocusView({ s }: { s: SessionSummary }) {
         <div className="flex min-h-0 flex-1 flex-col">
           {!isOrchestrator && remote.url && <RemoteBanner url={remote.url} busy={remote.busy} onStop={remote.stop} />}
           {!isOrchestrator && !remote.url && remote.pending && (
-            <p className="mx-auto w-full max-w-3xl px-8 pt-3 text-small text-muted-foreground">Remote Control starts when this turn ends: nothing is cut.</p>
+            <p className="mx-auto w-full max-w-3xl px-4 sm:px-8 pt-3 text-small text-muted-foreground">Remote Control starts when this turn ends: nothing is cut.</p>
           )}
           {remote.error && (
-            <p role="alert" className="mx-auto w-full max-w-3xl px-8 pt-3 text-small text-danger">
+            <p role="alert" className="mx-auto w-full max-w-3xl px-4 sm:px-8 pt-3 text-small text-danger">
               {remote.error}
             </p>
           )}
           {!isOrchestrator && (
-            <div className="mx-auto w-full max-w-3xl px-8 pt-4">
+            <div className="mx-auto w-full max-w-3xl px-4 sm:px-8 pt-4">
               <ProgressCard session={s} />
             </div>
           )}
@@ -120,7 +123,7 @@ export function FocusView({ s }: { s: SessionSummary }) {
         </div>
       </section>
 
-      {details && !isOrchestrator && <Details s={s} agent={agent} mcpOpen={mcpOpen} setMcpOpen={setMcpOpen} />}
+      {details && !isOrchestrator && <Details s={s} agent={agent} mcpOpen={mcpOpen} setMcpOpen={setMcpOpen} overlay={narrow} />}
     </div>
   )
 }
@@ -252,7 +255,7 @@ function SessionMenu({ s, remote }: { s: SessionSummary; remote: Remote }) {
 const SEGMENTS = 24
 const CONTEXT_MAX = 1_000_000
 
-function Details({ s, agent, mcpOpen, setMcpOpen }: { s: SessionSummary; agent: string; mcpOpen: boolean; setMcpOpen: (open: boolean) => void }) {
+function Details({ s, agent, mcpOpen, setMcpOpen, overlay }: { s: SessionSummary; agent: string; mcpOpen: boolean; setMcpOpen: (open: boolean) => void; overlay: boolean }) {
   const view = useApp((st) => st.view)
   const selectedSubagent = useApp((st) => st.selectedSubagent)
   const set = useApp((st) => st.set)
@@ -269,7 +272,14 @@ function Details({ s, agent, mcpOpen, setMcpOpen }: { s: SessionSummary; agent: 
   }, [scripts.length])
 
   return (
-    <aside aria-label="Session details" className="flex w-75 shrink-0 flex-col border-l bg-sidebar">
+    <aside
+      aria-label="Session details"
+      className={cn(
+        'flex w-75 shrink-0 flex-col border-l bg-sidebar',
+        // Narrow screens: over the conversation, from the right edge, instead of squeezing it.
+        overlay && 'absolute inset-y-0 right-0 z-20 max-w-[calc(100%-3rem)] shadow-2xl transition-transform duration-200 ease-out-strong starting:translate-x-full',
+      )}
+    >
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-6 p-6">
           {s.context != null && (

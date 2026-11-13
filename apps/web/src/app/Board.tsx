@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Add01Icon } from '@hugeicons/core-free-icons'
 import { ORCHESTRATOR_SESSION_ID, type SessionSummary } from '@sangha/shared'
@@ -48,13 +48,15 @@ export function Board() {
   const orchestrator = all[ORCHESTRATOR_SESSION_ID]
   const names = [...new Set([...projects.map((p) => p.name), ...sessions.map((s) => s.project)])]
 
-  const layout = useMemo(() => {
+  // Cheap enough to recompute on every render: a handful of zones.
+  const layout = (() => {
     const n = names.length + 1 // + the "add a project" zone
-    const cols = n <= 2 ? 2 : width > 1000 ? 3 : 2
+    const cols = width < 560 ? 1 : n <= 2 ? 2 : width > 1000 ? 3 : 2
     const hw = Math.max(110, Math.min(MAX_HW, (width - 64) / (2 * GAP * (cols - 1) + 2)))
     const hh = hw / 2
     const ox = GAP * hw
-    const oy = GAP * hh
+    // One column (a phone): zones stacked need room between them for each one's floating label.
+    const oy = GAP * hh + (cols === 1 ? 34 : 0)
     const rows = Math.ceil(n / cols)
     const zones: Zone[] = [...names, '+'].map((name, i) => {
       const c = i % cols
@@ -64,7 +66,7 @@ export function Board() {
     const height = TOP + hh * 2 + (rows - 1) * 2 * oy + 80
     const scale = Math.max(0.5, Math.min(0.75, (hw / 158) * 0.68))
     return { zones, height, scale, links: names.length <= 4 }
-  }, [width, names.join('|')])
+  })()
 
   // Each project's sessions on a small isometric lattice inside its zone; children beside their parent.
   const placed: Placed[] = []

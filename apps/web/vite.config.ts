@@ -13,5 +13,17 @@ export default defineConfig({
   resolve: { alias: { '@': path.resolve(import.meta.dirname, 'src') } },
   // Only the app: scripts/pebbles/render.html is a build tool that loads three.js from a CDN.
   optimizeDeps: { entries: ['index.html'] },
+  // Libraries in their own chunks: they change far less often than the app, so they stay cached across updates.
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react'
+          if (id.includes('@base-ui') || id.includes('@floating-ui')) return 'base-ui'
+        },
+      },
+    },
+  },
   server: { host: '127.0.0.1', port, strictPort: true, proxy: { '/api': `http://127.0.0.1:${apiPort}` } },
 })

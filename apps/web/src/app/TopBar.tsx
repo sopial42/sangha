@@ -49,16 +49,17 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         </Button>
         <div className="flex items-center gap-2">
           <PebbleIcon sprite="icon-coral-open" size={30} />
-          <span className="text-title font-semibold tracking-tight">Sangha</span>
+          <span className="text-title font-semibold tracking-tight max-sm:hidden">Sangha</span>
         </div>
         <button
           type="button"
           onClick={() => openSession(ORCHESTRATOR_SESSION_ID)}
-          className="ml-1 flex h-8 w-80 items-center gap-2 rounded-lg border bg-surface pr-1.5 pl-3 text-left text-ui text-muted-foreground transition-colors hover:border-ring/60 hover:text-foreground"
+          aria-label="Ask or start a session"
+          className="ml-1 flex h-8 w-80 items-center gap-2 max-md:w-8 max-md:justify-center max-md:p-0 rounded-lg border bg-surface pr-1.5 pl-3 text-left text-ui text-muted-foreground transition-colors hover:border-ring/60 hover:text-foreground"
         >
           <HugeiconsIcon icon={Add01Icon} strokeWidth={1.8} className="size-4" />
-          <span className="flex-1">Ask or start a session…</span>
-          <Kbd>⌘K</Kbd>
+          <span className="flex-1 max-md:hidden">Ask or start a session…</span>
+          <Kbd className="max-md:hidden">⌘K</Kbd>
         </button>
       </div>
       <div className="flex items-center gap-1">
@@ -112,10 +113,10 @@ function UsageButton() {
             {quota ? (
               <>
                 <span className="font-semibold">{pct}%</span>
-                <span className="font-normal text-muted-foreground">{tightest.short}</span>
+                <span className="font-normal text-muted-foreground max-sm:hidden">{tightest.short}</span>
               </>
             ) : (
-              <span className="font-normal text-muted-foreground">Usage</span>
+              <span className="font-normal text-muted-foreground max-sm:hidden">Usage</span>
             )}
           </>
         )}
@@ -209,7 +210,7 @@ function ReserveControl() {
     if (!reserve) return
     setEnabled(reserve.enabled)
     setPct(reserve.pct)
-  }, [reserve?.enabled, reserve?.pct])
+  }, [reserve])
 
   const save = (patch: { enabled?: boolean; pct?: number }) =>
     api.saveQuotaReserve(patch).then(
