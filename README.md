@@ -10,6 +10,10 @@
 
 Sangha is a local web app for running and following Claude Code sessions across all your projects. Every project is a zone on an isometric board and every session is a pebble on it: you see at a glance which ones are working, which ones need you, and which ones have grown too big and should start fresh. Open one and you get the full conversation, its subagents, its branch and its context, and you can reply from there.
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="The board with every project and session, and an open session with its conversation and details" width="100%">
+</p>
+
 It runs on your Claude Pro or Max subscription through the [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview), never on the paid API: the server refuses to start if `ANTHROPIC_API_KEY` is set.
 
 ## What it does
