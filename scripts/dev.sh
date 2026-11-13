@@ -15,17 +15,17 @@ free_port() {
   local port=$1 pid cwd
   for pid in $(lsof -nP -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null); do
     if [ -f "$ROOT/data/sangha.pid" ] && [ "$(cat "$ROOT/data/sangha.pid")" = "$pid" ]; then
-      echo "Port $port pris par le Sangha de 'make serve' (pid $pid) : lance d'abord 'make stop'." >&2; exit 1
+      echo "Port $port is taken by the Sangha of 'make serve' (pid $pid): run 'make stop' first." >&2; exit 1
     fi
     cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
     case "$cwd" in
       "$ROOT"|"$ROOT"/*)
-        echo "☸ Port $port : ancien serveur de dev encore là (pid $pid), arrêt."
+        echo "Port $port: an old dev server of this repo is still running (pid $pid), stopping it."
         kill "$pid" 2>/dev/null
         for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 0.3; done
         kill -9 "$pid" 2>/dev/null ;;
       *)
-        echo "Port $port pris par un autre programme :" >&2; ps -o pid,command -p "$pid" >&2; exit 1 ;;
+        echo "Port $port is taken by another program:" >&2; ps -o pid,command -p "$pid" >&2; exit 1 ;;
     esac
   done
 }
@@ -57,6 +57,6 @@ trap 'cleanup; exit 143' TERM HUP
 trap cleanup EXIT
 
 while kill -0 "$API" 2>/dev/null && kill -0 "$WEB" 2>/dev/null; do sleep 1; done
-kill -0 "$API" 2>/dev/null && echo "☸ Le web (vite) s'est arrêté : j'arrête aussi l'API." >&2
-kill -0 "$WEB" 2>/dev/null && echo "☸ L'API s'est arrêtée : j'arrête aussi le web." >&2
+kill -0 "$API" 2>/dev/null && echo "The web (vite) stopped: stopping the API too." >&2
+kill -0 "$WEB" 2>/dev/null && echo "The API stopped: stopping the web too." >&2
 exit 1

@@ -10,10 +10,10 @@ help: ## List targets
 
 setup: .env install plugins ## First-time setup: .env, deps, plugins
 	@mkdir -p workspaces data
-	@echo "☸ Ready. Put projects in ./workspaces, then: make dev (local) or make up (docker)."
+	@echo "Ready. Put projects in ./workspaces, then: make dev (local) or make up (docker)."
 
 .env:
-	@cp .env.example .env && echo "Created .env — run 'make token' and paste CLAUDE_CODE_OAUTH_TOKEN into it (required for Docker)."
+	@cp .env.example .env && echo "Created .env: run 'make token' and paste CLAUDE_CODE_OAUTH_TOKEN into it (required for Docker)."
 
 token: ## Generate a long-lived subscription token (paste it into .env)
 	claude setup-token
@@ -37,9 +37,9 @@ build: ## Build the Docker image
 	docker compose build
 
 up: ## Start in Docker on http://127.0.0.1:$SANGHA_PORT
-	@grep -q '^CLAUDE_CODE_OAUTH_TOKEN=.\+' .env || { echo "CLAUDE_CODE_OAUTH_TOKEN missing in .env — run: make token"; exit 1; }
+	@grep -q '^CLAUDE_CODE_OAUTH_TOKEN=.\+' .env || { echo "CLAUDE_CODE_OAUTH_TOKEN missing in .env: run make token"; exit 1; }
 	docker compose up -d --build
-	@echo "☸ Sangha: http://127.0.0.1:$${SANGHA_PORT:-8787}"
+	@echo "Sangha: http://127.0.0.1:$${SANGHA_PORT:-8787}"
 
 down: ## Stop Docker
 	docker compose down
