@@ -27,10 +27,10 @@ It runs on your Claude Pro or Max subscription through the [Claude Agent SDK](ht
 
 ## Quick start
 
-Requirements: Node 24+, git, and Claude Code signed in on this machine.
+Requirements: Node 24+, [pnpm](https://pnpm.io/installation), git, and Claude Code signed in on this machine.
 
 ```sh
-make setup    # .env, npm dependencies, pinned plugins
+make setup    # .env, dependencies (pnpm), pinned plugins
 make dev      # http://127.0.0.1:8787
 ```
 

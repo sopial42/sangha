@@ -2,17 +2,14 @@
   "name": "sangha",
   "private": true,
   "type": "module",
-  "workspaces": [
-    "packages/*",
-    "apps/*"
-  ],
+  "packageManager": "pnpm@12.4.1",
   "engines": {
     "node": ">=24"
   },
   "scripts": {
     "dev": "./scripts/dev.sh",
-    "build": "npm run build -w @sangha/server && npm run build -w @sangha/web",
-    "test": "npm test -w @sangha/server && npm test -w @sangha/mcp-bitbucket",
+    "build": "pnpm --filter @sangha/server build && pnpm --filter @sangha/web build",
+    "test": "pnpm --filter @sangha/server test && pnpm --filter @sangha/mcp-bitbucket test",
     "lint": "eslint .",
     "typecheck": "tsc -p apps/server --noEmit && tsc -p apps/web --noEmit && tsc -p packages/mcp-bitbucket --noEmit"
   },

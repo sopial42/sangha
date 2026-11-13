@@ -12,13 +12,13 @@ Local web app that runs and follows Claude Code sessions across projects: a boar
 
 ## Commands
 
-npm workspaces (there is a `package-lock.json`: use npm, not pnpm). `make setup`, `make dev` (http://127.0.0.1:8787), `make test`, `make typecheck`, `make lint`. `make dev` does not restart the server on server changes (it would kill running sessions): restart it yourself.
+pnpm workspaces (`pnpm-workspace.yaml`, `pnpm-lock.yaml`): use pnpm, never npm or npx (`pnpm dlx` instead). Workspace packages depend on each other with `workspace:*`, and pnpm is strict: a package can only import what its own `package.json` declares. `make setup`, `make dev` (http://127.0.0.1:8787), `make test`, `make typecheck`, `make lint`. `make dev` does not restart the server on server changes (it would kill running sessions): restart it yourself.
 
 ## Conventions
 
 - **English only**, in the UI, prompts, comments and docs. No em dashes. Plain vocabulary: session, subagent, orchestrator, advisor, closed sessions, set aside, hand-off, start fresh. The old monastery names survive only in `db.ts` migrations and env var fallbacks, to read old installs.
 - **Stored data must keep working.** Renaming a table, an event type or a stored value needs a one-time migration in `db.ts` (`renameLegacyTables`, `once(...)`) and a test in `apps/server/test/legacyDb.test.ts`.
-- **`cn` comes from `@/lib/utils`**, never from `"cn"`: the configured one knows the custom type scale (`text-meta`, `text-small`, `text-ui`, `text-chat`, `text-title`); the raw one drops the colour class next to them. ESLint enforces it. Re-check after `npx shadcn add`.
+- **`cn` comes from `@/lib/utils`**, never from `"cn"`: the configured one knows the custom type scale (`text-meta`, `text-small`, `text-ui`, `text-chat`, `text-title`); the raw one drops the colour class next to them. ESLint enforces it. Re-check after `pnpm dlx shadcn@latest add`.
 - **Tokens, not raw values**: spacing 4/8/12/16/24, radius `rounded-sm` 6 / `rounded-lg` 8 / `rounded-xl` 12, controls 32px. Colour means attention: `coral` only for "needs you", `danger` for errors, `amber` for warnings, everything else neutral.
 - **Zustand**: select fields one by one, `useApp((s) => s.field)`. Never `useApp()` without a selector, never a selector that builds a new object (it re-renders forever in v5).
 - **Motion** lives in `src/index.css` (`motion-popup`, `motion-dialog`, `motion-press`, `motion-collapse`, `motion-land`, `motion-swap`, `motion-ping`, `motion-breathe`, `motion-enter`, `motion-drawer`): strong ease-out, exits faster than entrances, transform and opacity only. Keyboard-driven changes (Esc, ←/→, ⌘B, ⌘K) never animate. On the board, `src/lib/seen.ts` makes animations play only for real changes, never on re-mount.

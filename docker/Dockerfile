@@ -1,29 +1,34 @@
 # syntax=docker/dockerfile:1
 FROM node:24-slim AS build
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*
+# pnpm, at the version pinned in package.json's packageManager.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
 WORKDIR /src
-COPY package.json package-lock.json tsconfig.base.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/mcp-bitbucket/package.json packages/mcp-bitbucket/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
-RUN npm ci
+RUN pnpm install --frozen-lockfile
 COPY scripts scripts
 RUN ./scripts/fetch-plugins.sh /opt/plugins
 COPY packages packages
 COPY apps apps
-RUN npm run build
+RUN pnpm build
 
 FROM node:24-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl && rm -rf /var/lib/apt/lists/* \
  && git config --system --add safe.directory '*'
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/mcp-bitbucket/package.json packages/mcp-bitbucket/
 COPY apps/server/package.json apps/server/
 COPY apps/web/package.json apps/web/
-RUN npm ci --omit=dev --workspace @sangha/server && npm cache clean --force
+RUN pnpm install --frozen-lockfile --prod --filter @sangha/server && pnpm store prune
 COPY --from=build /src/apps/server/dist apps/server/dist
 COPY --from=build /src/apps/web/dist web
 COPY --from=build /opt/plugins /opt/sangha/plugins

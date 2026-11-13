@@ -33,11 +33,11 @@ free_port "$WEB_PORT"
 free_port "$API_PORT"
 
 # Not `set -m`: it would hand the terminal to each foreground `sleep`, which then swallows Ctrl+C.
-# The whole tree (npm → sh → tsx/node, vite) is killed instead.
+# The whole tree (pnpm → sh → tsx/node, vite) is killed instead.
 tree() { local c; for c in $(pgrep -P "$1"); do tree "$c"; done; echo "$1"; }
 cd "$ROOT"
-SANGHA_DEV=1 PORT="$API_PORT" npm run dev -w @sangha/server & API=$!
-npm run dev -w @sangha/web & WEB=$!
+SANGHA_DEV=1 PORT="$API_PORT" pnpm --filter @sangha/server dev & API=$!
+pnpm --filter @sangha/web dev & WEB=$!
 
 stopping=
 cleanup() {

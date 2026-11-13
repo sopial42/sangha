@@ -13,7 +13,7 @@ running() { [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; }
 case "${1:-status}" in
   start)
     if running; then echo "Sangha is already running (pid $(cat "$PID_FILE")): http://127.0.0.1:$PORT"; exit 0; fi
-    [ -f "$ROOT/apps/server/dist/index.js" ] || { echo "No build yet: run npm run build first"; exit 1; }
+    [ -f "$ROOT/apps/server/dist/index.js" ] || { echo "No build yet: run pnpm build first"; exit 1; }
     cd "$ROOT"
     # A new session (setsid): closing the terminal or the tool that launched it does not stop the server.
     nohup python3 -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' \

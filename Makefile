@@ -21,20 +21,20 @@ token: ## Generate a long-lived subscription token (paste it into .env)
 plugins: ## Fetch pinned plugins (superpowers, ui-ux-pro-max, frontend-design)
 	@./scripts/fetch-plugins.sh vendor/plugins
 
-install: ## Install npm dependencies
-	npm install
+install: ## Install dependencies (pnpm)
+	pnpm install
 
 dev: plugins ## Run locally with hot reload on http://127.0.0.1:8787 (same address as serve/up)
-	npm run dev
+	pnpm dev
 
 test: ## Run tests
-	npm test
+	pnpm test
 
 lint: ## Lint server and web (ESLint)
-	npm run lint
+	pnpm lint
 
 typecheck: ## Typecheck server and web
-	npm run typecheck
+	pnpm typecheck
 
 build: ## Build the Docker image
 	docker compose build
@@ -54,7 +54,7 @@ ps: ## Show container status
 	docker compose ps
 
 serve: ## Build and run Sangha on this machine, in the background: http://127.0.0.1:8787
-	npm run build
+	pnpm build
 	@./scripts/serve.sh start
 
 stop: ## Stop the background Sangha started by make serve
