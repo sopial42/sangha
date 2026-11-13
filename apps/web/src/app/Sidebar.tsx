@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Add01Icon, ArrowDown01Icon, MoreHorizontalIcon } from '@hugeicons/core-free-icons'
 import type { SessionSummary } from '@sangha/shared'
-import { api, lotusFailure, openSession } from '@/api'
+import { api, setAsideFailure, openSession } from '@/api'
 import { useApp } from '@/store'
 import { cn } from '@/lib/utils'
 import { groupOf, nameOf, pebbleOf, sessionsOf, statusLine, needsYou, type Group } from '@/lib/sessions'
@@ -31,8 +31,8 @@ export function Sidebar({ collapsed }: { collapsed: boolean }) {
   const selectedId = useApp((s) => s.selectedId)
   const set = useApp((s) => s.set)
   const [groupBy, setGroupBy] = useState<'status' | 'project'>(() => (localStorage.getItem(GROUP_BY_KEY) === 'project' ? 'project' : 'status'))
-  const sessions = sessionsOf(all).filter((s) => !s.lotus)
-  const setAside = sessionsOf(all).filter((s) => s.lotus)
+  const sessions = sessionsOf(all).filter((s) => !s.setAside)
+  const setAside = sessionsOf(all).filter((s) => s.setAside)
 
   const sections =
     groupBy === 'status'
@@ -184,7 +184,7 @@ function SetAside({ sessions, selectedId }: { sessions: SessionSummary[]; select
               variant="ghost"
               size="xs"
               className="shrink-0 opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
-              onClick={() => api.lotus(s.id, false).then(() => setError(null), (e: unknown) => setError(lotusFailure(e)))}
+              onClick={() => api.setAside(s.id, false).then(() => setError(null), (e: unknown) => setError(setAsideFailure(e)))}
             >
               Put back
             </Button>

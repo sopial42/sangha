@@ -1,6 +1,6 @@
-import type { ElderSettings, Quota } from '@sangha/shared'
+import type { AdvisorSettings, Quota } from '@sangha/shared'
 
-export type ElderPass = { kind: 'weekly' } | { kind: 'daily' } | { kind: 'conversation'; sessionId: string } | { kind: 'skipped' }
+export type AdvisorPass = { kind: 'weekly' } | { kind: 'daily' } | { kind: 'conversation'; sessionId: string } | { kind: 'skipped' }
 
 export type PendingSession = {
   id: string
@@ -16,7 +16,7 @@ const INACTIVE_MS = 30 * 60_000
 const SKIP_HOUR = 23 // "Friday 23:00": the day after the weekly day, at this hour
 
 /** 'claude': the Advisor thinks on the subscription (weekly rhythm); 'provider': another provider (daily plus end of conversation). */
-export const elderEngine = (model: string): 'claude' | 'provider' => (model.includes('::') ? 'provider' : 'claude')
+export const advisorEngine = (model: string): 'claude' | 'provider' => (model.includes('::') ? 'provider' : 'claude')
 
 function atTime(base: Date, hhmm: string): Date {
   const [h, m] = hhmm.split(':').map(Number)
@@ -43,13 +43,13 @@ export type DueOptions = {
   blockedSessions?: Set<string>
 }
 
-export function due(now: number, settings: ElderSettings, quota: Quota | null, pending: PendingSession[], options: DueOptions = {}): ElderPass | null {
+export function due(now: number, settings: AdvisorSettings, quota: Quota | null, pending: PendingSession[], options: DueOptions = {}): AdvisorPass | null {
   if (!settings.enabled) return null
   const nowD = new Date(now)
   const lastRun = settings.lastRunAt
   const inBackoff = options.retryAfter != null && now < options.retryAfter
 
-  if (elderEngine(settings.model) === 'claude') {
+  if (advisorEngine(settings.model) === 'claude') {
     const windowStart = lastOccurrence(nowD, settings.weekly.day, settings.weekly.at)
     if (nowD < windowStart) return null
     if (lastRun != null && lastRun >= windowStart.getTime()) return null

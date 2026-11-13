@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowRight01Icon, GitBranchIcon, Search01Icon, SparklesIcon } from '@hugeicons/core-free-icons'
-import type { NirvanaEntry, NirvanaSearchResult } from '@sangha/shared'
+import type { ClosedSession, ClosedSearchResult } from '@sangha/shared'
 import { api, openSession } from '../api'
 import { useApp } from '../store'
 import { Modal, message } from './Modal'
@@ -71,8 +71,8 @@ function highlightWords(text: string, words: string[]): ReactNode {
  */
 export function ClosedSessions({ onClose }: { onClose: () => void }) {
   const projects = useApp((s) => s.projects)
-  const nirvanaTick = useApp((s) => s.nirvanaTick)
-  const [entries, setEntries] = useState<NirvanaEntry[] | null>(null)
+  const closedTick = useApp((s) => s.closedTick)
+  const [entries, setEntries] = useState<ClosedSession[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
 
@@ -80,18 +80,18 @@ export function ClosedSessions({ onClose }: { onClose: () => void }) {
   // full list in both modes.
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<'text' | 'ai'>('text')
-  const [aiResults, setAiResults] = useState<NirvanaSearchResult['results'] | null>(null)
+  const [aiResults, setAiResults] = useState<ClosedSearchResult['results'] | null>(null)
   const [aiBusy, setAiBusy] = useState(false)
   const [aiError, setAiError] = useState<string | null>(null)
 
-  const load = () => api.nirvana().then(setEntries, (err) => setError(message(err)))
+  const load = () => api.closedSessions().then(setEntries, (err) => setError(message(err)))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => void load(), [])
   // The history changed (a session closed, a summary written, one reopened elsewhere): reload it live.
   useEffect(() => {
     if (entries !== null) void load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nirvanaTick])
+  }, [closedTick])
   useEffect(() => {
     if (!query.trim()) {
       setMode('text')
@@ -100,7 +100,7 @@ export function ClosedSessions({ onClose }: { onClose: () => void }) {
     }
   }, [query])
 
-  const haystack = (e: NirvanaEntry) => normAligned([e.title, e.project, agentName(e, projects), e.branch ?? '', e.summary ?? '', e.note ?? ''].join(' \u0000 '))
+  const haystack = (e: ClosedSession) => normAligned([e.title, e.project, agentName(e, projects), e.branch ?? '', e.summary ?? '', e.note ?? ''].join(' \u0000 '))
   const words = useMemo(() => normAligned(query).trim().split(/\s+/).filter(Boolean), [query])
   const filtered = useMemo(() => {
     if (!entries) return []
@@ -112,7 +112,7 @@ export function ClosedSessions({ onClose }: { onClose: () => void }) {
     if (!entries || !aiResults) return []
     return aiResults
       .map((r) => ({ r, e: entries.find((x) => x.id === r.id) }))
-      .filter((x): x is { r: NirvanaSearchResult['results'][number]; e: NirvanaEntry } => !!x.e)
+      .filter((x): x is { r: ClosedSearchResult['results'][number]; e: ClosedSession } => !!x.e)
   }, [entries, aiResults])
 
   const runAiSearch = async () => {
@@ -122,7 +122,7 @@ export function ClosedSessions({ onClose }: { onClose: () => void }) {
     setAiBusy(true)
     setAiError(null)
     try {
-      const res = await api.nirvanaSearch(q)
+      const res = await api.searchClosed(q)
       setAiResults(res.results)
     } catch (err) {
       setAiError(message(err))
@@ -136,7 +136,7 @@ export function ClosedSessions({ onClose }: { onClose: () => void }) {
     setBusyId(id)
     setError(null)
     try {
-      await api.reincarnate(id)
+      await api.reopen(id)
       // It comes back on the board through the stream; here, it just leaves the list.
       setEntries((prev) => prev?.filter((e) => e.id !== id) ?? prev)
     } catch (err) {
@@ -146,7 +146,7 @@ export function ClosedSessions({ onClose }: { onClose: () => void }) {
     }
   }
 
-  const renderEntry = (e: NirvanaEntry, opts?: { words?: string[]; reason?: string }) => {
+  const renderEntry = (e: ClosedSession, opts?: { words?: string[]; reason?: string }) => {
     const hl = (s: string) => (opts?.words?.length ? highlightWords(s, opts.words) : s)
     const reopenButton = (
       <Button variant="outline" size="sm" disabled={busyId === e.id} onClick={() => void reopen(e.id)}>

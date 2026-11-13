@@ -1,7 +1,8 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { AutonomyState, Engine, Envelope, ElderChatTurn, ElderReport, ElderTopic, Feedback, MonasteryEvent, Provider, QueuedMessage, Quota, SessionInfo } from '@sangha/shared'
+import { ORCHESTRATOR_SESSION_ID } from '@sangha/shared'
+import type { AutonomyState, Engine, Envelope, AdvisorChatTurn, AdvisorReport, AdvisorTopic, Feedback, SessionEvent, Provider, QueuedMessage, Quota, SessionInfo } from '@sangha/shared'
 
 /**
  * Sent straight to a session to end an active loop (see `Sessions.autonomy`): the exact words asked of it
@@ -14,7 +15,7 @@ export const LOOP_STOP_MESSAGE = 'Stop the /loop: schedule no more wake-ups (Sch
 /** The French stop message older versions sent: still in stored event logs, so still matched as a loop end. */
 const LEGACY_LOOP_STOP_MESSAGE = "Arrête la boucle /loop : ne programme plus aucun réveil (ScheduleWakeup avec stop) et supprime tes tâches CronCreate. Ne fais rien d'autre."
 
-export type NoteKind = 'recap' | 'progress' | 'doing' | 'nirvana'
+export type NoteKind = 'recap' | 'progress' | 'doing' | 'closed'
 export type Note<T> = { key: string; value: T; at: number }
 
 export type Renewal = { bucket: number; state: 'asked' | 'postponed' | 'done'; askedAt: number }
@@ -24,7 +25,7 @@ export type Renewal = { bucket: number; state: 'asked' | 'postponed' | 'done'; a
  * awaiting the answer to the question sent at `askedAt`; refused: an outright no; done: it started fresh.
  * `seenAt`: its words before this are already read. `note`: its last answer.
  */
-export type Shepherd = {
+export type Handoff = {
   state: 'pending' | 'asked' | 'refused' | 'done'
   nextAt: number
   askedAt: number
@@ -54,6 +55,21 @@ const SESSION_COLUMNS: Record<string, string> = {
   model: 'TEXT',
 }
 
+/**
+ * Tables older versions named after the old vocabulary, renamed once at startup (before the tables below are
+ * created, so the new name never starts out empty beside the old one).
+ */
+const LEGACY_TABLES: [from: string, to: string][] = [
+  ['elder_topics', 'advisor_topics'],
+  ['elder_reports', 'advisor_reports'],
+  ['elder_chat', 'advisor_chat'],
+  ['shepherds', 'handoffs'],
+  ['lotus', 'set_aside'],
+]
+
+/** The orchestrator's id (and agent) in older databases. */
+const LEGACY_ORCHESTRATOR_ID = 'buddha'
+
 // Index of sessions and their event log. Claude Code's own JSONL transcripts
 // remain the source of truth for the conversation (used by resume).
 export class Store {
@@ -62,8 +78,9 @@ export class Store {
   constructor(path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
     this.db = new DatabaseSync(path)
+    this.db.exec('PRAGMA journal_mode = WAL')
+    this.renameLegacyTables()
     this.db.exec(`
-      PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         project TEXT NOT NULL,
@@ -77,10 +94,6 @@ export class Store {
         at INTEGER NOT NULL,
         ev TEXT NOT NULL,
         PRIMARY KEY (session_id, seq)
-      );
-      CREATE TABLE IF NOT EXISTS project_colors (
-        name TEXT PRIMARY KEY,
-        color TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS ai_notes (
         session_id TEXT NOT NULL,
@@ -100,7 +113,7 @@ export class Store {
         state TEXT NOT NULL,
         asked_at INTEGER NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS shepherds (
+      CREATE TABLE IF NOT EXISTS handoffs (
         session_id TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
@@ -115,7 +128,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS silenced (
         session_id TEXT PRIMARY KEY
       );
-      CREATE TABLE IF NOT EXISTS lotus (
+      CREATE TABLE IF NOT EXISTS set_aside (
         session_id TEXT PRIMARY KEY
       );
       CREATE TABLE IF NOT EXISTS notes (
@@ -178,7 +191,7 @@ export class Store {
         created_at INTEGER NOT NULL,
         processed_at INTEGER
       );
-      CREATE TABLE IF NOT EXISTS elder_topics (
+      CREATE TABLE IF NOT EXISTS advisor_topics (
         id TEXT PRIMARY KEY,
         scope TEXT NOT NULL,
         title TEXT NOT NULL,
@@ -188,7 +201,7 @@ export class Store {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS elder_reports (
+      CREATE TABLE IF NOT EXISTS advisor_reports (
         id TEXT PRIMARY KEY,
         kind TEXT NOT NULL,
         text TEXT NOT NULL,
@@ -197,14 +210,84 @@ export class Store {
         tokens INTEGER,
         created_at INTEGER NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS elder_chat (
+      CREATE TABLE IF NOT EXISTS advisor_chat (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         role TEXT NOT NULL,
         text TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS migrations (
+        name TEXT PRIMARY KEY,
+        at INTEGER NOT NULL
+      );
     `)
     this.migrate()
+    this.once('vocabulary', () => this.migrateVocabulary())
+  }
+
+  private hasTable(name: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)
+  }
+
+  /** See LEGACY_TABLES. Should both exist (an older version ran again meanwhile), the old rows join the new table. */
+  private renameLegacyTables() {
+    for (const [from, to] of LEGACY_TABLES) {
+      if (!this.hasTable(from)) continue
+      if (!this.hasTable(to)) this.db.exec(`ALTER TABLE ${from} RENAME TO ${to}`)
+      else this.db.exec(`INSERT OR IGNORE INTO ${to} SELECT * FROM ${from}; DROP TABLE ${from};`)
+    }
+  }
+
+  /** Runs a data migration the first time only, recorded in `migrations`, all or nothing. */
+  private once(name: string, run: () => void) {
+    if (this.db.prepare('SELECT 1 FROM migrations WHERE name = ?').get(name)) return
+    this.db.exec('BEGIN')
+    try {
+      run()
+      this.db.prepare('INSERT INTO migrations (name, at) VALUES (?, ?)').run(name, Date.now())
+      this.db.exec('COMMIT')
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
+  }
+
+  /**
+   * Stored values from older versions, written with the old vocabulary: the orchestrator's id, event types and
+   * fields, recap states, note kinds, the Advisor's settings key and chat role.
+   */
+  private migrateVocabulary() {
+    // The orchestrator's id, in every column holding a session id (events reference sessions: checked at commit).
+    if (this.getSession(LEGACY_ORCHESTRATOR_ID) && !this.getSession(ORCHESTRATOR_SESSION_ID)) {
+      this.db.exec('PRAGMA defer_foreign_keys = ON')
+      const tables = (this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]).map((t) => t.name)
+      for (const table of tables) {
+        const cols = (this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name)
+        for (const col of cols.filter((c) => c === 'session_id' || c === 'next_id')) {
+          this.db.prepare(`UPDATE ${table} SET ${col} = ? WHERE ${col} = ?`).run(ORCHESTRATOR_SESSION_ID, LEGACY_ORCHESTRATOR_ID)
+        }
+      }
+      this.db.prepare('UPDATE sessions SET id = ?, agent = ? WHERE id = ?').run(ORCHESTRATOR_SESSION_ID, ORCHESTRATOR_SESSION_ID, LEGACY_ORCHESTRATOR_ID)
+      this.db.prepare('UPDATE advisor_topics SET evidence = replace(evidence, ?, ?)').run(JSON.stringify(LEGACY_ORCHESTRATOR_ID), JSON.stringify(ORCHESTRATOR_SESSION_ID))
+    }
+    // Event types: buddha.* (the main thread's stream) and monk.* (a subagent's, with its monkId).
+    this.db.exec(`
+      UPDATE events SET ev = json_set(ev, '$.t', 'assistant.' || substr(json_extract(ev, '$.t'), 8))
+        WHERE ev LIKE '{"t":"buddha.%';
+      UPDATE events SET ev = json_set(json_remove(ev, '$.monkId'),
+          '$.t', CASE json_extract(ev, '$.t') WHEN 'monk.summoned' THEN 'subagent.started' ELSE 'subagent.' || substr(json_extract(ev, '$.t'), 6) END,
+          '$.subagentId', json_extract(ev, '$.monkId'))
+        WHERE ev LIKE '{"t":"monk.%';
+      UPDATE events SET ev = json_set(ev, '$.state', CASE json_extract(ev, '$.state') WHEN 'fini' THEN 'done' ELSE 'waiting' END)
+        WHERE ev LIKE '{"t":"recap"%' AND json_extract(ev, '$.state') IN ('fini', 'attente');
+      UPDATE ai_notes SET value = json_set(value, '$.state', CASE json_extract(value, '$.state') WHEN 'fini' THEN 'done' ELSE 'waiting' END)
+        WHERE kind = 'recap' AND json_extract(value, '$.state') IN ('fini', 'attente');
+      UPDATE OR IGNORE ai_notes SET kind = 'closed' WHERE kind = 'nirvana';
+      DELETE FROM ai_notes WHERE kind = 'nirvana';
+      UPDATE OR IGNORE settings SET key = 'advisor' WHERE key = 'elder';
+      DELETE FROM settings WHERE key = 'elder';
+      UPDATE advisor_chat SET role = 'advisor' WHERE role = 'elder';
+    `)
   }
 
   private migrate() {
@@ -276,7 +359,7 @@ export class Store {
     this.db.prepare('UPDATE sessions SET last_seen_seq = (SELECT COALESCE(MAX(seq), 0) FROM events WHERE session_id = ?) WHERE id = ?').run(id, id)
   }
 
-  append(sessionId: string, ev: MonasteryEvent): Envelope {
+  append(sessionId: string, ev: SessionEvent): Envelope {
     const { seq } = this.db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM events WHERE session_id = ?').get(sessionId) as { seq: number }
     const env: Envelope = { seq, at: Date.now(), ev }
     this.db.prepare('INSERT INTO events (session_id, seq, at, ev) VALUES (?, ?, ?, ?)').run(sessionId, seq, env.at, JSON.stringify(ev))
@@ -292,17 +375,17 @@ export class Store {
   }
 
   /** Subagents summoned but never reported done: after a restart, their process is gone. */
-  danglingNovices(sessionId: string): string[] {
+  danglingSubagents(sessionId: string): string[] {
     const open = new Set<string>()
     for (const { ev } of this.events(sessionId)) {
-      if (ev.t === 'monk.summoned') open.add(ev.monkId)
-      if (ev.t === 'monk.done') open.delete(ev.monkId)
+      if (ev.t === 'subagent.started') open.add(ev.subagentId)
+      if (ev.t === 'subagent.done') open.delete(ev.subagentId)
     }
     return [...open]
   }
 
   /** Latest event of a given type, e.g. to know whether a session was busy when the server stopped. */
-  lastEvent<T extends MonasteryEvent['t']>(sessionId: string, t: T): (Envelope & { ev: Extract<MonasteryEvent, { t: T }> }) | null {
+  lastEvent<T extends SessionEvent['t']>(sessionId: string, t: T): (Envelope & { ev: Extract<SessionEvent, { t: T }> }) | null {
     const r = this.db
       .prepare('SELECT seq, at, ev FROM events WHERE session_id = ? AND ev LIKE ? ORDER BY seq DESC LIMIT 1')
       .get(sessionId, `{"t":"${t}"%`) as EventRow | undefined
@@ -360,7 +443,7 @@ export class Store {
     let wakeSinceLastTurn = false
 
     for (const { ev: raw } of rows) {
-      const ev = JSON.parse(raw) as MonasteryEvent
+      const ev = JSON.parse(raw) as SessionEvent
       if (ev.t === 'user.message') {
         const trimmed = ev.text.trim()
         if (trimmed === LOOP_STOP_MESSAGE || trimmed === LEGACY_LOOP_STOP_MESSAGE) {
@@ -484,14 +567,14 @@ export class Store {
         .run(id, r.bucket, r.state, r.askedAt)
   }
 
-  shepherd(id: string): Shepherd | null {
-    const r = this.db.prepare('SELECT value FROM shepherds WHERE session_id = ?').get(id) as { value: string } | undefined
-    return r ? (JSON.parse(r.value) as Shepherd) : null
+  handoff(id: string): Handoff | null {
+    const r = this.db.prepare('SELECT value FROM handoffs WHERE session_id = ?').get(id) as { value: string } | undefined
+    return r ? (JSON.parse(r.value) as Handoff) : null
   }
 
-  setShepherd(id: string, s: Shepherd | null) {
-    if (!s) this.db.prepare('DELETE FROM shepherds WHERE session_id = ?').run(id)
-    else this.db.prepare('INSERT INTO shepherds (session_id, value) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET value = excluded.value').run(id, JSON.stringify(s))
+  setHandoff(id: string, s: Handoff | null) {
+    if (!s) this.db.prepare('DELETE FROM handoffs WHERE session_id = ?').run(id)
+    else this.db.prepare('INSERT INTO handoffs (session_id, value) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET value = excluded.value').run(id, JSON.stringify(s))
   }
 
   /** Outside sessions removed from the board, with the activity date they had then (they return if they move again). */
@@ -525,13 +608,13 @@ export class Store {
   }
 
   /** Sessions set aside (Sangha sessions and outside sessions alike). */
-  lotusIds(): Set<string> {
-    return new Set((this.db.prepare('SELECT session_id AS id FROM lotus').all() as { id: string }[]).map((r) => r.id))
+  setAsideIds(): Set<string> {
+    return new Set((this.db.prepare('SELECT session_id AS id FROM set_aside').all() as { id: string }[]).map((r) => r.id))
   }
 
-  setLotus(id: string, lotus: boolean) {
-    if (lotus) this.db.prepare('INSERT OR IGNORE INTO lotus (session_id) VALUES (?)').run(id)
-    else this.db.prepare('DELETE FROM lotus WHERE session_id = ?').run(id)
+  setSetAside(id: string, setAside: boolean) {
+    if (setAside) this.db.prepare('INSERT OR IGNORE INTO set_aside (session_id) VALUES (?)').run(id)
+    else this.db.prepare('DELETE FROM set_aside WHERE session_id = ?').run(id)
   }
 
   /** Free-text notes left on sessions, by session id, in a single query for the whole board. */
@@ -652,16 +735,6 @@ export class Store {
     return new Map(rows.map((r) => [r.claude, r.id]))
   }
 
-  /** Stable color per project: the first palette color no other project wears. */
-  projectColor(name: string, palette: string[]): string {
-    const row = this.db.prepare('SELECT color FROM project_colors WHERE name = ?').get(name) as { color: string } | undefined
-    if (row) return row.color
-    const used = new Set((this.db.prepare('SELECT color FROM project_colors').all() as { color: string }[]).map((r) => r.color))
-    const color = palette.find((c) => !used.has(c)) ?? palette[used.size % palette.length]!
-    this.db.prepare('INSERT INTO project_colors (name, color) VALUES (?, ?)').run(name, color)
-    return color
-  }
-
   addFeedback(f: Feedback) {
     this.db
       .prepare('INSERT INTO feedback (id, session_id, event_seq, rating, comment, excerpt, created_at, processed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
@@ -684,7 +757,7 @@ export class Store {
   /** Frozen context for a feedback: the message commented on and its neighbours (or the end of the conversation), truncated. */
   excerptAround(sessionId: string, eventSeq: number | null, maxChars = 1200): string {
     const all = this.events(sessionId)
-    const line = (e: Envelope) => (e.ev.t === 'user.message' ? `User: ${e.ev.text}` : e.ev.t === 'buddha.text' ? `Agent: ${e.ev.text}` : null)
+    const line = (e: Envelope) => (e.ev.t === 'user.message' ? `User: ${e.ev.text}` : e.ev.t === 'assistant.text' ? `Agent: ${e.ev.text}` : null)
     const picked =
       eventSeq == null
         ? all.slice(-6)
@@ -696,44 +769,44 @@ export class Store {
     return text.length > maxChars ? `…${text.slice(-maxChars)}` : text
   }
 
-  elderTopics(): ElderTopic[] {
-    return (this.db.prepare('SELECT * FROM elder_topics ORDER BY updated_at DESC').all() as ElderTopicRow[]).map(toTopic)
+  advisorTopics(): AdvisorTopic[] {
+    return (this.db.prepare('SELECT * FROM advisor_topics ORDER BY updated_at DESC').all() as AdvisorTopicRow[]).map(toTopic)
   }
 
-  elderTopic(id: string): ElderTopic | null {
-    const r = this.db.prepare('SELECT * FROM elder_topics WHERE id = ?').get(id) as ElderTopicRow | undefined
+  advisorTopic(id: string): AdvisorTopic | null {
+    const r = this.db.prepare('SELECT * FROM advisor_topics WHERE id = ?').get(id) as AdvisorTopicRow | undefined
     return r ? toTopic(r) : null
   }
 
-  upsertElderTopic(t: ElderTopic) {
+  upsertAdvisorTopic(t: AdvisorTopic) {
     this.db
       .prepare(
-        `INSERT INTO elder_topics (id, scope, title, detail, evidence, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO advisor_topics (id, scope, title, detail, evidence, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET scope = excluded.scope, title = excluded.title, detail = excluded.detail, evidence = excluded.evidence, status = excluded.status, updated_at = excluded.updated_at`,
       )
       .run(t.id, t.scope, t.title, t.detail, JSON.stringify(t.evidence), t.status, t.createdAt, t.updatedAt)
   }
 
-  elderReports(limit = 10): ElderReport[] {
-    return (this.db.prepare('SELECT * FROM elder_reports ORDER BY created_at DESC LIMIT ?').all(limit) as ElderReportRow[]).map(toReport)
+  advisorReports(limit = 10): AdvisorReport[] {
+    return (this.db.prepare('SELECT * FROM advisor_reports ORDER BY created_at DESC LIMIT ?').all(limit) as AdvisorReportRow[]).map(toReport)
   }
 
-  addElderReport(r: ElderReport) {
+  addAdvisorReport(r: AdvisorReport) {
     this.db
-      .prepare('INSERT INTO elder_reports (id, kind, text, topic_ids, cost_usd, tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .prepare('INSERT INTO advisor_reports (id, kind, text, topic_ids, cost_usd, tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(r.id, r.kind, r.text, JSON.stringify(r.topicIds), r.costUsd, r.tokens, r.createdAt)
   }
 
-  elderChat(limit = 20): ElderChatTurn[] {
-    return (this.db.prepare('SELECT * FROM elder_chat ORDER BY id DESC LIMIT ?').all(limit) as ElderChatRow[]).map(toChatTurn).reverse()
+  advisorChat(limit = 20): AdvisorChatTurn[] {
+    return (this.db.prepare('SELECT * FROM advisor_chat ORDER BY id DESC LIMIT ?').all(limit) as AdvisorChatRow[]).map(toChatTurn).reverse()
   }
 
-  addElderChatMessage(role: 'user' | 'elder', text: string, at: number) {
-    this.db.prepare('INSERT INTO elder_chat (role, text, created_at) VALUES (?, ?, ?)').run(role, text, at)
+  addAdvisorChatMessage(role: 'user' | 'advisor', text: string, at: number) {
+    this.db.prepare('INSERT INTO advisor_chat (role, text, created_at) VALUES (?, ?, ?)').run(role, text, at)
   }
 
   /** Aggregates for the "Sangha" block of the Advisor's context: MCP tool failures, errors, interruptions, fresh starts, sessions handed off by the orchestrator, total cost, since `since`. */
-  elderSanghaStats(since: number): { toolErrorsByServer: Record<string, number>; sessionErrors: number; interruptions: number; renewals: number; shepherded: number; costUsd: number } {
+  advisorSanghaStats(since: number): { toolErrorsByServer: Record<string, number>; sessionErrors: number; interruptions: number; renewals: number; handedOff: number; costUsd: number } {
     const rows = this.db
       .prepare(`SELECT session_id, ev FROM events WHERE at >= ? AND (ev LIKE '{"t":"tool.error"%' OR ev LIKE '{"t":"error"%' OR ev LIKE '{"t":"turn.done"%')`)
       .all(since) as { session_id: string; ev: string }[]
@@ -741,7 +814,7 @@ export class Store {
     let sessionErrors = 0
     let costUsd = 0
     for (const { ev: raw } of rows) {
-      const ev = JSON.parse(raw) as MonasteryEvent
+      const ev = JSON.parse(raw) as SessionEvent
       if (ev.t === 'tool.error') toolErrorsByServer[ev.server] = (toolErrorsByServer[ev.server] ?? 0) + 1
       else if (ev.t === 'error') sessionErrors++
       else if (ev.t === 'turn.done') costUsd += ev.costUsdEquiv
@@ -757,8 +830,8 @@ export class Store {
     const renewals = (
       this.db.prepare('SELECT COUNT(*) AS n FROM successors s JOIN sessions sess ON sess.id = s.next_id WHERE sess.created_at >= ?').get(since) as { n: number }
     ).n
-    const shepherded = (this.db.prepare('SELECT value FROM shepherds').all() as { value: string }[]).filter((r) => (JSON.parse(r.value) as Shepherd).seenAt >= since).length
-    return { toolErrorsByServer, sessionErrors, interruptions, renewals, shepherded, costUsd }
+    const handedOff = (this.db.prepare('SELECT value FROM handoffs').all() as { value: string }[]).filter((r) => (JSON.parse(r.value) as Handoff).seenAt >= since).length
+    return { toolErrorsByServer, sessionErrors, interruptions, renewals, handedOff, costUsd }
   }
 }
 
@@ -807,22 +880,22 @@ const toFeedback = (r: FeedbackRow): Feedback => ({
   processedAt: r.processed_at,
 })
 
-type ElderTopicRow = { id: string; scope: string; title: string; detail: string; evidence: string; status: string; created_at: number; updated_at: number }
-const toTopic = (r: ElderTopicRow): ElderTopic => ({
+type AdvisorTopicRow = { id: string; scope: string; title: string; detail: string; evidence: string; status: string; created_at: number; updated_at: number }
+const toTopic = (r: AdvisorTopicRow): AdvisorTopic => ({
   id: r.id,
   scope: r.scope,
   title: r.title,
   detail: r.detail,
   evidence: JSON.parse(r.evidence),
-  status: r.status as ElderTopic['status'],
+  status: r.status as AdvisorTopic['status'],
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
 
-type ElderReportRow = { id: string; kind: string; text: string; topic_ids: string; cost_usd: number | null; tokens: number | null; created_at: number }
-const toReport = (r: ElderReportRow): ElderReport => ({
+type AdvisorReportRow = { id: string; kind: string; text: string; topic_ids: string; cost_usd: number | null; tokens: number | null; created_at: number }
+const toReport = (r: AdvisorReportRow): AdvisorReport => ({
   id: r.id,
-  kind: r.kind as ElderReport['kind'],
+  kind: r.kind as AdvisorReport['kind'],
   text: r.text,
   topicIds: JSON.parse(r.topic_ids),
   costUsd: r.cost_usd,
@@ -830,5 +903,5 @@ const toReport = (r: ElderReportRow): ElderReport => ({
   createdAt: r.created_at,
 })
 
-type ElderChatRow = { id: number; role: string; text: string; created_at: number }
-const toChatTurn = (r: ElderChatRow): ElderChatTurn => ({ id: r.id, role: r.role as ElderChatTurn['role'], text: r.text, createdAt: r.created_at })
+type AdvisorChatRow = { id: number; role: string; text: string; created_at: number }
+const toChatTurn = (r: AdvisorChatRow): AdvisorChatTurn => ({ id: r.id, role: r.role as AdvisorChatTurn['role'], text: r.text, createdAt: r.created_at })

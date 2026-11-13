@@ -1,16 +1,16 @@
 import { randomUUID } from 'node:crypto'
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { ElderReportKind, ElderSettings, ElderSettingsPatch, ElderState, ElderTopic, ElderTopicStatus, Feedback, GlobalEvent, Quota, SessionSummary } from '@sangha/shared'
+import type { AdvisorReportKind, AdvisorSettings, AdvisorSettingsPatch, AdvisorState, AdvisorTopic, AdvisorTopicStatus, Feedback, GlobalEvent, Quota, SessionSummary } from '@sangha/shared'
 import type { Store } from './db'
 import type { Providers } from './providers'
-import { buildContext } from './elderContext'
-import { due, type PendingSession } from './elderSchedule'
-import { parseElderResponse } from './elderParse'
+import { buildContext } from './advisorContext'
+import { due, type PendingSession } from './advisorSchedule'
+import { parseAdvisorResponse } from './advisorParse'
 import { UserError } from './session'
 
 const BACKOFF_STEPS_HOURS = [1, 2, 4, 6]
 /** Backoff after consecutive failures of a scheduled pass (daily or weekly): 1 h, 2 h, 4 h, capped at 6 h. */
-export function elderBackoffMs(consecutiveFailures: number): number {
+export function advisorBackoffMs(consecutiveFailures: number): number {
   const step = Math.min(consecutiveFailures, BACKOFF_STEPS_HOURS.length) - 1
   return BACKOFF_STEPS_HOURS[Math.max(0, step)]! * 3600_000
 }
@@ -18,7 +18,7 @@ export function elderBackoffMs(consecutiveFailures: number): number {
 /** An end-of-conversation pass is no longer retried for a session after this many failures in a row. */
 const CONVERSATION_FAILURE_LIMIT = 3
 
-export const DEFAULT_ELDER_SETTINGS: ElderSettings = {
+export const DEFAULT_ADVISOR_SETTINGS: AdvisorSettings = {
   // The weekly pass is already protected by the quota guard: enabling the Advisor by default costs nothing.
   enabled: true,
   model: 'sonnet',
@@ -66,8 +66,8 @@ function isHHMM(s: unknown): s is string {
 }
 
 /** Merges a partial change (levels and weekly included) and checks the result is still valid. */
-export function mergeElderSettings(current: ElderSettings, patch: ElderSettingsPatch): ElderSettings {
-  const next: ElderSettings = { ...current, ...patch, levels: { ...current.levels, ...patch.levels }, weekly: { ...current.weekly, ...patch.weekly } }
+export function mergeAdvisorSettings(current: AdvisorSettings, patch: AdvisorSettingsPatch): AdvisorSettings {
+  const next: AdvisorSettings = { ...current, ...patch, levels: { ...current.levels, ...patch.levels }, weekly: { ...current.weekly, ...patch.weekly } }
   if (typeof next.enabled !== 'boolean') throw new UserError('enabled must be true or false')
   if (typeof next.model !== 'string' || !next.model.trim()) throw new UserError('a model is required')
   if (!isHHMM(next.dailyAt)) throw new UserError('invalid daily time (HH:MM)')
@@ -81,13 +81,13 @@ export function mergeElderSettings(current: ElderSettings, patch: ElderSettingsP
 }
 
 /** 👍 accepts, 👎 rejects, clicking the same vote again goes back to "proposed". */
-export function nextVoteStatus(current: ElderTopicStatus, vote: 'up' | 'down'): ElderTopicStatus {
-  const target: ElderTopicStatus = vote === 'up' ? 'accepted' : 'rejected'
+export function nextVoteStatus(current: AdvisorTopicStatus, vote: 'up' | 'down'): AdvisorTopicStatus {
+  const target: AdvisorTopicStatus = vote === 'up' ? 'accepted' : 'rejected'
   return current === target ? 'proposed' : target
 }
 
 /** Best effort, for display only: the real decision is still made by `due()`. */
-export function nextRunAt(now: number, settings: ElderSettings): number | null {
+export function nextRunAt(now: number, settings: AdvisorSettings): number | null {
   if (!settings.enabled) return null
   const d = new Date(now)
   if (settings.model.includes('::')) {
@@ -105,11 +105,11 @@ export function nextRunAt(now: number, settings: ElderSettings): number | null {
   return next.getTime()
 }
 
-export class Elder {
+export class Advisor {
   private running = false
   private lastError: string | null = null
   private timer: NodeJS.Timeout | null = null
-  private listeners = new Set<(ev: Extract<GlobalEvent, { kind: 'elder' }>) => void>()
+  private listeners = new Set<(ev: Extract<GlobalEvent, { kind: 'advisor' }>) => void>()
   // Backoff after a failed scheduled pass (daily or weekly): in memory is enough, reset on success.
   // "Run now" never calls `tick()`/`due()`, so it ignores this backoff by design.
   private consecutiveFailures = 0
@@ -133,30 +133,30 @@ export class Elder {
     if (this.timer) clearInterval(this.timer)
   }
 
-  subscribe(fn: (ev: Extract<GlobalEvent, { kind: 'elder' }>) => void) {
+  subscribe(fn: (ev: Extract<GlobalEvent, { kind: 'advisor' }>) => void) {
     this.listeners.add(fn)
     return () => void this.listeners.delete(fn)
   }
 
   private broadcast() {
-    const proposed = this.store.elderTopics().filter((t) => t.status === 'proposed').length
-    for (const fn of this.listeners) fn({ kind: 'elder', proposed, running: this.running })
+    const proposed = this.store.advisorTopics().filter((t) => t.status === 'proposed').length
+    for (const fn of this.listeners) fn({ kind: 'advisor', proposed, running: this.running })
   }
 
-  settings(): ElderSettings {
-    return this.store.setting<ElderSettings>('elder') ?? DEFAULT_ELDER_SETTINGS
+  settings(): AdvisorSettings {
+    return this.store.setting<AdvisorSettings>('advisor') ?? DEFAULT_ADVISOR_SETTINGS
   }
 
-  setSettings(patch: ElderSettingsPatch): ElderSettings {
-    const next = mergeElderSettings(this.settings(), patch)
-    this.store.setSetting('elder', next)
+  setSettings(patch: AdvisorSettingsPatch): AdvisorSettings {
+    const next = mergeAdvisorSettings(this.settings(), patch)
+    this.store.setSetting('advisor', next)
     this.broadcast()
     return next
   }
 
-  state(): ElderState {
+  state(): AdvisorState {
     const settings = this.settings()
-    return { settings, nextRunAt: nextRunAt(Date.now(), settings), running: this.running, lastError: this.lastError, topics: this.store.elderTopics(), reports: this.store.elderReports(), chat: this.store.elderChat() }
+    return { settings, nextRunAt: nextRunAt(Date.now(), settings), running: this.running, lastError: this.lastError, topics: this.store.advisorTopics(), reports: this.store.advisorReports(), chat: this.store.advisorChat() }
   }
 
   private pendingSessions(now: number): PendingSession[] {
@@ -187,13 +187,13 @@ export class Elder {
   }
 
   private skip() {
-    this.store.addElderReport({ id: randomUUID(), kind: 'skipped', text: 'Week skipped: the plan quota was too heavily used.', topicIds: [], costUsd: null, tokens: null, createdAt: Date.now() })
-    this.store.setSetting('elder', { ...this.settings(), lastRunAt: Date.now() })
+    this.store.addAdvisorReport({ id: randomUUID(), kind: 'skipped', text: 'Week skipped: the plan quota was too heavily used.', topicIds: [], costUsd: null, tokens: null, createdAt: Date.now() })
+    this.store.setSetting('advisor', { ...this.settings(), lastRunAt: Date.now() })
     this.broadcast()
   }
 
   /** A scheduled or manual pass. `sessionId` limits the context to one session (end of conversation). */
-  async runPass(kind: ElderReportKind, sessionId?: string) {
+  async runPass(kind: AdvisorReportKind, sessionId?: string) {
     if (this.running) return
     this.running = true
     this.lastError = null
@@ -206,9 +206,9 @@ export class Elder {
       const choice = await this.providers.choice(settings.model)
       if (!choice) throw new Error(`model unavailable: ${settings.model}`)
       const env = this.providers.env(choice.engine, choice.model)
-      const knownIds = new Set(this.store.elderTopics().map((t) => t.id))
+      const knownIds = new Set(this.store.advisorTopics().map((t) => t.id))
       const result = await this.callModel(choice.model ?? choice.id, env, ctx.text)
-      const parsed = parseElderResponse(result.output, knownIds, settings.levels, settings.projects)
+      const parsed = parseAdvisorResponse(result.output, knownIds, settings.levels, settings.projects)
       if (!parsed) throw new Error('invalid model response')
       this.applyAnswer(kind, parsed, result.costUsd, result.tokens)
       // Only mark as processed the feedback actually sent to the model (after truncation and the 50 limit):
@@ -216,11 +216,11 @@ export class Elder {
       this.store.markFeedbackProcessed(ctx.feedbackIds, Date.now())
       // An end-of-conversation pass covers only one session: moving lastRunAt forward would make the next
       // daily pass miss the project summaries and Sangha signals of the skipped period.
-      if (kind !== 'conversation') this.store.setSetting('elder', { ...settings, lastRunAt: Date.now() })
+      if (kind !== 'conversation') this.store.setSetting('advisor', { ...settings, lastRunAt: Date.now() })
       this.onPassSettled(kind, sessionId, true)
     } catch (e) {
       this.lastError = e instanceof Error ? e.message : String(e)
-      console.error('[elder]', this.lastError)
+      console.error('[advisor]', this.lastError)
       this.onPassSettled(kind, sessionId, false)
     } finally {
       this.running = false
@@ -230,7 +230,7 @@ export class Elder {
 
   /** Keeps the backoff counters up to date: reset on success, armed on failure, never for "manual",
    *  which ignores the backoff by design (it never goes through `due()`). */
-  private onPassSettled(kind: ElderReportKind, sessionId: string | undefined, ok: boolean) {
+  private onPassSettled(kind: AdvisorReportKind, sessionId: string | undefined, ok: boolean) {
     if (kind === 'manual') return
     if (kind === 'conversation') {
       if (!sessionId) return
@@ -243,21 +243,21 @@ export class Elder {
       this.retryAfter = null
     } else {
       this.consecutiveFailures++
-      this.retryAfter = Date.now() + elderBackoffMs(this.consecutiveFailures)
+      this.retryAfter = Date.now() + advisorBackoffMs(this.consecutiveFailures)
     }
   }
 
-  private applyAnswer(kind: ElderReportKind, parsed: { report: string; topics: { id?: string; scope: string; title: string; detail: string; evidence: string[] }[] }, costUsd: number | null, tokens: number | null) {
+  private applyAnswer(kind: AdvisorReportKind, parsed: { report: string; topics: { id?: string; scope: string; title: string; detail: string; evidence: string[] }[] }, costUsd: number | null, tokens: number | null) {
     const now = Date.now()
     const topicIds: string[] = []
     for (const t of parsed.topics) {
-      const existing = t.id ? this.store.elderTopic(t.id) : null
+      const existing = t.id ? this.store.advisorTopic(t.id) : null
       const id = existing?.id ?? randomUUID()
-      const topic: ElderTopic = { id, scope: t.scope, title: t.title, detail: t.detail, evidence: t.evidence, status: existing?.status ?? 'proposed', createdAt: existing?.createdAt ?? now, updatedAt: now }
-      this.store.upsertElderTopic(topic)
+      const topic: AdvisorTopic = { id, scope: t.scope, title: t.title, detail: t.detail, evidence: t.evidence, status: existing?.status ?? 'proposed', createdAt: existing?.createdAt ?? now, updatedAt: now }
+      this.store.upsertAdvisorTopic(topic)
       topicIds.push(id)
     }
-    this.store.addElderReport({ id: randomUUID(), kind, text: parsed.report, topicIds, costUsd, tokens, createdAt: now })
+    this.store.addAdvisorReport({ id: randomUUID(), kind, text: parsed.report, topicIds, costUsd, tokens, createdAt: now })
   }
 
   private async callModel(model: string, env: Record<string, string>, input: string): Promise<{ output: unknown; costUsd: number | null; tokens: number | null }> {
@@ -270,21 +270,21 @@ export class Elder {
     return { output: null, costUsd: null, tokens: null }
   }
 
-  voteTopic(id: string, vote: 'up' | 'down'): ElderTopic {
-    const t = this.store.elderTopic(id)
+  voteTopic(id: string, vote: 'up' | 'down'): AdvisorTopic {
+    const t = this.store.advisorTopic(id)
     if (!t) throw new UserError('unknown topic')
-    const updated: ElderTopic = { ...t, status: nextVoteStatus(t.status, vote), updatedAt: Date.now() }
-    this.store.upsertElderTopic(updated)
+    const updated: AdvisorTopic = { ...t, status: nextVoteStatus(t.status, vote), updatedAt: Date.now() }
+    this.store.upsertAdvisorTopic(updated)
     this.broadcast()
     return updated
   }
 
-  doneTopic(id: string): ElderTopic {
-    const t = this.store.elderTopic(id)
+  doneTopic(id: string): AdvisorTopic {
+    const t = this.store.advisorTopic(id)
     if (!t) throw new UserError('unknown topic')
     if (t.status !== 'accepted') throw new UserError('only an accepted topic can be marked done')
-    const updated: ElderTopic = { ...t, status: 'done', updatedAt: Date.now() }
-    this.store.upsertElderTopic(updated)
+    const updated: AdvisorTopic = { ...t, status: 'done', updatedAt: Date.now() }
+    this.store.upsertAdvisorTopic(updated)
     this.broadcast()
     return updated
   }
@@ -313,9 +313,9 @@ export class Elder {
     const choice = await this.providers.choice(settings.model)
     if (!choice) throw new UserError(`model unavailable: ${settings.model}`)
     const env = this.providers.env(choice.engine, choice.model)
-    const topics = this.store.elderTopics().filter((t) => t.status !== 'rejected')
-    const reports = this.store.elderReports(3)
-    const history = this.store.elderChat(20)
+    const topics = this.store.advisorTopics().filter((t) => t.status !== 'rejected')
+    const reports = this.store.advisorReports(3)
+    const history = this.store.advisorChat(20)
     const input = [
       topics.length ? `Topics:\n${topics.map((t) => `- [${t.status}] ${t.title}: ${t.detail}`).join('\n')}` : '',
       reports.length ? `Latest reports:\n${reports.map((r) => `- ${r.text}`).join('\n')}` : '',
@@ -339,8 +339,8 @@ export class Elder {
     }
     if (!reply.trim()) throw new UserError(`The Advisor could not answer: ${detail ?? 'empty answer'}`)
 
-    this.store.addElderChatMessage('user', text, Date.now())
-    this.store.addElderChatMessage('elder', reply, Date.now())
+    this.store.addAdvisorChatMessage('user', text, Date.now())
+    this.store.addAdvisorChatMessage('advisor', reply, Date.now())
     this.broadcast()
     return { reply }
   }

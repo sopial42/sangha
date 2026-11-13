@@ -3,9 +3,9 @@ import { z } from 'zod'
 import type { Projects } from './projects'
 import type { Sessions } from './session'
 
-const BUDDHA_MODEL = process.env.SANGHA_BUDDHA_MODEL ?? 'sonnet'
+const ORCHESTRATOR_MODEL = process.env.SANGHA_ORCHESTRATOR_MODEL ?? process.env.SANGHA_BUDDHA_MODEL ?? 'sonnet'
 
-const BUDDHA_PROMPT = `You are the orchestrator of Sangha. The user can ask you anything.
+const ORCHESTRATOR_PROMPT = `You are the orchestrator of Sangha. The user can ask you anything.
 Sangha holds the user's git projects. Each piece of work is done by a session: a separate Claude Code
 session running in its own git worktree (branch sangha/...), with its own subagents.
 
@@ -30,7 +30,7 @@ it chooses, and again until it has moved on, unless it refuses outright. Do not 
 const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] })
 
 /** The orchestrator's session options, with its tools: an in-process MCP server driving Sangha. */
-export function buddhaOptions(sessions: Sessions, projects: Projects): Partial<Options> {
+export function orchestratorOptions(sessions: Sessions, projects: Projects): Partial<Options> {
   const server = createSdkMcpServer({
     name: 'sangha',
     version: '1.0.0',
@@ -75,8 +75,8 @@ export function buddhaOptions(sessions: Sessions, projects: Projects): Partial<O
         text(
           sessions
             .summaries()
-            .filter((s) => s.agent !== 'buddha')
-            .map((s) => ({ id: s.id, project: s.project, agent: s.agent, title: s.title, status: s.status, branch: s.branch, novices: s.novices.length, context: s.context, renewal: s.shepherd })),
+            .filter((s) => s.agent !== 'orchestrator')
+            .map((s) => ({ id: s.id, project: s.project, agent: s.agent, title: s.title, status: s.status, branch: s.branch, subagents: s.subagents.length, context: s.context, renewal: s.handoff })),
         ),
       ),
       tool(
@@ -105,22 +105,22 @@ export function buddhaOptions(sessions: Sessions, projects: Projects): Partial<O
         'manage_renewal',
         'Take charge of moving a session to a fresh session (with a hand-off) as soon as it suits it, without ever interrupting its work: it is asked only while stopped, its own delay is respected (subagents running, a delicate step, a long sensitive task), and it is asked again until it has moved on; only an outright refusal ends it. Set on=false to stop.',
         { session_id: z.string(), on: z.boolean().default(true) },
-        async ({ session_id, on }) => text(sessions.shepherd(session_id, on) ?? 'no longer managed'),
+        async ({ session_id, on }) => text(sessions.handoff(session_id, on) ?? 'no longer managed'),
       ),
       tool('read_session', 'Read a session status and its last words.', { session_id: z.string() }, async ({ session_id }) => {
         const s = sessions.summaryOf(session_id)
         if (!s) return text('unknown session')
-        return text({ status: s.status, project: s.project, agent: s.agent, branch: s.branch, activity: s.activity, context: s.context, renewal: s.shepherd, lastWords: sessions.lastWords(session_id) })
+        return text({ status: s.status, project: s.project, agent: s.agent, branch: s.branch, activity: s.activity, context: s.context, renewal: s.handoff, lastWords: sessions.lastWords(session_id) })
       }),
     ],
   })
 
   return {
-    model: BUDDHA_MODEL,
+    model: ORCHESTRATOR_MODEL,
     mcpServers: { sangha: server },
     plugins: [],
     settingSources: [],
     disallowedTools: ['Edit', 'Write', 'NotebookEdit', 'Bash', 'Agent', 'Task'],
-    systemPrompt: { type: 'preset', preset: 'claude_code', append: BUDDHA_PROMPT },
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: ORCHESTRATOR_PROMPT },
   }
 }

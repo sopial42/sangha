@@ -1,3 +1,5 @@
+import { withCurrentIds } from './lib/legacy'
+
 // What you set aside instead of sending right away, kept until you come back to it: closing the window
 // or reloading loses nothing. One pile per session (keyed by session id, the Orchestrator included).
 const STASH_KEY = 'sangha.stash'
@@ -6,7 +8,7 @@ export type StashItem = { id: string; text: string; at: number }
 
 const piles = (): Record<string, StashItem[]> => {
   try {
-    return JSON.parse(localStorage.getItem(STASH_KEY) ?? '{}') as Record<string, StashItem[]>
+    return withCurrentIds(JSON.parse(localStorage.getItem(STASH_KEY) ?? '{}') as Record<string, StashItem[]>)
   } catch {
     return {}
   }

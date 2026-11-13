@@ -5,7 +5,7 @@ import type { GitIdentitySetting } from './gitIdentity'
 import { reserveMessage, reserveState, type QuotaReserveSetting } from './quotaReserve'
 import { checkSessionEnv } from './sessionEnv'
 import {
-  BUDDHA_SESSION_ID,
+  ORCHESTRATOR_SESSION_ID,
   type AutonomyState,
   type BackgroundScript,
   type CostReport,
@@ -13,10 +13,10 @@ import {
   type GlobalEvent,
   type GlobalMcp,
   type McpServer,
-  type MonasteryEvent,
-  type NirvanaEntry,
-  type NirvanaSearchResult,
-  type NoviceSummary,
+  type SessionEvent,
+  type ClosedSession,
+  type ClosedSearchResult,
+  type SubagentSummary,
   type Quota,
   type QuotaReserve,
   type QuotaReserveState,
@@ -25,9 +25,9 @@ import {
   type SessionSummary,
 } from '@sangha/shared'
 import { config } from './config'
-import type { HostNirvanaWorktree } from './host'
+import type { HostClosedWorktree } from './host'
 import { Providers } from './providers'
-import { LOOP_STOP_MESSAGE, type SessionRow, type Shepherd, type Store } from './db'
+import { LOOP_STOP_MESSAGE, type SessionRow, type Handoff, type Store } from './db'
 import { addWorktree, isGitRepo, removeWorktree, restoreWorktree, worktreeState, type WorktreeState } from './git'
 import { EXTERNAL_PREFIX, type Observer } from './observer'
 import { transcriptPath, type Projects } from './projects'
@@ -40,16 +40,16 @@ import { relayToPeer } from './messenger'
 import { PullRequests } from './pulls'
 import { BusySettle } from './settle'
 import { carriedOnIn } from './chain'
-import { doing, lifeSummary, nirvanaSearch, progress, recap, scriptSummary, type NirvanaSearchEntry, type Progress } from './recap'
-import { priestOptions } from './roles'
+import { doing, lifeSummary, searchClosed, progress, recap, scriptSummary, type ClosedSearchEntry, type Progress } from './recap'
+import { agentOptions } from './roles'
 import { ScriptSummaries, trackScripts } from './scripts'
 import { contextTokens, parseLine, TranscriptReader } from './transcript'
 import { buildCostReport, CostMeter } from './cost'
-import { isHandoff, nextDelay, parseAnswer, readDecision, renewalMessage, shepherdPrompt, writeHandoffContext, type ShepherdAnswer } from './shepherd'
+import { isHandoff, nextDelay, parseAnswer, readDecision, renewalMessage, handoffPrompt, writeHandoffContext, type HandoffAnswer } from './handoff'
 import { withTimeout } from './timeout'
 
 /** A search through closed sessions must answer in a reasonable time, or it holds its session for nothing. */
-const NIRVANA_SEARCH_TIMEOUT_MS = 60_000
+const CLOSED_SEARCH_TIMEOUT_MS = 60_000
 
 type Listener = (env: Envelope) => void
 type GlobalListener = (ev: GlobalEvent) => void
@@ -93,7 +93,7 @@ class Inbox {
 }
 
 // Events that change what the board overview shows.
-const SUMMARY_EVENTS = new Set<MonasteryEvent['t']>(['busy', 'background', 'monk.summoned', 'monk.tool', 'monk.done', 'buddha.tool', 'loop.wake', 'turn.done', 'error', 'user.message', 'recap'])
+const SUMMARY_EVENTS = new Set<SessionEvent['t']>(['busy', 'background', 'subagent.started', 'subagent.tool', 'subagent.done', 'assistant.tool', 'loop.wake', 'turn.done', 'error', 'user.message', 'recap'])
 
 /**
  * One session (or the orchestrator) = one long-lived Claude Code process in streaming-input mode.
@@ -119,7 +119,7 @@ class LiveSession {
     return this.turnRunning
   }
   activity: string | null = null
-  novices = new Map<string, NoviceSummary>()
+  subagents = new Map<string, SubagentSummary>()
   /** Background work the turn left running (a script, a subagent): he waits on it, so he is still at work. */
   private background: { id: string; type: string; description: string }[] = []
   /** Scripts among that background work (subagents excepted), each with its Haiku summary once written. */
@@ -130,7 +130,7 @@ class LiveSession {
     row: SessionRow,
     cwd: string,
     options: Partial<Options>,
-    private emit: (ev: MonasteryEvent) => void,
+    private emit: (ev: SessionEvent) => void,
     private onClosed: () => void,
     onClaudeSessionId: (id: string) => void,
     private requestScriptSummary: (taskId: string, command: string) => void,
@@ -196,13 +196,13 @@ class LiveSession {
    * Stops his current turn and every background task he left running (a script, a subagent): Sangha never
    * declares `perTaskStopAffordance` (see sdk.d.ts), so nothing of ours renders a per-task stop control.
    * Only an explicit `stopTask` per id makes "interrupt" mean "stop everything" rather than "pause the
-   * reply while a runaway Bash or subagent keeps going". A subagent's monkId (the tool_use id that started it) is
-   * not the id `stopTask` wants: `taskIdOfMonk` resolves it to his own SDK task id. Each stop is tried
+   * reply while a runaway Bash or subagent keeps going". A subagent's id (the tool_use id that started it) is
+   * not the id `stopTask` wants: `taskIdOfSubagent` resolves it to its own SDK task id. Each stop is tried
    * independently: one already gone (settled right as you interrupted) must not stop the others.
    */
   async interrupt() {
     await this.q.interrupt().catch(() => undefined)
-    const taskIds = [...this.background.map((t) => t.id), ...[...this.novices.keys()].map((id) => this.normalizer.taskIdOfMonk(id))].filter((id): id is string => !!id)
+    const taskIds = [...this.background.map((t) => t.id), ...[...this.subagents.keys()].map((id) => this.normalizer.taskIdOfSubagent(id))].filter((id): id is string => !!id)
     await Promise.all(taskIds.map((id) => this.q.stopTask(id).catch(() => undefined)))
   }
 
@@ -212,22 +212,22 @@ class LiveSession {
     this.q.close()
   }
 
-  private track(ev: MonasteryEvent) {
+  private track(ev: SessionEvent) {
     // He may start a turn on his own (woken by a background task's notification): any word or tool of his means a turn runs.
-    if (ev.t === 'buddha.delta' || ev.t === 'buddha.text' || ev.t === 'buddha.tool' || ev.t === 'monk.summoned') this.turnRunning = true
+    if (ev.t === 'assistant.delta' || ev.t === 'assistant.text' || ev.t === 'assistant.tool' || ev.t === 'subagent.started') this.turnRunning = true
     switch (ev.t) {
-      case 'monk.summoned':
-        this.novices.set(ev.monkId, { monkId: ev.monkId, agentType: ev.agentType, description: ev.description, lastTool: null })
+      case 'subagent.started':
+        this.subagents.set(ev.subagentId, { subagentId: ev.subagentId, agentType: ev.agentType, description: ev.description, lastTool: null })
         break
-      case 'monk.tool': {
-        const n = this.novices.get(ev.monkId)
+      case 'subagent.tool': {
+        const n = this.subagents.get(ev.subagentId)
         if (n) n.lastTool = { tool: ev.tool, summary: ev.summary }
         break
       }
-      case 'monk.done':
-        this.novices.delete(ev.monkId)
+      case 'subagent.done':
+        this.subagents.delete(ev.subagentId)
         break
-      case 'buddha.tool':
+      case 'assistant.tool':
         this.activity = ev.summary ? `${ev.tool} · ${ev.summary}` : ev.tool
         break
       case 'turn.done':
@@ -268,7 +268,7 @@ class LiveSession {
       this.emit({ t: 'error', message: err instanceof Error ? err.message : String(err) })
     } finally {
       this.turnRunning = false
-      this.novices.clear()
+      this.subagents.clear()
       this.background = []
       this.scripts = []
       this.requestedSummaries.clear()
@@ -286,7 +286,7 @@ class LiveSession {
   }
 
   private refreshBusy(now = false) {
-    const busy = this.turnRunning || this.novices.size > 0 || this.background.length > 0
+    const busy = this.turnRunning || this.subagents.size > 0 || this.background.length > 0
     this.settle.set(busy, { now })
     clearTimeout(this.idleTimer)
     // An active `/loop`'s CronCreate jobs and ScheduleWakeup live only in this process: idle-closing it
@@ -352,7 +352,7 @@ export class Sessions {
   constructor(
     private store: Store,
     private projects: Projects,
-    private buddhaOptions: (sessions: Sessions) => Partial<Options>,
+    private orchestratorOptions: (sessions: Sessions) => Partial<Options>,
     private quotaReserveSetting: QuotaReserveSetting,
     private git?: GitIdentitySetting,
   ) {
@@ -363,15 +363,15 @@ export class Sessions {
     library.restore(store.mcpPrefs())
     // No session process survives a server restart: subagents still marked as working died with it.
     for (const row of store.listSessions()) {
-      for (const monkId of store.danglingNovices(row.id)) {
-        store.append(row.id, { t: 'monk.done', monkId, status: 'stopped', summary: 'Interrupted: the server stopped while it was working.' })
+      for (const subagentId of store.danglingSubagents(row.id)) {
+        store.append(row.id, { t: 'subagent.done', subagentId, status: 'stopped', summary: 'Interrupted: the server stopped while it was working.' })
       }
     }
-    if (!store.getSession(BUDDHA_SESSION_ID)) {
+    if (!store.getSession(ORCHESTRATOR_SESSION_ID)) {
       store.createSession({
-        id: BUDDHA_SESSION_ID,
+        id: ORCHESTRATOR_SESSION_ID,
         project: '',
-        agent: 'buddha',
+        agent: 'orchestrator',
         title: 'Orchestrator',
         createdAt: Date.now(),
         claudeSessionId: null,
@@ -542,7 +542,7 @@ export class Sessions {
     const running = this.remotes.get(id)
     if (running) return { url: running.url }
     if (this.remotePending.has(id)) return { pending: true }
-    const row = this.priestRow(id)
+    const row = this.ownSessionRow(id)
     if (!row.claudeSessionId) throw new UserError('no conversation to resume yet')
     const old = this.live.get(id)
     // `busy` (not just `turning`): a turn just resumed and already ended counts too, through BusySettle's
@@ -630,7 +630,7 @@ export class Sessions {
    */
   async interrupt(id: string) {
     await this.live.get(id)?.interrupt()
-    if (id === BUDDHA_SESSION_ID || id.startsWith(EXTERNAL_PREFIX)) return // The orchestrator has none; an outside session's lives in its own terminal
+    if (id === ORCHESTRATOR_SESSION_ID || id.startsWith(EXTERNAL_PREFIX)) return // The orchestrator has none; an outside session's lives in its own terminal
     const current = this.store.lastAutonomy(id)
     if (current?.active) await this.stopAutonomy(id, current.mode)
   }
@@ -639,7 +639,7 @@ export class Sessions {
    * (a loop, left alone, would just schedule its next wake-up) is for the caller to decide. Takes him back
    * first if a remote currently holds him, rather than refusing. */
   private async stopAutonomy(id: string, mode: 'goal' | 'loop') {
-    const row = this.priestRow(id)
+    const row = this.ownSessionRow(id)
     await this.takeBackFromRemote(id)
     const cmd = mode === 'goal' ? '/goal clear' : LOOP_STOP_MESSAGE
     this.emit(id, { t: 'user.message', text: cmd })
@@ -658,7 +658,7 @@ export class Sessions {
    * else is about to tell him to stop rescheduling himself.
    */
   async autonomy(id: string, patch: { mode: 'goal' | 'loop'; text: string; interval?: string | null } | null) {
-    const row = this.priestRow(id)
+    const row = this.ownSessionRow(id)
     // Takes him back from a remote rather than refusing: `ensureLive` below would otherwise throw.
     await this.takeBackFromRemote(id)
     const current = this.store.lastAutonomy(id)
@@ -752,7 +752,7 @@ export class Sessions {
       return { ok: true }
     }
     const row = this.store.getSession(id)
-    if (!row || id === BUDDHA_SESSION_ID) throw new UserError('unknown session')
+    if (!row || id === ORCHESTRATOR_SESSION_ID) throw new UserError('unknown session')
     let state: WorktreeState = { dirty: 0, ahead: 0 }
     if (row.worktree && row.baseSha) {
       state = await worktreeState(row.worktree, row.baseSha)
@@ -765,8 +765,8 @@ export class Sessions {
     if (row.worktree && row.branch && row.baseSha && !this.store.othersInWorktree(row.worktree, id).length) await removeWorktree(this.projects.dir(row.project), row.worktree, row.branch, state.ahead)
     this.store.archive(id)
     for (const fn of this.globalListeners) fn({ kind: 'removed', id })
-    for (const fn of this.globalListeners) fn({ kind: 'nirvana' })
-    void this.generateNirvanaSummary(this.store.getSession(id)!)
+    for (const fn of this.globalListeners) fn({ kind: 'closed' })
+    void this.generateClosedSummary(this.store.getSession(id)!)
     return { ok: true }
   }
 
@@ -774,9 +774,9 @@ export class Sessions {
    * Reopen a closed session: its folder returns (at the same path, so Claude Code finds his
    * transcript again), then he un-archives. He is not woken: the next message resumes him as usual.
    */
-  async reincarnate(id: string): Promise<SessionSummary> {
+  async reopen(id: string): Promise<SessionSummary> {
     const row = this.store.getSession(id)
-    if (!row || !row.archivedAt || id === BUDDHA_SESSION_ID) throw new UserError('unknown session')
+    if (!row || !row.archivedAt || id === ORCHESTRATOR_SESSION_ID) throw new UserError('unknown session')
     if (!this.projects.exists(row.project)) throw new UserError(`project no longer exists: ${row.project}`)
     if (row.worktree && !existsSync(row.worktree)) {
       if (row.baseSha) await restoreWorktree(this.projects.dir(row.project), row.worktree, row.branch!, row.baseSha)
@@ -784,16 +784,16 @@ export class Sessions {
     }
     this.store.unarchive(id)
     this.broadcastSession(id)
-    for (const fn of this.globalListeners) fn({ kind: 'nirvana' })
+    for (const fn of this.globalListeners) fn({ kind: 'closed' })
     return this.summaryOf(id)!
   }
 
   /** Closed sessions, newest first. Queues Haiku summaries missing for the oldest of them. */
-  nirvana(): NirvanaEntry[] {
-    const rows = this.store.archivedSessions().filter((r) => r.id !== BUDDHA_SESSION_ID)
-    const missing = rows.filter((r) => !this.hasNirvanaSummary(r)).slice(0, 20)
-    if (missing.length) void this.fillNirvanaSummaries(missing)
-    return rows.map((r) => this.nirvanaEntry(r))
+  closedSessions(): ClosedSession[] {
+    const rows = this.store.archivedSessions().filter((r) => r.id !== ORCHESTRATOR_SESSION_ID)
+    const missing = rows.filter((r) => !this.hasClosedSummary(r)).slice(0, 20)
+    if (missing.length) void this.fillClosedSummaries(missing)
+    return rows.map((r) => this.closedEntry(r))
   }
 
   /**
@@ -801,13 +801,13 @@ export class Sessions {
    * the exact words of a search box): refused while empty, or while the quota reserve holds every
    * session, same as a recap would be. Times out rather than holding you forever.
    */
-  async searchNirvana(q: string): Promise<NirvanaSearchResult> {
+  async searchClosedSessions(q: string): Promise<ClosedSearchResult> {
     if (!q.trim()) throw new UserError('Empty question.')
     if (this.blocked()) throw new UserError(reserveMessage(this.reserve, this.quota))
     const notes = this.store.notes()
-    const entries: NirvanaSearchEntry[] = this.store
+    const entries: ClosedSearchEntry[] = this.store
       .archivedSessions()
-      .filter((r) => r.id !== BUDDHA_SESSION_ID)
+      .filter((r) => r.id !== ORCHESTRATOR_SESSION_ID)
       .map((r) => ({
         id: r.id,
         date: new Date(r.archivedAt!).toISOString().slice(0, 10),
@@ -816,9 +816,9 @@ export class Sessions {
         agent: r.agent,
         note: notes.get(r.id) ?? null,
         title: r.title,
-        summary: this.nirvanaSummaryOf(r),
+        summary: this.closedSummaryOf(r),
       }))
-    return withTimeout(nirvanaSearch(entries, q.trim()), NIRVANA_SEARCH_TIMEOUT_MS, () => new UserError('The search took too long. Try again.'))
+    return withTimeout(searchClosed(entries, q.trim()), CLOSED_SEARCH_TIMEOUT_MS, () => new UserError('The search took too long. Try again.'))
   }
 
   /**
@@ -831,10 +831,10 @@ export class Sessions {
       .allSessions()
       .map((row) => {
         const file = this.reportTranscriptOf(row)
-        if (row.id === BUDDHA_SESSION_ID && !file) return null // not computable: skip him
+        if (row.id === ORCHESTRATOR_SESSION_ID && !file) return null // not computable: skip him
         return {
           id: row.id,
-          project: row.id === BUDDHA_SESSION_ID ? 'Orchestrator' : row.project,
+          project: row.id === ORCHESTRATOR_SESSION_ID ? 'Orchestrator' : row.project,
           title: row.title,
           createdAt: row.createdAt,
           cost: file ? this.meter.session(file) : 0,
@@ -847,23 +847,23 @@ export class Sessions {
   /** Transcript for the cost report: same rule as `transcriptOf`, but the orchestrator's cwd is fixed (it is not project-bound). */
   private reportTranscriptOf(row: SessionRow): string | null {
     if (!row.claudeSessionId) return null
-    const cwd = row.id === BUDDHA_SESSION_ID ? config.workspacesDir : (row.worktree ?? (this.projects.exists(row.project) ? this.projects.dir(row.project) : null))
+    const cwd = row.id === ORCHESTRATOR_SESSION_ID ? config.workspacesDir : (row.worktree ?? (this.projects.exists(row.project) ? this.projects.dir(row.project) : null))
     if (!cwd) return null
     const file = transcriptPath(cwd, row.claudeSessionId)
     return existsSync(file) ? file : null
   }
 
-  private hasNirvanaSummary(row: SessionRow): boolean {
-    return this.nirvanaSummaryOf(row) !== null
+  private hasClosedSummary(row: SessionRow): boolean {
+    return this.closedSummaryOf(row) !== null
   }
 
-  /** The whole-life summary a small model wrote when the session was closed, null until it is (see `generateNirvanaSummary`). */
-  private nirvanaSummaryOf(row: SessionRow): string | null {
-    const note = this.store.note<{ summary: string }>(row.id, 'nirvana')
+  /** The whole-life summary a small model wrote when the session was closed, null until it is (see `generateClosedSummary`). */
+  private closedSummaryOf(row: SessionRow): string | null {
+    const note = this.store.note<{ summary: string }>(row.id, 'closed')
     return note && note.key === String(row.archivedAt) ? note.value.summary : null
   }
 
-  private nirvanaEntry(row: SessionRow): NirvanaEntry {
+  private closedEntry(row: SessionRow): ClosedSession {
     const renewal = this.store.renewal(row.id)
     return {
       id: row.id,
@@ -874,7 +874,7 @@ export class Sessions {
       createdAt: row.createdAt,
       archivedAt: row.archivedAt!,
       cost: this.costOf(row.id),
-      summary: this.nirvanaSummaryOf(row),
+      summary: this.closedSummaryOf(row),
       note: this.store.notes().get(row.id) ?? null,
       renewed: renewal?.state === 'done',
       continuedIn: renewal?.state === 'done' ? carriedOnIn(this.store, row.id) : null,
@@ -882,7 +882,7 @@ export class Sessions {
   }
 
   /** Archived sessions that had a worktree, so an orphan one can be named after who left it behind, or own a sub-agent of theirs (see `host.ts`). */
-  archivedWorktrees(): HostNirvanaWorktree[] {
+  archivedWorktrees(): HostClosedWorktree[] {
     const notes = this.store.notes()
     return this.store
       .archivedSessions()
@@ -890,28 +890,28 @@ export class Sessions {
       .map((r) => ({ id: r.id, path: r.worktree!, title: r.title, note: notes.get(r.id) ?? null, archivedAt: r.archivedAt! }))
   }
 
-  private nirvanaBusy = false
+  private closedSummariesBusy = false
 
   /** One Haiku call at a time, so old history fills in progressively rather than all at once. */
-  private async fillNirvanaSummaries(rows: SessionRow[]) {
-    if (this.nirvanaBusy) return
-    this.nirvanaBusy = true
+  private async fillClosedSummaries(rows: SessionRow[]) {
+    if (this.closedSummariesBusy) return
+    this.closedSummariesBusy = true
     try {
-      for (const row of rows) await this.generateNirvanaSummary(row)
+      for (const row of rows) await this.generateClosedSummary(row)
     } finally {
-      this.nirvanaBusy = false
+      this.closedSummariesBusy = false
     }
   }
 
   /** What the whole session was about, written by a small model once it is closed. */
-  private async generateNirvanaSummary(row: SessionRow) {
+  private async generateClosedSummary(row: SessionRow) {
     try {
       const summary = await lifeSummary(this.lifeTranscript(row.id))
       if (!summary) return
-      this.store.setNote(row.id, 'nirvana', String(row.archivedAt), { summary })
-      for (const fn of this.globalListeners) fn({ kind: 'nirvana' })
+      this.store.setNote(row.id, 'closed', String(row.archivedAt), { summary })
+      for (const fn of this.globalListeners) fn({ kind: 'closed' })
     } catch (err) {
-      console.error(`[nirvana ${row.id.slice(0, 8)}]`, err instanceof Error ? err.message : err)
+      console.error(`[closed ${row.id.slice(0, 8)}]`, err instanceof Error ? err.message : err)
     }
   }
 
@@ -921,8 +921,8 @@ export class Sessions {
     const first = events.find((e) => e.t === 'user.message')
     const lines = events.flatMap((ev) => {
       if (ev.t === 'user.message') return [`USER: ${ev.text.slice(0, 2000)}`]
-      if (ev.t === 'buddha.text') return [`AGENT: ${ev.text.slice(0, 2000)}`]
-      if (ev.t === 'monk.done') return [`SUBAGENT (${ev.status}): ${ev.summary.slice(0, 800)}`]
+      if (ev.t === 'assistant.text') return [`AGENT: ${ev.text.slice(0, 2000)}`]
+      if (ev.t === 'subagent.done') return [`SUBAGENT (${ev.status}): ${ev.summary.slice(0, 800)}`]
       if (ev.t === 'recap') return [`RECAP: ${ev.done} / ${ev.next}`]
       return []
     })
@@ -939,10 +939,10 @@ export class Sessions {
    */
   async removeProject(name: string, force: boolean): Promise<{ ok: true } | { ok: false; dirty: { title: string; files: number }[] }> {
     if (!this.projects.exists(name)) throw new UserError(`unknown project: ${name}`)
-    const priests = this.store.listSessions().filter((r) => r.project === name && r.id !== BUDDHA_SESSION_ID)
+    const projectSessions = this.store.listSessions().filter((r) => r.project === name && r.id !== ORCHESTRATOR_SESSION_ID)
     if (!force) {
       const dirty: { title: string; files: number }[] = []
-      for (const r of priests) {
+      for (const r of projectSessions) {
         if (!r.worktree || !r.baseSha) continue
         const st = await worktreeState(r.worktree, r.baseSha)
         if (st.dirty) dirty.push({ title: r.title, files: st.dirty })
@@ -954,7 +954,7 @@ export class Sessions {
       }
       if (dirty.length) return { ok: false, dirty }
     }
-    for (const r of priests) await this.archive(r.id, true)
+    for (const r of projectSessions) await this.archive(r.id, true)
     this.projects.remove(name)
     for (const fn of this.globalListeners) fn({ kind: 'projects' })
     return { ok: true }
@@ -990,12 +990,12 @@ export class Sessions {
       ...s,
       doing: s.status === 'working' ? (this.doingOf(s.id)?.text ?? null) : null,
       silenced: this.store.silencedIds().has(s.id),
-      lotus: this.store.lotusIds().has(s.id),
+      setAside: this.store.setAsideIds().has(s.id),
       note: this.store.notes().get(s.id) ?? null,
       reminder: this.store.reminders().get(s.id) ?? null,
       env: {},
       renewal: this.renewalState(s.id),
-      shepherd: this.shepherdState(s.id),
+      handoff: this.handoffState(s.id),
       cost: this.costOf(s.id),
       pr: s.cwd ? this.pulls.of(s.cwd) : null,
     }
@@ -1003,7 +1003,7 @@ export class Sessions {
 
   /** API-price cost of a session so far, including what the sessions it took over from had cost. */
   private costOf(id: string): number | null {
-    if (id === BUDDHA_SESSION_ID) return null
+    if (id === ORCHESTRATOR_SESSION_ID) return null
     const file = this.transcriptOf(id)
     const carried = this.store.carriedCost(id)
     return file || carried ? (file ? this.meter.session(file) : 0) + carried : null
@@ -1024,8 +1024,8 @@ export class Sessions {
     return r && r.state !== 'done' ? r.state : null
   }
 
-  private shepherdState(id: string): SessionSummary['shepherd'] {
-    const s = this.store.shepherd(id)
+  private handoffState(id: string): SessionSummary['handoff'] {
+    const s = this.store.handoff(id)
     return s && s.state !== 'done' ? { state: s.state, nextAt: s.nextAt, note: s.note } : null
   }
 
@@ -1058,7 +1058,7 @@ export class Sessions {
   /** Ask a session now, whatever its size (the "Start fresh" button). */
   async askRenewal(id: string) {
     const s = this.summaryOf(id)
-    if (!s || id === BUDDHA_SESSION_ID) throw new UserError('unknown session')
+    if (!s || id === ORCHESTRATOR_SESSION_ID) throw new UserError('unknown session')
     if (s.status === 'working') throw new UserError('it is working: wait until it stops')
     await this.ask(s)
   }
@@ -1085,10 +1085,10 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     this.renewing = true
     try {
       for (const s of this.summaries()) {
-        if (s.id === BUDDHA_SESSION_ID) continue
-        const sh = this.store.shepherd(s.id)
+        if (s.id === ORCHESTRATOR_SESSION_ID) continue
+        const sh = this.store.handoff(s.id)
         if (sh && (sh.state === 'pending' || sh.state === 'asked')) {
-          await this.tickShepherd(s, sh).catch((e) => console.error('[shepherd]', e instanceof Error ? e.message : e))
+          await this.tickHandoff(s, sh).catch((e) => console.error('[handoff]', e instanceof Error ? e.message : e))
           continue
         }
         if (s.status === 'working' || s.silenced) continue
@@ -1113,8 +1113,8 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     if (!id.startsWith(EXTERNAL_PREFIX)) {
       return this.store
         .events(id)
-        .filter((e) => e.at > since && e.ev.t === 'buddha.text')
-        .map((e) => (e.ev.t === 'buddha.text' ? e.ev.text : ''))
+        .filter((e) => e.at > since && e.ev.t === 'assistant.text')
+        .map((e) => (e.ev.t === 'assistant.text' ? e.ev.text : ''))
     }
     const file = this.observer?.fileOf(id)
     if (!file) return []
@@ -1123,7 +1123,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
       .map(parseLine)
       .filter((l) => l !== null && l.timestamp && Date.parse(l.timestamp) > since)
       .flatMap((l) => reader.push(l!))
-      .map((e) => (e.t === 'buddha.text' ? e.text : ''))
+      .map((e) => (e.t === 'assistant.text' ? e.text : ''))
       .filter(Boolean)
   }
 
@@ -1131,44 +1131,44 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
 
   /** Hand (or take back) a session's move to a fresh session to the orchestrator. */
   /** `context`: what you hand over with him, read first by the fresh session (in a file under /tmp). */
-  shepherd(id: string, on: boolean, context?: string) {
+  handoff(id: string, on: boolean, context?: string) {
     const s = this.summaryOf(id)
-    if (!s || id === BUDDHA_SESSION_ID) throw new UserError('unknown session')
+    if (!s || id === ORCHESTRATOR_SESSION_ID) throw new UserError('unknown session')
     if (!on) {
-      this.store.setShepherd(id, null)
+      this.store.setHandoff(id, null)
     } else {
       if (s.external && !s.alive) throw new UserError('its terminal is closed: it cannot answer')
       const contextFile = context?.trim() ? writeHandoffContext(id, context.trim()) : null
-      const cur = this.store.shepherd(id)
+      const cur = this.store.handoff(id)
       if (cur?.state === 'pending' || cur?.state === 'asked') {
         // Already handed over: a new context replaces the previous one.
-        if (contextFile) this.store.setShepherd(id, { ...cur, contextFile })
+        if (contextFile) this.store.setHandoff(id, { ...cur, contextFile })
         this.broadcastSession(id)
-        return this.shepherdState(id)
+        return this.handoffState(id)
       }
       const now = Date.now()
       // A fresh-session question already awaits his answer: take it over rather than ask a second one.
       const rec = this.store.renewal(id)
-      if (rec?.state === 'asked') this.store.setShepherd(id, { state: 'asked', nextAt: now, askedAt: rec.askedAt, seenAt: rec.askedAt, attempts: 0, note: null, contextFile })
-      else this.store.setShepherd(id, { state: 'pending', nextAt: now, askedAt: 0, seenAt: now, attempts: 0, note: null, contextFile })
+      if (rec?.state === 'asked') this.store.setHandoff(id, { state: 'asked', nextAt: now, askedAt: rec.askedAt, seenAt: rec.askedAt, attempts: 0, note: null, contextFile })
+      else this.store.setHandoff(id, { state: 'pending', nextAt: now, askedAt: 0, seenAt: now, attempts: 0, note: null, contextFile })
     }
     this.broadcastSession(id)
-    return this.shepherdState(id)
+    return this.handoffState(id)
   }
 
   /**
    * One step for a session being handed off. Never while he works (a turn, or subagents running): he is only spoken to
    * once stopped. Asks at `nextAt`, reads his answer, and takes his own "yes" whenever he writes it.
    */
-  private async tickShepherd(s: SessionSummary, sh: Shepherd) {
+  private async tickHandoff(s: SessionSummary, sh: Handoff) {
     // Only once he has cleanly ended a turn: never while he works, nor to wake an interrupted or failed one.
     if (s.status !== 'waiting' || (s.external && !s.alive)) return
     const now = Date.now()
     if (sh.state === 'asked') {
       const words = this.wordsSince(s.id, sh.askedAt).filter((w) => w.trim())
-      if (words.length) return this.shepherdDecide(s, sh, readDecision(words))
+      if (words.length) return this.handoffDecide(s, sh, readDecision(words))
       // No word after a long while (the question got lost): ask again later.
-      if (now - sh.askedAt > 3 * 3600_000) this.setShepherd(s.id, { ...sh, state: 'pending', nextAt: now + nextDelay(sh.attempts, null), attempts: sh.attempts + 1 })
+      if (now - sh.askedAt > 3 * 3600_000) this.setHandoff(s.id, { ...sh, state: 'pending', nextAt: now + nextDelay(sh.attempts, null), attempts: sh.attempts + 1 })
       return
     }
     // Before the next question: he may have found his moment himself.
@@ -1176,42 +1176,42 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     const words = this.wordsSince(s.id, sh.seenAt)
     const own = words
       .map((_, i) => parseAnswer(words.slice(i).join('\n\n')))
-      .find((a): a is Extract<ShepherdAnswer, { kind: 'yes' }> => a.kind === 'yes' && isHandoff(a.handoff))
-    if (own) return this.shepherdDecide(s, sh, own)
+      .find((a): a is Extract<HandoffAnswer, { kind: 'yes' }> => a.kind === 'yes' && isHandoff(a.handoff))
+    if (own) return this.handoffDecide(s, sh, own)
     if (now < sh.nextAt) return
-    this.setShepherd(s.id, { ...sh, state: 'asked', askedAt: now })
+    this.setHandoff(s.id, { ...sh, state: 'asked', askedAt: now })
     try {
-      await this.reply(s.id, shepherdPrompt(Math.round((s.context ?? 0) / 1000), sh.note))
+      await this.reply(s.id, handoffPrompt(Math.round((s.context ?? 0) / 1000), sh.note))
     } catch (e) {
       // Not delivered: he was not asked; try again a little later.
-      this.setShepherd(s.id, { ...sh, state: 'pending', nextAt: now + nextDelay(0, null) })
+      this.setHandoff(s.id, { ...sh, state: 'pending', nextAt: now + nextDelay(0, null) })
       throw e
     }
   }
 
-  private async shepherdDecide(s: SessionSummary, sh: Shepherd, a: ShepherdAnswer) {
+  private async handoffDecide(s: SessionSummary, sh: Handoff, a: HandoffAnswer) {
     const now = Date.now()
     const who = `${s.agent === 'lead' ? 'The session' : s.agent} "${s.title}" (${s.project})`
     if (a.kind === 'yes') {
-      this.setShepherd(s.id, { ...sh, state: 'done', seenAt: now })
+      this.setHandoff(s.id, { ...sh, state: 'done', seenAt: now })
       await this.renew(s, a.handoff)
       this.announce(`${who} started fresh, with its handoff.`)
     } else if (a.kind === 'never') {
-      this.setShepherd(s.id, { ...sh, state: 'refused', seenAt: now, note: a.reason.slice(0, 600) })
+      this.setHandoff(s.id, { ...sh, state: 'refused', seenAt: now, note: a.reason.slice(0, 600) })
       this.announce(`${who} flatly refuses to start fresh: ${a.reason.slice(0, 400)}`)
     } else {
-      this.setShepherd(s.id, { ...sh, state: 'pending', seenAt: now, nextAt: now + nextDelay(sh.attempts, a.delayMs), attempts: sh.attempts + 1, note: a.reason })
+      this.setHandoff(s.id, { ...sh, state: 'pending', seenAt: now, nextAt: now + nextDelay(sh.attempts, a.delayMs), attempts: sh.attempts + 1, note: a.reason })
     }
   }
 
-  private setShepherd(id: string, sh: Shepherd) {
-    this.store.setShepherd(id, sh)
+  private setHandoff(id: string, sh: Handoff) {
+    this.store.setHandoff(id, sh)
     this.broadcastSession(id)
   }
 
   /** A word from the orchestrator in its own conversation, for you. */
   private announce(text: string) {
-    this.emit(BUDDHA_SESSION_ID, { t: 'buddha.text', text })
+    this.emit(ORCHESTRATOR_SESSION_ID, { t: 'assistant.text', text })
   }
 
   private async readAnswer(s: SessionSummary, askedAt: number) {
@@ -1251,7 +1251,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     // The bill follows the work: the fresh session starts from what the old one had cost.
     this.store.setCarriedCost(row.id, this.costOf(s.id) ?? 0)
     if (this.store.silencedIds().has(s.id)) this.store.setSilenced(row.id, true)
-    if (this.store.lotusIds().has(s.id)) this.store.setLotus(row.id, true)
+    if (this.store.setAsideIds().has(s.id)) this.store.setSetAside(row.id, true)
     const carriedNote = this.store.notes().get(s.id)
     if (carriedNote) this.store.setSessionNote(row.id, carriedNote)
     const carriedEnv = this.store.sessionEnv(s.id)
@@ -1275,7 +1275,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
       }
       this.observer?.hide(s.id, true)
     }
-    this.send(row.id, renewalMessage(handoff, this.store.shepherd(s.id)?.contextFile ?? null))
+    this.send(row.id, renewalMessage(handoff, this.store.handoff(s.id)?.contextFile ?? null))
   }
 
   /** Mute (or unmute) a session: muted, it no longer calls for you. */
@@ -1286,9 +1286,9 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
   }
 
   /** Set a session aside (or bring it back). */
-  lotus(id: string, lotus: boolean) {
+  setAside(id: string, setAside: boolean) {
     if (!this.summaryOf(id)) throw new UserError('unknown session')
-    this.store.setLotus(id, lotus)
+    this.store.setSetAside(id, setAside)
     this.broadcastSession(id)
   }
 
@@ -1297,7 +1297,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
    * at launch (his agent file and its tools, skills, settings, MCP). A turn in progress is interrupted.
    */
   async restart(id: string) {
-    const row = this.priestRow(id)
+    const row = this.ownSessionRow(id)
     const old = this.live.get(id)
     if (old) {
       await old.interrupt()
@@ -1317,7 +1317,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
    * (Claude ↔ a provider): his process must start again with it, so he is relaunched on the same conversation.
    */
   async setModel(id: string, model: string) {
-    const row = this.priestRow(id)
+    const row = this.ownSessionRow(id)
     const choice = await this.providers.choice(model)
     if (!choice) throw new UserError(`model unavailable: ${model}`)
     this.store.setModel(id, choice.engine, choice.model)
@@ -1326,12 +1326,12 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     if (!live) return // his next process starts with it
     if (choice.engine !== (row.engine ?? 'claude')) return this.restart(id)
     // '' : back to the model of his agent's definition.
-    await live.setModel(choice.model ?? (priestOptions(row.agent).model as string | undefined))
+    await live.setModel(choice.model ?? (agentOptions(row.agent).model as string | undefined))
   }
 
   /** A session's MCP servers, waking its process to ask it. */
   async mcp(id: string): Promise<McpServer[]> {
-    const row = this.priestRow(id)
+    const row = this.ownSessionRow(id)
     const statuses = await this.ensureLive(row).mcpStatus()
     const native = nativeMcp(statuses)
     const list = mcpList(statuses, this.catalog(row), this.store.mcpPrefs(), this.store.sessionMcpPrefs(id))
@@ -1341,7 +1341,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
 
   /** Switch a server for this session only, over the switch of all of Sangha (`enabled` null: back to it). */
   async toggleMcp(id: string, name: string, enabled: boolean | null): Promise<McpServer[]> {
-    const row = this.priestRow(id)
+    const row = this.ownSessionRow(id)
     this.store.setSessionMcpPref(id, name, enabled)
     await this.applyMcp(row, this.ensureLive(row), name).catch((e) => {
       throw new UserError(`MCP ${name} : ${e instanceof Error ? e.message : String(e)}`)
@@ -1354,8 +1354,8 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
    * sessions load themselves (claude.ai, project), as last seen in a session (one live session is asked).
    */
   async globalMcp(): Promise<GlobalMcp[]> {
-    const priest = [...this.live.entries()].find(([id]) => id !== BUDDHA_SESSION_ID && !id.startsWith(EXTERNAL_PREFIX))
-    if (priest) await Promise.race([this.mcp(priest[0]), new Promise((r) => setTimeout(r, 5_000))]).catch(() => undefined)
+    const own = [...this.live.entries()].find(([id]) => id !== ORCHESTRATOR_SESSION_ID && !id.startsWith(EXTERNAL_PREFIX))
+    if (own) await Promise.race([this.mcp(own[0]), new Promise((r) => setTimeout(r, 5_000))]).catch(() => undefined)
     const catalog: Catalog = { ...readCatalog(null), ...library.catalog() }
     for (const [name, s] of Object.entries(catalog)) if (!this.seenMcp.has(name)) this.seenMcp.set(name, { scope: s.scope, native: false })
     const prefs = this.store.mcpPrefs()
@@ -1371,7 +1371,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     this.store.setMcpPref(name, enabled)
     for (const [id, s] of this.live) {
       const row = this.store.getSession(id)
-      if (!row || id === BUDDHA_SESSION_ID || id.startsWith(EXTERNAL_PREFIX) || name in this.store.sessionMcpPrefs(id)) continue
+      if (!row || id === ORCHESTRATOR_SESSION_ID || id.startsWith(EXTERNAL_PREFIX) || name in this.store.sessionMcpPrefs(id)) continue
       void this.applyMcp(row, s, name).catch(() => undefined)
     }
     return this.globalMcp()
@@ -1385,7 +1385,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
 
   /** Sign in to a server that needs it (your browser opens), then reconnect it for the project's live sessions. */
   async loginMcp(id: string, name: string): Promise<McpServer[]> {
-    const row = this.priestRow(id)
+    const row = this.ownSessionRow(id)
     await mcpLogin(this.cwdOf(row) ?? this.projects.dir(row.project), name).catch((e) => {
       throw new UserError(`signing in to ${name}: ${e instanceof Error ? e.message : String(e)}`)
     })
@@ -1403,9 +1403,9 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     return this.mcp(id)
   }
 
-  private priestRow(id: string): SessionRow {
+  private ownSessionRow(id: string): SessionRow {
     const row = this.store.getSession(id)
-    if (!row || row.archivedAt || id === BUDDHA_SESSION_ID || id.startsWith(EXTERNAL_PREFIX)) throw new UserError('unknown session')
+    if (!row || row.archivedAt || id === ORCHESTRATOR_SESSION_ID || id.startsWith(EXTERNAL_PREFIX)) throw new UserError('unknown session')
     return row
   }
 
@@ -1426,7 +1426,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     if (change.active) this.store.setMcpPref(name, true)
     for (const [id, s] of this.live) {
       const row = this.store.getSession(id)
-      if (row && id !== BUDDHA_SESSION_ID && !id.startsWith(EXTERNAL_PREFIX)) void s.setExtraMcp(this.mcpPlan(row).extras).catch(() => undefined)
+      if (row && id !== ORCHESTRATOR_SESSION_ID && !id.startsWith(EXTERNAL_PREFIX)) void s.setExtraMcp(this.mcpPlan(row).extras).catch(() => undefined)
     }
     return library.list()
   }
@@ -1482,7 +1482,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
 
   private pullCwds(): string[] {
     const cwds: string[] = []
-    for (const s of this.summaries()) if (s.id !== BUDDHA_SESSION_ID && s.cwd) cwds.push(s.cwd)
+    for (const s of this.summaries()) if (s.id !== ORCHESTRATOR_SESSION_ID && s.cwd) cwds.push(s.cwd)
     return cwds
   }
 
@@ -1496,20 +1496,20 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     this.doingBusy = true
     try {
       for (const s of this.summaries()) {
-        if (s.status !== 'working' || s.id === BUDDHA_SESSION_ID) continue
+        if (s.status !== 'working' || s.id === ORCHESTRATOR_SESSION_ID) continue
         const prev = this.doingOf(s.id)
         const key = this.historyKey(s.id)
         if (prev && (Date.now() - prev.at < every || prev.key === key)) continue
         const lines = recentWindow(this.history(s.id)).flatMap((ev) => {
           if (ev.t === 'user.message') return [`REQUEST: ${ev.text.slice(0, 1500)}`]
-          if (ev.t === 'buddha.text') return [`AGENT: ${ev.text.slice(0, 1500)}`]
-          if (ev.t === 'buddha.tool') return [`TOOL: ${ev.tool} ${ev.summary}`]
-          if (ev.t === 'monk.summoned') return [`SUBAGENT STARTED: ${ev.description}`]
-          if (ev.t === 'monk.done') return [`SUBAGENT DONE: ${ev.summary.slice(0, 500)}`]
+          if (ev.t === 'assistant.text') return [`AGENT: ${ev.text.slice(0, 1500)}`]
+          if (ev.t === 'assistant.tool') return [`TOOL: ${ev.tool} ${ev.summary}`]
+          if (ev.t === 'subagent.started') return [`SUBAGENT STARTED: ${ev.description}`]
+          if (ev.t === 'subagent.done') return [`SUBAGENT DONE: ${ev.summary.slice(0, 500)}`]
           return []
         })
-        const novices = s.novices.map((n) => `SUBAGENT WORKING: ${n.description}${n.lastTool ? ` (${n.lastTool.tool} ${n.lastTool.summary})` : ''}`)
-        const text = await doing([...lines.slice(-40), ...novices].join('\n')).catch(() => null)
+        const subagents = s.subagents.map((n) => `SUBAGENT WORKING: ${n.description}${n.lastTool ? ` (${n.lastTool.tool} ${n.lastTool.summary})` : ''}`)
+        const text = await doing([...lines.slice(-40), ...subagents].join('\n')).catch(() => null)
         if (!text) continue
         this.doings.set(s.id, { at: Date.now(), key, text })
         this.store.setNote(s.id, 'doing', key, text)
@@ -1522,7 +1522,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
   }
 
   /** Everything a session said, as events: from Sangha's log, or read from an outside transcript. */
-  private history(id: string): MonasteryEvent[] {
+  private history(id: string): SessionEvent[] {
     if (!id.startsWith(EXTERNAL_PREFIX)) return this.store.events(id).map((e) => e.ev)
     const file = this.observer?.fileOf(id)
     if (!file) return []
@@ -1553,15 +1553,15 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     const first = events.find((e) => e.t === 'user.message')
     const lines = events.flatMap((ev) => {
       if (ev.t === 'user.message') return [`USER: ${ev.text.slice(0, 2000)}`]
-      if (ev.t === 'buddha.text') return [`AGENT: ${ev.text.slice(0, 2000)}`]
-      if (ev.t === 'monk.summoned') return [`SUBAGENT STARTED (${ev.agentType}): ${ev.description}`]
-      if (ev.t === 'monk.done') return [`SUBAGENT DONE: ${ev.summary.slice(0, 800)}`]
+      if (ev.t === 'assistant.text') return [`AGENT: ${ev.text.slice(0, 2000)}`]
+      if (ev.t === 'subagent.started') return [`SUBAGENT STARTED (${ev.agentType}): ${ev.description}`]
+      if (ev.t === 'subagent.done') return [`SUBAGENT DONE: ${ev.summary.slice(0, 800)}`]
       if (ev.t === 'error') return [`ERROR: ${ev.message}`]
       return []
     })
     const input = [
       first && first.t === 'user.message' ? `INITIAL REQUEST: ${first.text.slice(0, 3000)}` : '',
-      summary ? `CURRENT STATE: ${summary.status}${summary.novices.length ? `, ${summary.novices.length} subagent(s) working` : ''}` : '',
+      summary ? `CURRENT STATE: ${summary.status}${summary.subagents.length ? `, ${summary.subagents.length} subagent(s) working` : ''}` : '',
       '--- THREAD (most recent last) ---',
       lines.join('\n\n').slice(-10_000),
     ].join('\n\n')
@@ -1588,15 +1588,15 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
         .map(parseLine)
         .filter((l) => l !== null)
         .flatMap((l) => reader.push(l))
-        .filter((e) => e.t === 'buddha.text')
+        .filter((e) => e.t === 'assistant.text')
         .slice(-n)
-        .map((e) => (e.t === 'buddha.text' ? e.text : ''))
+        .map((e) => (e.t === 'assistant.text' ? e.text : ''))
     }
     return this.store
       .events(id)
-      .filter((e) => e.ev.t === 'buddha.text' || e.ev.t === 'error')
+      .filter((e) => e.ev.t === 'assistant.text' || e.ev.t === 'error')
       .slice(-n)
-      .map((e) => (e.ev.t === 'buddha.text' ? e.ev.text : e.ev.t === 'error' ? `ERROR: ${e.ev.message}` : ''))
+      .map((e) => (e.ev.t === 'assistant.text' ? e.ev.text : e.ev.t === 'error' ? `ERROR: ${e.ev.message}` : ''))
   }
 
   subscribe(id: string, fn: Listener): () => void {
@@ -1618,7 +1618,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
 
   /** The folder a session works in: its worktree, or the project itself. Null for the orchestrator (not project-bound). */
   private cwdOf(row: SessionRow): string | null {
-    if (row.id === BUDDHA_SESSION_ID) return null
+    if (row.id === ORCHESTRATOR_SESSION_ID) return null
     return row.worktree ?? (this.projects.exists(row.project) ? this.projects.dir(row.project) : null)
   }
 
@@ -1648,20 +1648,20 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
       status,
       activity: live?.activity ?? null,
       doing: live?.busy ? (this.doingOf(row.id)?.text ?? null) : null,
-      novices: live ? [...live.novices.values()] : [],
+      subagents: live ? [...live.subagents.values()] : [],
       recap: status === 'working' ? null : this.currentRecap(row.id),
       external: false,
       alive: false,
       silenced: this.store.silencedIds().has(row.id),
-      lotus: this.store.lotusIds().has(row.id),
+      setAside: this.store.setAsideIds().has(row.id),
       note: this.store.notes().get(row.id) ?? null,
       reminder: this.store.reminders().get(row.id) ?? null,
       autonomy: this.store.lastAutonomy(row.id),
       env: this.store.sessionEnv(row.id),
       queued: this.store.queued(row.id),
-      context: row.id === BUDDHA_SESSION_ID ? null : this.contextOf(row),
+      context: row.id === ORCHESTRATOR_SESSION_ID ? null : this.contextOf(row),
       renewal: this.renewalState(row.id),
-      shepherd: this.shepherdState(row.id),
+      handoff: this.handoffState(row.id),
       cost: this.costOf(row.id),
       cwd,
       pr: cwd ? this.pulls.of(cwd) : null,
@@ -1699,7 +1699,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
 
   /** Sets his own environment variables; they take effect when his process starts (now, if `restart`). */
   async setEnv(id: string, input: unknown, restart: boolean) {
-    this.priestRow(id)
+    this.ownSessionRow(id)
     let env: Record<string, string>
     try {
       env = checkSessionEnv(input)
@@ -1722,13 +1722,13 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     if (this.remotes.has(row.id)) throw new UserError('it is in Remote Control: stop that first')
     let s = this.live.get(row.id)
     if (!s) {
-      const isBuddha = row.id === BUDDHA_SESSION_ID
-      const cwd = isBuddha ? config.workspacesDir : (row.worktree ?? this.projects.dir(row.project))
-      const mcp = isBuddha ? null : this.mcpPlan(row)
+      const isOrchestrator = row.id === ORCHESTRATOR_SESSION_ID
+      const cwd = isOrchestrator ? config.workspacesDir : (row.worktree ?? this.projects.dir(row.project))
+      const mcp = isOrchestrator ? null : this.mcpPlan(row)
       s = new LiveSession(
         row,
         cwd,
-        this.withReserve(this.withGit(isBuddha ? this.buddhaOptions(this) : { ...priestOptions(row.agent), ...this.engineOptions(row), mcpServers: mcp!.extras }, row.id)),
+        this.withReserve(this.withGit(isOrchestrator ? this.orchestratorOptions(this) : { ...agentOptions(row.agent), ...this.engineOptions(row), mcpServers: mcp!.extras }, row.id)),
         (ev) => this.emit(row.id, ev),
         () => {
           if (this.live.get(row.id) === s) this.live.delete(row.id)
@@ -1748,7 +1748,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
 
   /** The active `/loop`, if any (never for the orchestrator, which has none). */
   private activeLoop(id: string): Extract<AutonomyState, { mode: 'loop' }> | null {
-    if (id === BUDDHA_SESSION_ID) return null
+    if (id === ORCHESTRATOR_SESSION_ID) return null
     const a = this.store.lastAutonomy(id)
     return a?.mode === 'loop' && a.active ? a : null
   }
@@ -1769,7 +1769,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     live.send(cmd)
   }
 
-  private emit(id: string, ev: MonasteryEvent) {
+  private emit(id: string, ev: SessionEvent) {
     const env = this.store.append(id, ev)
     for (const fn of this.listeners.get(id) ?? []) fn(env)
     if (ev.t === 'quota') {
@@ -1779,12 +1779,12 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     }
     if (SUMMARY_EVENTS.has(ev.t)) this.broadcastSession(id)
     if (ev.t === 'turn.done') this.flushQueued(id)
-    if (ev.t === 'busy' && !ev.busy && id !== BUDDHA_SESSION_ID) {
+    if (ev.t === 'busy' && !ev.busy && id !== ORCHESTRATOR_SESSION_ID) {
       void this.writeRecap(id, env.seq)
       this.pullSoonAfter(id) // he may just have run `gh pr create`
       if (this.remotePending.has(id)) void this.fireRemotePending(id)
     }
-    if ((ev.t === 'monk.tool' || ev.t === 'buddha.tool') && ev.summary.includes('gh pr')) this.pullSoonAfter(id)
+    if ((ev.t === 'subagent.tool' || ev.t === 'assistant.tool') && ev.summary.includes('gh pr')) this.pullSoonAfter(id)
   }
 
   /** A session likely just touched a pull request: check its folder again in a few seconds. */
@@ -1800,14 +1800,14 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
     const events = this.store.events(id).map((e) => e.ev)
     const lines = recentWindow(events).flatMap((ev) => {
       if (ev.t === 'user.message') return [`USER: ${ev.text.slice(0, 1500)}`]
-      if (ev.t === 'buddha.text') return [`AGENT: ${ev.text}`]
-      if (ev.t === 'buddha.tool') return [`TOOL: ${ev.tool} ${ev.summary}`]
-      if (ev.t === 'monk.done') return [`SUBAGENT (${ev.status}): ${ev.summary.slice(0, 1500)}`]
+      if (ev.t === 'assistant.text') return [`AGENT: ${ev.text}`]
+      if (ev.t === 'assistant.tool') return [`TOOL: ${ev.tool} ${ev.summary}`]
+      if (ev.t === 'subagent.done') return [`SUBAGENT (${ev.status}): ${ev.summary.slice(0, 1500)}`]
       if (ev.t === 'error') return [`ERROR: ${ev.message}`]
       return []
     })
     const lastUser = events.findLastIndex((e) => e.t === 'user.message')
-    if (!events.slice(lastUser + 1).some((e) => e.t === 'buddha.text' || e.t === 'error')) return
+    if (!events.slice(lastUser + 1).some((e) => e.t === 'assistant.text' || e.t === 'error')) return
     try {
       const r = await recap(lines.join('\n\n'))
       const stillIdle = !this.live.get(id)?.busy && this.store.lastIdleSeq(id) === idleSeq
@@ -1827,7 +1827,7 @@ If YES, then write, under the heading "HANDOFF", everything the new session will
  * The latest exchanges, from the user's third-to-last message on: a short "continue" or "ok" alone says
  * nothing of the task, the words before it do.
  */
-export function recentWindow(events: MonasteryEvent[], asks = 3): MonasteryEvent[] {
+export function recentWindow(events: SessionEvent[], asks = 3): SessionEvent[] {
   let from = events.length
   for (let n = 0; n < asks && from > 0; ) if (events[--from]!.t === 'user.message') n++
   return events.slice(from)

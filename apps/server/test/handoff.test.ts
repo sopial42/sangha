@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isHandoff, nextDelay, parseAnswer, parseDelay, readDecision } from '../src/shepherd'
+import { isHandoff, nextDelay, parseAnswer, parseDelay, readDecision } from '../src/handoff'
 
 const MIN = 60_000
 

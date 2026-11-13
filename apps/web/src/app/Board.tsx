@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Add01Icon } from '@hugeicons/core-free-icons'
-import { BUDDHA_SESSION_ID, type SessionSummary } from '@sangha/shared'
+import { ORCHESTRATOR_SESSION_ID, type SessionSummary } from '@sangha/shared'
 import { openSession } from '@/api'
 import { useApp } from '@/store'
 import { cn } from '@/lib/utils'
@@ -44,8 +44,8 @@ export function Board() {
   const { ref, width, height: viewHeight } = useSize<HTMLDivElement>()
   const [hovered, setHovered] = useState<string | null>(null)
 
-  const sessions = sessionsOf(all).filter((s) => !s.lotus)
-  const orchestrator = all[BUDDHA_SESSION_ID]
+  const sessions = sessionsOf(all).filter((s) => !s.setAside)
+  const orchestrator = all[ORCHESTRATOR_SESSION_ID]
   const names = [...new Set([...projects.map((p) => p.name), ...sessions.map((s) => s.project)])]
 
   const layout = useMemo(() => {
@@ -143,7 +143,7 @@ export function Board() {
             <button
               type="button"
               aria-label="Open the orchestrator"
-              onClick={() => openSession(BUDDHA_SESSION_ID)}
+              onClick={() => openSession(ORCHESTRATOR_SESSION_ID)}
               className="absolute inset-0 rounded-full focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
             />
           </BoardPebble>
@@ -244,7 +244,7 @@ function SessionPebble({ p, change }: { p: Placed; change: 'new' | 'changed' | n
   const projects = useApp((s) => s.projects)
   const { s, x, y, scale } = p
   const { sprite, ring } = pebbleOf(s)
-  const subagents = Math.min(3, s.novices.length)
+  const subagents = Math.min(3, s.subagents.length)
   return (
     // `contents`: no box of its own, but hovering the pebble's hit area highlights the pebble.
     <div className="group/pebble contents">
@@ -309,7 +309,7 @@ function SessionCard({ s, agent }: { s: SessionSummary; agent: string }) {
       <div className="flex gap-5">
         <Stat label="Status" value={statusLine(s)} />
         {s.context != null && <Stat label="Context" value={formatTokens(s.context)} />}
-        {s.novices.length > 0 && <Stat label="Subagents" value={`${s.novices.length} running`} />}
+        {s.subagents.length > 0 && <Stat label="Subagents" value={`${s.subagents.length} running`} />}
         {s.status === 'working' && <Stat label="Running for" value={duration(s.createdAt)} />}
       </div>
       <div className="flex items-center justify-between border-t pt-3 text-meta text-muted-foreground">

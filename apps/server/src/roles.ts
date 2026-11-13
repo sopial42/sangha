@@ -1,6 +1,6 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentOption } from '@sangha/shared'
-import { agentDefinitions } from './monks'
+import { agentDefinitions } from './subagents'
 
 const LEAD_MODEL = process.env.SANGHA_LEAD_MODEL ?? 'opus'
 
@@ -37,7 +37,7 @@ export const SANGHA_ROLES: AgentOption[] = ROLES.map(({ options: _o, ...r }) => 
  * SDK options for a session. A Sangha role brings its own prompt and tools; a project agent
  * (from the repo's .claude/agents) runs as the main thread, exactly like `claude --agent <id>`.
  */
-export function priestOptions(agent: string): Partial<Options> {
+export function agentOptions(agent: string): Partial<Options> {
   const role = ROLES.find((r) => r.id === agent)
   if (role) return role.options()
   // Plain Claude (e.g. an adopted terminal session that ran without --agent).

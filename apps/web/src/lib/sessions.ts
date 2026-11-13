@@ -1,4 +1,4 @@
-import { BUDDHA_SESSION_ID, type ProjectInfo, type SessionSummary } from '@sangha/shared'
+import { ORCHESTRATOR_SESSION_ID, type ProjectInfo, type SessionSummary } from '@sangha/shared'
 import type { SpriteKey } from '@/assets/pebbles'
 
 /** Where a session sits in the sidebar, and how loud it is on the board. */
@@ -46,7 +46,7 @@ export function pebbleOf(s: SessionSummary, icon = false): { sprite: SpriteKey; 
 /** Every session but the orchestrator, oldest first. */
 export const sessionsOf = (all: Record<string, SessionSummary>) =>
   Object.values(all)
-    .filter((s) => s.id !== BUDDHA_SESSION_ID)
+    .filter((s) => s.id !== ORCHESTRATOR_SESSION_ID)
     .sort((a, b) => a.createdAt - b.createdAt)
 
 /** How a session is named: your note when you wrote one, its title otherwise. */
@@ -55,7 +55,7 @@ export const nameOf = (s: Pick<SessionSummary, 'note' | 'title'>) => s.note || s
 const pretty = (id: string) => id.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase())
 
 export function agentName(s: Pick<SessionSummary, 'agent' | 'project'>, projects: ProjectInfo[]): string {
-  if (s.agent === 'buddha') return 'Orchestrator'
+  if (s.agent === 'orchestrator') return 'Orchestrator'
   if (s.agent === 'claude' || s.agent === 'lead') return 'Claude'
   return projects.find((p) => p.name === s.project)?.agents.find((a) => a.id === s.agent)?.title ?? pretty(s.agent)
 }
@@ -64,13 +64,13 @@ export function agentName(s: Pick<SessionSummary, 'agent' | 'project'>, projects
 export function statusLine(s: SessionSummary): string {
   switch (s.status) {
     case 'waiting':
-      return s.recap?.state === 'question' ? 'Has a question' : s.recap?.state === 'attente' ? 'Waiting for you' : 'Done, unread'
+      return s.recap?.state === 'question' ? 'Has a question' : s.recap?.state === 'waiting' ? 'Waiting for you' : 'Done, unread'
     case 'error':
       return 'Error'
     case 'interrupted':
       return 'Interrupted'
     case 'working':
-      if (s.novices.length > 1) return `${s.novices.length} subagents`
+      if (s.subagents.length > 1) return `${s.subagents.length} subagents`
       return s.doing ?? s.activity ?? 'Working'
     case 'idle':
       return s.context != null && s.context >= FRESH_START_AT ? `Idle · ${formatTokens(s.context)}` : 'Idle'
@@ -124,7 +124,7 @@ export function groupChildren<T extends { id: string; parent?: string | null }>(
 
 /** Every session in the board's order: project by project, children right after their parent. */
 export function boardOrder(all: Record<string, SessionSummary>, projects: ProjectInfo[]): SessionSummary[] {
-  const list = sessionsOf(all).filter((s) => !s.lotus)
+  const list = sessionsOf(all).filter((s) => !s.setAside)
   const names = projects.map((p) => p.name)
   for (const s of list) if (!names.includes(s.project)) names.push(s.project)
   return names.flatMap((n) => groupChildren(list.filter((s) => s.project === n)))

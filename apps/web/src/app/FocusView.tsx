@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowLeft01Icon, MoreHorizontalIcon, SidebarRightIcon } from '@hugeicons/core-free-icons'
-import { BUDDHA_SESSION_ID, type SessionSummary } from '@sangha/shared'
-import { api, ApiError, closeSession, lotusFailure, openSession } from '@/api'
+import { ORCHESTRATOR_SESSION_ID, type SessionSummary } from '@sangha/shared'
+import { api, ApiError, closeSession, setAsideFailure, openSession } from '@/api'
 import { Chat } from '@/chat/Chat'
 import { goToNeighbour, popupOpen } from '@/nav'
-import { ConversationFeedback, McpPanel, ModelPick, Novice, ProgressCard, ReminderBox, RemoteBanner, ScriptItem } from '@/app/session'
+import { ConversationFeedback, McpPanel, ModelPick, Subagent, ProgressCard, ReminderBox, RemoteBanner, ScriptItem } from '@/app/session'
 import { useApp } from '@/store'
 import { cn } from '@/lib/utils'
 import { clock } from '@/lib/time'
@@ -32,7 +32,7 @@ export function FocusView({ s }: { s: SessionSummary }) {
   const dialog = useApp((st) => st.dialog)
   const [details, setDetails] = useState(() => localStorage.getItem(DETAILS_KEY) !== '0')
   const [mcpOpen, setMcpOpen] = useState(false)
-  const isOrchestrator = s.id === BUDDHA_SESSION_ID
+  const isOrchestrator = s.id === ORCHESTRATOR_SESSION_ID
   const agent = isOrchestrator ? 'Orchestrator' : agentName(s, projects)
 
   const toggleDetails = () => {
@@ -60,15 +60,15 @@ export function FocusView({ s }: { s: SessionSummary }) {
   }, [dialog, mcpOpen])
 
   const remote = useRemoteControl(s)
-  const selectedMonk = useApp((st) => st.selectedMonk)
+  const selectedSubagent = useApp((st) => st.selectedSubagent)
 
   // A switch of session closes the MCP popover (it would show the previous session's servers).
   useEffect(() => setMcpOpen(false), [s.id])
 
   // Picking a subagent from the conversation shows it in the details panel, opened if needed.
   useEffect(() => {
-    if (selectedMonk && !details) setDetails(true)
-  }, [selectedMonk])
+    if (selectedSubagent && !details) setDetails(true)
+  }, [selectedSubagent])
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -175,7 +175,7 @@ function useRemoteControl(s: SessionSummary) {
 function SessionMenu({ s, remote }: { s: SessionSummary; remote: Remote }) {
   const set = useApp((st) => st.set)
   const open = (dialog: Parameters<typeof set>[0]['dialog']) => set({ dialog })
-  const handedOff = s.shepherd && s.shepherd.state !== 'refused'
+  const handedOff = s.handoff && s.handoff.state !== 'refused'
   return (
     <DropdownMenu>
       <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label="Session actions" />}>
@@ -191,7 +191,7 @@ function SessionMenu({ s, remote }: { s: SessionSummary; remote: Remote }) {
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           {(!s.external || s.alive) && (
-            <DropdownMenuItem onClick={() => (handedOff ? void api.shepherd(s.id, false) : open({ kind: 'shepherd', id: s.id }))}>
+            <DropdownMenuItem onClick={() => (handedOff ? void api.handoff(s.id, false) : open({ kind: 'handoff', id: s.id }))}>
               {handedOff ? 'Stop the hand-off to a fresh session' : 'Hand off to a fresh session…'}
             </DropdownMenuItem>
           )}
@@ -233,12 +233,12 @@ function SessionMenu({ s, remote }: { s: SessionSummary; remote: Remote }) {
           <DropdownMenuItem onClick={() => void api.silence(s.id, !s.silenced)}>{s.silenced ? 'Unmute' : 'Mute (never asks for attention)'}</DropdownMenuItem>
           <DropdownMenuItem
             onClick={() =>
-              s.lotus || s.note
-                ? api.lotus(s.id, !s.lotus).then(() => remote.setError(null), (e: unknown) => remote.setError(lotusFailure(e)))
-                : open({ kind: 'note', id: s.id, lotus: true })
+              s.setAside || s.note
+                ? api.setAside(s.id, !s.setAside).then(() => remote.setError(null), (e: unknown) => remote.setError(setAsideFailure(e)))
+                : open({ kind: 'note', id: s.id, setAside: true })
             }
           >
-            {s.lotus ? 'Put back on the board' : 'Set aside'}
+            {s.setAside ? 'Put back on the board' : 'Set aside'}
           </DropdownMenuItem>
           <DropdownMenuItem variant="destructive" onClick={() => open({ kind: 'dismiss', id: s.id })}>
             {s.external ? 'Remove from board (the terminal keeps running)' : 'Close session'}
@@ -254,9 +254,9 @@ const CONTEXT_MAX = 1_000_000
 
 function Details({ s, agent, mcpOpen, setMcpOpen }: { s: SessionSummary; agent: string; mcpOpen: boolean; setMcpOpen: (open: boolean) => void }) {
   const view = useApp((st) => st.view)
-  const selectedMonk = useApp((st) => st.selectedMonk)
+  const selectedSubagent = useApp((st) => st.selectedSubagent)
   const set = useApp((st) => st.set)
-  const novices = view.monkOrder.map((id) => view.monks[id]!).filter(Boolean)
+  const subagents = view.subagentOrder.map((id) => view.subagents[id]!).filter(Boolean)
   const scripts = s.scripts ?? []
   const ctx = s.context ?? 0
   const heavy = ctx >= FRESH_START_AT
@@ -322,7 +322,7 @@ function Details({ s, agent, mcpOpen, setMcpOpen }: { s: SessionSummary; agent: 
             {s.parent && <ParentRow id={s.parent} />}
             {s.autonomy && <Row k={s.autonomy.mode === 'goal' ? 'Goal' : 'Loop'} v={`${s.autonomy.text}${s.autonomy.active ? '' : ' (stopped)'}`} />}
             {s.autonomy?.mode === 'loop' && s.autonomy.active && s.autonomy.nextAt && <Row k="Next wake-up" v={clock(s.autonomy.nextAt)} />}
-            {s.shepherd && <Row k="Hand-off" v={handOffText(s.shepherd)} title={s.shepherd.note ?? undefined} />}
+            {s.handoff && <Row k="Hand-off" v={handOffText(s.handoff)} title={s.handoff.note ?? undefined} />}
             {!s.external && (
               <div className="flex items-center justify-between gap-3">
                 <span className="text-small text-muted-foreground">MCP servers</span>
@@ -351,20 +351,20 @@ function Details({ s, agent, mcpOpen, setMcpOpen }: { s: SessionSummary; agent: 
             </>
           )}
 
-          {novices.length > 0 && (
+          {subagents.length > 0 && (
             <>
               <Separator />
               <section className="flex flex-col gap-2">
-                <h2 className="text-meta font-semibold text-muted-foreground">Subagents ({novices.length})</h2>
+                <h2 className="text-meta font-semibold text-muted-foreground">Subagents ({subagents.length})</h2>
                 <ul className="flex flex-col gap-2">
-                  {[...novices].reverse().map((m) => (
-                    <Novice
-                      key={m.monkId}
+                  {[...subagents].reverse().map((m) => (
+                    <Subagent
+                      key={m.subagentId}
                       m={m}
                       sessionId={s.id}
                       external={s.external}
-                      open={selectedMonk === m.monkId}
-                      onToggle={() => set({ selectedMonk: selectedMonk === m.monkId ? null : m.monkId })}
+                      open={selectedSubagent === m.subagentId}
+                      onToggle={() => set({ selectedSubagent: selectedSubagent === m.subagentId ? null : m.subagentId })}
                     />
                   ))}
                 </ul>
@@ -380,7 +380,7 @@ function Details({ s, agent, mcpOpen, setMcpOpen }: { s: SessionSummary; agent: 
   )
 }
 
-function handOffText(h: NonNullable<SessionSummary['shepherd']>) {
+function handOffText(h: NonNullable<SessionSummary['handoff']>) {
   if (h.state === 'asked') return 'Waiting for its answer'
   if (h.state === 'refused') return 'Declined a fresh start'
   return h.nextAt > Date.now() ? `Asks again at ${clock(h.nextAt)}` : 'Asks when the turn ends'

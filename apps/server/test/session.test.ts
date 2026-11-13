@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk'
-import { BUDDHA_SESSION_ID } from '@sangha/shared'
+import { ORCHESTRATOR_SESSION_ID } from '@sangha/shared'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import { config } from '../src/config'
 import { LOOP_STOP_MESSAGE, Store, type SessionRow } from '../src/db'
@@ -77,7 +77,7 @@ describe('Sessions autonomy and interrupt', () => {
     row = {
       id: 'p1',
       project: 'proj',
-      agent: 'claude', // plain Claude: priestOptions('claude') touches no filesystem
+      agent: 'claude', // plain Claude: agentOptions('claude') touches no filesystem
       title: 't',
       createdAt: Date.now(),
       claudeSessionId: null,
@@ -134,7 +134,7 @@ describe('Sessions autonomy and interrupt', () => {
   })
 
   it('refuses an autonomy for the orchestrator', async () => {
-    await expect(sessions.autonomy(BUDDHA_SESSION_ID, { mode: 'goal', text: 'x' })).rejects.toThrow(UserError)
+    await expect(sessions.autonomy(ORCHESTRATOR_SESSION_ID, { mode: 'goal', text: 'x' })).rejects.toThrow(UserError)
   })
 
   it('refuses an autonomy for an unknown session', async () => {
@@ -185,12 +185,12 @@ describe('Sessions autonomy and interrupt', () => {
   })
 
   it('interrupt stops his background scripts and his live subagents, not only his current turn', async () => {
-    // A subagent: task_started's own task id differs from its monkId (the tool_use id that started it).
+    // A subagent: task_started's own task id differs from its subagentId (the tool_use id that started it).
     vi.mocked(query).mock.results[0]!.value.push({
       type: 'system',
       subtype: 'task_started',
-      task_id: 'task-novice-1',
-      tool_use_id: 'toolu_novice',
+      task_id: 'task-subagent-1',
+      tool_use_id: 'toolu_subagent',
       task_type: 'local_agent',
       subagent_type: 'reader',
       description: 'reads files',
@@ -204,13 +204,13 @@ describe('Sessions autonomy and interrupt', () => {
       tasks: [{ task_id: 'task-script-1', task_type: 'local_bash', description: 'runs the tests' }],
     })
     await tick()
-    expect(sessions.summaryOf(row.id)?.novices.map((n) => n.monkId)).toEqual(['toolu_novice'])
+    expect(sessions.summaryOf(row.id)?.subagents.map((n) => n.subagentId)).toEqual(['toolu_subagent'])
 
     const q = vi.mocked(query).mock.results[0]!.value
     await sessions.interrupt(row.id)
     expect(q.interrupt).toHaveBeenCalledOnce()
     const stoppedIds = q.stopTask.mock.calls.map((c: unknown[]) => c[0])
-    expect(stoppedIds.sort()).toEqual(['task-novice-1', 'task-script-1'])
+    expect(stoppedIds.sort()).toEqual(['task-script-1', 'task-subagent-1'])
   })
 
   it('does not let one failing stopTask stop it from stopping the rest', async () => {
@@ -290,25 +290,25 @@ describe('Sessions set aside', () => {
   })
 
   it('starts not set aside', () => {
-    expect(sessions.summaryOf(row.id)?.lotus).toBe(false)
+    expect(sessions.summaryOf(row.id)?.setAside).toBe(false)
   })
 
   it('sets a session aside and tells every open tab', () => {
     const events: unknown[] = []
     sessions.subscribeAll((e) => events.push(e))
-    sessions.lotus(row.id, true)
-    expect(sessions.summaryOf(row.id)?.lotus).toBe(true)
-    expect(events).toContainEqual({ kind: 'session', session: expect.objectContaining({ id: row.id, lotus: true }) })
+    sessions.setAside(row.id, true)
+    expect(sessions.summaryOf(row.id)?.setAside).toBe(true)
+    expect(events).toContainEqual({ kind: 'session', session: expect.objectContaining({ id: row.id, setAside: true }) })
   })
 
   it('brings it back', () => {
-    sessions.lotus(row.id, true)
-    sessions.lotus(row.id, false)
-    expect(sessions.summaryOf(row.id)?.lotus).toBe(false)
+    sessions.setAside(row.id, true)
+    sessions.setAside(row.id, false)
+    expect(sessions.summaryOf(row.id)?.setAside).toBe(false)
   })
 
   it('refuses to set aside an unknown session', () => {
-    expect(() => sessions.lotus('nope', true)).toThrow(UserError)
+    expect(() => sessions.setAside('nope', true)).toThrow(UserError)
   })
 })
 
@@ -582,13 +582,13 @@ describe('Sessions closed', () => {
     store.createSession({ ...baseRow(), id: 'p1', title: 'BANK DETAILS AND EMAIL' })
     store.setSessionNote('p1', 'I want to build two payment screens')
     store.archive('p1')
-    expect(sessions.nirvana().find((e) => e.id === 'p1')?.note).toBe('I want to build two payment screens')
+    expect(sessions.closedSessions().find((e) => e.id === 'p1')?.note).toBe('I want to build two payment screens')
   })
 
   it('reports null when he never had a note', () => {
     store.createSession({ ...baseRow(), id: 'p2' })
     store.archive('p2')
-    expect(sessions.nirvana().find((e) => e.id === 'p2')?.note).toBeNull()
+    expect(sessions.closedSessions().find((e) => e.id === 'p2')?.note).toBeNull()
   })
 
   it('lists archived sessions by worktree, with their note and title, for an orphan worktree lookup', () => {
@@ -615,13 +615,13 @@ describe('Sessions closed search', () => {
   })
 
   it('refuses an empty or whitespace-only question', async () => {
-    await expect(sessions.searchNirvana('')).rejects.toThrow(UserError)
-    await expect(sessions.searchNirvana('   ')).rejects.toThrow(UserError)
+    await expect(sessions.searchClosedSessions('')).rejects.toThrow(UserError)
+    await expect(sessions.searchClosedSessions('   ')).rejects.toThrow(UserError)
   })
 
   it('refuses while the quota reserve is reached', async () => {
     sessions.reserve = { enabled: true, pct: 10, reached: true, window: 'sevenDay' }
-    await expect(sessions.searchNirvana('the cart?')).rejects.toThrow(UserError)
+    await expect(sessions.searchClosedSessions('the cart?')).rejects.toThrow(UserError)
   })
 
   it('asks the model a compact line per archived session, with the note, and returns its filtered matches', async () => {
@@ -639,7 +639,7 @@ describe('Sessions closed search', () => {
       } as unknown as Query
     })
 
-    const out = await sessions.searchNirvana('who touched the cart?')
+    const out = await sessions.searchClosedSessions('who touched the cart?')
 
     expect(seenPrompt).toContain('id=p1')
     expect(seenPrompt).toContain('note=BANK DETAILS AND EMAIL')

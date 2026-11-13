@@ -3,7 +3,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { AlertCircleIcon, ArrowRight01Icon, Cancel01Icon, CheckmarkCircle02Icon } from '@hugeicons/core-free-icons'
 import { Md } from '@/Md'
 import { profileFor, toolIcon } from '@/profiles'
-import { useApp, type LogItem, type MonkInstance } from '@/store'
+import { useApp, type LogItem, type SubagentRun } from '@/store'
 import { cn } from '@/lib/utils'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Spinner } from '@/components/ui/spinner'
@@ -11,7 +11,7 @@ import { clock } from '@/lib/time'
 
 const STATUS: Record<string, string> = { working: 'Working', completed: 'Done', failed: 'Failed', stopped: 'Stopped' }
 
-function StatusIcon({ status }: { status: MonkInstance['status'] }) {
+function StatusIcon({ status }: { status: SubagentRun['status'] }) {
   if (status === 'working') return <Spinner className="size-3.5 text-muted-foreground" aria-label={STATUS.working} />
   if (status === 'completed') return <HugeiconsIcon icon={CheckmarkCircle02Icon} strokeWidth={1.8} className="size-3.5 text-muted-foreground" aria-label={STATUS.completed} />
   if (status === 'failed') return <HugeiconsIcon icon={AlertCircleIcon} strokeWidth={1.8} className="size-3.5 text-danger" aria-label={STATUS.failed} />
@@ -19,7 +19,7 @@ function StatusIcon({ status }: { status: MonkInstance['status'] }) {
 }
 
 /** One subagent, folded to a row, unfolded to its whole thread (read-only). */
-export function Novice({ m, sessionId, external, open, onToggle }: { m: MonkInstance; sessionId: string; external: boolean; open: boolean; onToggle: () => void }) {
+export function Subagent({ m, sessionId, external, open, onToggle }: { m: SubagentRun; sessionId: string; external: boolean; open: boolean; onToggle: () => void }) {
   const profiles = useApp((s) => s.profiles)
   const p = profileFor(m.agentType, profiles)
   const ref = useRef<HTMLLIElement>(null)
@@ -31,7 +31,7 @@ export function Novice({ m, sessionId, external, open, onToggle }: { m: MonkInst
     if (!open) return
     let alive = true
     const fetchLog = () =>
-      fetch(`/api/sessions/${sessionId}/novices/${m.monkId}/log`)
+      fetch(`/api/sessions/${sessionId}/subagents/${m.subagentId}/log`)
         .then((r) => r.json() as Promise<{ log: LogItem[] }>)
         .then((r) => alive && setLog(r.log))
         .catch(() => undefined)
@@ -41,7 +41,7 @@ export function Novice({ m, sessionId, external, open, onToggle }: { m: MonkInst
       alive = false
       clearInterval(t)
     }
-  }, [external, open, m.log, m.status, m.monkId, sessionId])
+  }, [external, open, m.log, m.status, m.subagentId, sessionId])
 
   useEffect(() => {
     if (open) ref.current?.scrollIntoView({ block: 'nearest' })
@@ -53,7 +53,7 @@ export function Novice({ m, sessionId, external, open, onToggle }: { m: MonkInst
     <li ref={ref} className="rounded-lg border">
       <Collapsible open={open} onOpenChange={(next) => next !== open && onToggle()}>
         <CollapsibleTrigger className="flex w-full items-start gap-2 rounded-lg px-3 py-2 text-left outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50">
-          <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: p.robe }} aria-hidden />
+          <span className="mt-1.5 size-2 shrink-0 rounded-full" style={{ background: p.color }} aria-hidden />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
             <span className="truncate text-small font-medium">{p.name === m.agentType ? m.agentType : `${p.name} · ${m.agentType}`}</span>
             {m.description && <span className="truncate text-meta text-muted-foreground">{m.description}</span>}

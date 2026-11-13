@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ElderTopic } from '@sangha/shared'
+import type { AdvisorTopic } from '@sangha/shared'
 import { LOOP_STOP_MESSAGE, Store, type SessionRow } from '../src/db'
 
 const DONE = { t: 'turn.done' as const, ok: true, costUsdEquiv: 0, durationMs: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }
@@ -55,14 +55,6 @@ describe('Store', () => {
     expect(s.lastEvent('a', 'busy')!.ev.busy).toBe(false)
   })
 
-  it('gives each project its own color, stable over time', () => {
-    const s = new Store(':memory:')
-    const palette = ['red', 'blue']
-    expect(s.projectColor('robia', palette)).toBe('red')
-    expect(s.projectColor('robin', palette)).toBe('blue')
-    expect(s.projectColor('robia', palette)).toBe('red')
-  })
-
   it('keeps what a small model wrote, with the state it describes', () => {
     const s = new Store(':memory:')
     expect(s.note('a', 'progress')).toBeNull()
@@ -85,20 +77,20 @@ describe('Store', () => {
 
   it('keeps who is set aside, cleared by taking it back', () => {
     const s = new Store(':memory:')
-    expect(s.lotusIds().has('a')).toBe(false)
-    s.setLotus('a', true)
-    expect(s.lotusIds().has('a')).toBe(true)
-    s.setLotus('a', false)
-    expect(s.lotusIds().has('a')).toBe(false)
+    expect(s.setAsideIds().has('a')).toBe(false)
+    s.setSetAside('a', true)
+    expect(s.setAsideIds().has('a')).toBe(true)
+    s.setSetAside('a', false)
+    expect(s.setAsideIds().has('a')).toBe(false)
   })
 
   it('finds subagents that never reported back', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))
-    s.append('a', { t: 'monk.summoned', monkId: 'n1', agentType: 'x', description: 'd', prompt: '', depth: 1 })
-    s.append('a', { t: 'monk.summoned', monkId: 'n2', agentType: 'x', description: 'd', prompt: '', depth: 1 })
-    s.append('a', { t: 'monk.done', monkId: 'n1', status: 'completed', summary: 'ok' })
-    expect(s.danglingNovices('a')).toEqual(['n2'])
+    s.append('a', { t: 'subagent.started', subagentId: 'n1', agentType: 'x', description: 'd', prompt: '', depth: 1 })
+    s.append('a', { t: 'subagent.started', subagentId: 'n2', agentType: 'x', description: 'd', prompt: '', depth: 1 })
+    s.append('a', { t: 'subagent.done', subagentId: 'n1', status: 'completed', summary: 'ok' })
+    expect(s.danglingSubagents('a')).toEqual(['n2'])
   })
 
   it('hides archived sessions', () => {
@@ -338,7 +330,7 @@ describe('feedback', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))
     s.append('a', { t: 'user.message', text: 'one' })
-    s.append('a', { t: 'buddha.text', text: 'two' })
+    s.append('a', { t: 'assistant.text', text: 'two' })
     s.append('a', { t: 'user.message', text: 'three' })
     expect(s.excerptAround('a', 2)).toContain('Agent: two')
     expect(s.excerptAround('a', null)).toContain('User: three')
@@ -348,30 +340,30 @@ describe('feedback', () => {
 describe('Advisor topics, reports and chat', () => {
   it('creates and updates a topic by id, reading it back', () => {
     const s = new Store(':memory:')
-    const t: ElderTopic = { id: 't1', scope: 'sangha', title: 'Flaky MCP', detail: 'd', evidence: ['e1'], status: 'proposed', createdAt: 1, updatedAt: 1 }
-    s.upsertElderTopic(t)
-    s.upsertElderTopic({ ...t, status: 'accepted', updatedAt: 2 })
-    expect(s.elderTopic('t1')!.status).toBe('accepted')
-    expect(s.elderTopics()).toHaveLength(1)
+    const t: AdvisorTopic = { id: 't1', scope: 'sangha', title: 'Flaky MCP', detail: 'd', evidence: ['e1'], status: 'proposed', createdAt: 1, updatedAt: 1 }
+    s.upsertAdvisorTopic(t)
+    s.upsertAdvisorTopic({ ...t, status: 'accepted', updatedAt: 2 })
+    expect(s.advisorTopic('t1')!.status).toBe('accepted')
+    expect(s.advisorTopics()).toHaveLength(1)
   })
 
   it('keeps reports newest first', () => {
     const s = new Store(':memory:')
-    s.addElderReport({ id: 'r1', kind: 'weekly', text: 'nothing to report', topicIds: [], costUsd: 0.01, tokens: 500, createdAt: 1 })
-    s.addElderReport({ id: 'r2', kind: 'manual', text: 'a topic', topicIds: ['t1'], costUsd: null, tokens: null, createdAt: 2 })
-    expect(s.elderReports().map((r) => r.id)).toEqual(['r2', 'r1'])
+    s.addAdvisorReport({ id: 'r1', kind: 'weekly', text: 'nothing to report', topicIds: [], costUsd: 0.01, tokens: 500, createdAt: 1 })
+    s.addAdvisorReport({ id: 'r2', kind: 'manual', text: 'a topic', topicIds: ['t1'], costUsd: null, tokens: null, createdAt: 2 })
+    expect(s.advisorReports().map((r) => r.id)).toEqual(['r2', 'r1'])
   })
 
   it('keeps the chat in order, oldest first, limited to the last N', () => {
     const s = new Store(':memory:')
-    s.addElderChatMessage('user', 'one', 1)
-    s.addElderChatMessage('elder', 'two', 2)
-    expect(s.elderChat(1).map((t) => t.text)).toEqual(['two'])
-    expect(s.elderChat().map((t) => t.text)).toEqual(['one', 'two'])
+    s.addAdvisorChatMessage('user', 'one', 1)
+    s.addAdvisorChatMessage('advisor', 'two', 2)
+    expect(s.advisorChat(1).map((t) => t.text)).toEqual(['two'])
+    expect(s.advisorChat().map((t) => t.text)).toEqual(['one', 'two'])
   })
 })
 
-describe('elderSanghaStats', () => {
+describe('advisorSanghaStats', () => {
   it('aggregates tool failures by server, session errors, cost and fresh starts since a date', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))
@@ -381,7 +373,7 @@ describe('elderSanghaStats', () => {
     s.append('a', { t: 'error', message: 'oops' })
     s.append('a', { t: 'turn.done', ok: true, costUsdEquiv: 1.5, durationMs: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } })
     s.setSuccessor('a', 'b')
-    const stats = s.elderSanghaStats(0)
+    const stats = s.advisorSanghaStats(0)
     expect(stats.toolErrorsByServer).toEqual({ bitbucket: 2 })
     expect(stats.sessionErrors).toBe(1)
     expect(stats.costUsd).toBeCloseTo(1.5)

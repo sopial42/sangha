@@ -1,31 +1,31 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { MonasteryEvent, Quota, QuotaWindow } from '@sangha/shared'
+import type { SessionEvent, Quota, QuotaWindow } from '@sangha/shared'
 
 // Tools the main agent uses to summon a subagent. Subagents are announced by the
 // task_started system message instead, so these tool_use blocks are not shown.
 const SUMMON_TOOLS = new Set(['Agent', 'Task'])
 
 /**
- * Stateful translator from raw Agent SDK messages to MonasteryEvents.
+ * Stateful translator from raw Agent SDK messages to SessionEvents.
  * One instance per session. Messages it does not care about produce [].
  */
 export class Normalizer {
-  // task_id -> monkId (the summoning tool_use id, which is what parent_tool_use_id points at)
-  private monkByTask = new Map<string, string>()
-  // The reverse of monkByTask: a subagent's own SDK task id, the one `Query.stopTask` expects (never its
-  // monkId, which is its summoning tool_use id, a different string entirely).
-  private taskByMonk = new Map<string, string>()
+  // task_id -> subagentId (the summoning tool_use id, which is what parent_tool_use_id points at)
+  private subagentByTask = new Map<string, string>()
+  // The reverse of subagentByTask: a subagent's own SDK task id, the one `Query.stopTask` expects (never its
+  // subagentId, which is its summoning tool_use id, a different string entirely).
+  private taskBySubagent = new Map<string, string>()
   // tool_use id -> what was called and by whom (to link the tool_result that follows, one message later)
   private toolUseNames = new Map<string, { name: string; parent: string | null }>()
 
-  push(m: SDKMessage): MonasteryEvent[] {
+  push(m: SDKMessage): SessionEvent[] {
     switch (m.type) {
       case 'system':
         return this.system(m)
       case 'stream_event': {
         if (m.parent_tool_use_id) return []
         const e = m.event
-        if (e.type === 'content_block_delta' && e.delta.type === 'text_delta') return [{ t: 'buddha.delta', text: e.delta.text }]
+        if (e.type === 'content_block_delta' && e.delta.type === 'text_delta') return [{ t: 'assistant.delta', text: e.delta.text }]
         return []
       }
       case 'assistant':
@@ -55,7 +55,7 @@ export class Normalizer {
     }
   }
 
-  private system(m: Extract<SDKMessage, { type: 'system' }>): MonasteryEvent[] {
+  private system(m: Extract<SDKMessage, { type: 'system' }>): SessionEvent[] {
     switch (m.subtype) {
       case 'init':
         return [
@@ -70,13 +70,13 @@ export class Normalizer {
         ]
       case 'task_started': {
         if (m.task_type !== 'local_agent' || m.ambient) return []
-        const monkId = m.tool_use_id ?? m.task_id
-        this.monkByTask.set(m.task_id, monkId)
-        this.taskByMonk.set(monkId, m.task_id)
+        const subagentId = m.tool_use_id ?? m.task_id
+        this.subagentByTask.set(m.task_id, subagentId)
+        this.taskBySubagent.set(subagentId, m.task_id)
         return [
           {
-            t: 'monk.summoned',
-            monkId,
+            t: 'subagent.started',
+            subagentId,
             agentType: m.subagent_type ?? 'general-purpose',
             description: m.description,
             prompt: m.prompt ?? '',
@@ -85,16 +85,16 @@ export class Normalizer {
         ]
       }
       case 'task_progress': {
-        const monkId = this.monkByTask.get(m.task_id)
-        if (!monkId) return []
-        return [{ t: 'monk.progress', monkId, description: m.description, tokens: m.usage.total_tokens, toolUses: m.usage.tool_uses }]
+        const subagentId = this.subagentByTask.get(m.task_id)
+        if (!subagentId) return []
+        return [{ t: 'subagent.progress', subagentId, description: m.description, tokens: m.usage.total_tokens, toolUses: m.usage.tool_uses }]
       }
       case 'task_notification': {
-        const monkId = this.monkByTask.get(m.task_id)
-        if (!monkId) return []
-        this.monkByTask.delete(m.task_id)
-        this.taskByMonk.delete(monkId)
-        return [{ t: 'monk.done', monkId, status: m.status, summary: m.summary }]
+        const subagentId = this.subagentByTask.get(m.task_id)
+        if (!subagentId) return []
+        this.subagentByTask.delete(m.task_id)
+        this.taskBySubagent.delete(subagentId)
+        return [{ t: 'subagent.done', subagentId, status: m.status, summary: m.summary }]
       }
       case 'background_tasks_changed':
         return [{ t: 'background', tasks: m.tasks.filter((k) => !k.ambient).map((k) => ({ id: k.task_id, type: k.task_type, description: k.description })) }]
@@ -103,22 +103,22 @@ export class Normalizer {
     }
   }
 
-  /** A live subagent's own SDK task id, for `Query.stopTask` (interrupting it by its monkId would do nothing). */
-  taskIdOfMonk(monkId: string): string | undefined {
-    return this.taskByMonk.get(monkId)
+  /** A live subagent's own SDK task id, for `Query.stopTask` (interrupting it by its subagentId would do nothing). */
+  taskIdOfSubagent(subagentId: string): string | undefined {
+    return this.taskBySubagent.get(subagentId)
   }
 
-  private assistant(content: unknown, parent: string | null): MonasteryEvent[] {
+  private assistant(content: unknown, parent: string | null): SessionEvent[] {
     if (!Array.isArray(content)) return []
-    const out: MonasteryEvent[] = []
+    const out: SessionEvent[] = []
     for (const block of content as Array<{ type: string; text?: string; name?: string; input?: unknown; id?: string }>) {
       if (block.type === 'text' && block.text) {
-        out.push(parent ? { t: 'monk.text', monkId: parent, text: block.text } : { t: 'buddha.text', text: block.text })
+        out.push(parent ? { t: 'subagent.text', subagentId: parent, text: block.text } : { t: 'assistant.text', text: block.text })
       } else if (block.type === 'tool_use' && block.name) {
         if (block.id) this.toolUseNames.set(block.id, { name: block.name, parent })
         if (!parent && SUMMON_TOOLS.has(block.name)) continue
         const summary = summarizeInput(block.input)
-        out.push(parent ? { t: 'monk.tool', monkId: parent, tool: block.name, summary } : { t: 'buddha.tool', tool: block.name, summary })
+        out.push(parent ? { t: 'subagent.tool', subagentId: parent, tool: block.name, summary } : { t: 'assistant.tool', tool: block.name, summary })
         // The session's own /loop machinery (never a subagent's: subagents do not drive its autonomy). Store.lastAutonomy
         // reads these to know whether a loop keeps rescheduling itself or died.
         if (!parent && LOOP_TOOLS.has(block.name)) {
@@ -130,10 +130,10 @@ export class Normalizer {
     return out
   }
 
-  private toolResults(m: Extract<SDKMessage, { type: 'user' }>): MonasteryEvent[] {
+  private toolResults(m: Extract<SDKMessage, { type: 'user' }>): SessionEvent[] {
     const content = m.message.content
     if (!Array.isArray(content)) return []
-    const out: MonasteryEvent[] = []
+    const out: SessionEvent[] = []
     for (const block of content as Array<{ type: string; tool_use_id?: string; is_error?: boolean; content?: unknown }>) {
       if (block.type !== 'tool_result' || !block.tool_use_id) continue
       const used = this.toolUseNames.get(block.tool_use_id)
@@ -153,7 +153,7 @@ export class Normalizer {
 // CronCreate/CronDelete for a fixed interval (see sdk-tools.d.ts for their input shapes).
 const LOOP_TOOLS = new Set(['ScheduleWakeup', 'CronCreate', 'CronDelete'])
 
-function loopWakeEvent(tool: string, input: unknown): Extract<MonasteryEvent, { t: 'loop.wake' }> | null {
+function loopWakeEvent(tool: string, input: unknown): Extract<SessionEvent, { t: 'loop.wake' }> | null {
   const rec = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
   const now = Date.now()
   if (tool === 'ScheduleWakeup') {

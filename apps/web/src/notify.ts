@@ -1,4 +1,4 @@
-import { BUDDHA_SESSION_ID, type SessionStatus, type SessionSummary } from '@sangha/shared'
+import { ORCHESTRATOR_SESSION_ID, type SessionStatus, type SessionSummary } from '@sangha/shared'
 import { nameOf } from './lib/sessions'
 import { useApp } from './store'
 
@@ -92,7 +92,7 @@ export function watchSessions() {
     // answers to you, even once their own `claude -p` exits.
     const waiting = Object.values(sessions).filter((s) => ATTENTION.includes(s.status) && !s.silenced && !s.parent)
     // The tab says which session you're looking at, so a pile of tabs still reads apart.
-    const openLabel = selectedId === BUDDHA_SESSION_ID ? 'Orchestrator' : selectedId && sessions[selectedId] ? nameOf(sessions[selectedId]!) : null
+    const openLabel = selectedId === ORCHESTRATOR_SESSION_ID ? 'Orchestrator' : selectedId && sessions[selectedId] ? nameOf(sessions[selectedId]!) : null
     const base = openLabel ? `${openLabel} · Sangha` : 'Sangha'
     document.title = waiting.length ? `(${waiting.length}) ${base}` : base
 

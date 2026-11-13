@@ -3,7 +3,7 @@ import { HugeiconsIcon } from '@hugeicons/react'
 import { ArrowDown01Icon } from '@hugeicons/core-free-icons'
 import { api, openSession } from '../api'
 import { useApp } from '../store'
-import { draftOf, NEW_PRIEST_DRAFT, saveDraft } from '../drafts'
+import { draftOf, NEW_SESSION_DRAFT, saveDraft } from '../drafts'
 import { Modal, message } from './Modal'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -26,7 +26,7 @@ export function NewSession({ project: initial, onClose }: { project?: string; on
   const models = useApp((s) => s.models)
   const defaultModel = useApp((s) => s.defaultModel)
   const [model, setModel] = useState(defaultModel)
-  const [prompt, setPrompt] = useState(() => draftOf(NEW_PRIEST_DRAFT))
+  const [prompt, setPrompt] = useState(() => draftOf(NEW_SESSION_DRAFT))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -46,7 +46,7 @@ export function NewSession({ project: initial, onClose }: { project?: string; on
     setError(null)
     try {
       const s = await api.createSession({ project, agent, prompt, baseRef: baseRef || undefined, model: models.some((m) => m.id === model) ? model : '' })
-      saveDraft(NEW_PRIEST_DRAFT, '')
+      saveDraft(NEW_SESSION_DRAFT, '')
       onClose()
       openSession(s.id)
     } catch (err) {
@@ -142,7 +142,7 @@ export function NewSession({ project: initial, onClose }: { project?: string; on
               value={prompt}
               onChange={(e) => {
                 setPrompt(e.target.value)
-                saveDraft(NEW_PRIEST_DRAFT, e.target.value)
+                saveDraft(NEW_SESSION_DRAFT, e.target.value)
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Add01Icon, ComputerIcon, SidebarLeftIcon, SlidersHorizontalIcon } from '@hugeicons/core-free-icons'
-import { BUDDHA_SESSION_ID, type CostReport, type QuotaWindow } from '@sangha/shared'
+import { ORCHESTRATOR_SESSION_ID, type CostReport, type QuotaWindow } from '@sangha/shared'
 import { api, openSession } from '@/api'
 import { useApp } from '@/store'
 import { cn } from '@/lib/utils'
@@ -34,7 +34,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
-        openSession(BUDDHA_SESSION_ID)
+        openSession(ORCHESTRATOR_SESSION_ID)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -53,7 +53,7 @@ export function TopBar({ onToggleSidebar }: { onToggleSidebar: () => void }) {
         </div>
         <button
           type="button"
-          onClick={() => openSession(BUDDHA_SESSION_ID)}
+          onClick={() => openSession(ORCHESTRATOR_SESSION_ID)}
           className="ml-1 flex h-8 w-80 items-center gap-2 rounded-lg border bg-surface pr-1.5 pl-3 text-left text-ui text-muted-foreground transition-colors hover:border-ring/60 hover:text-foreground"
         >
           <HugeiconsIcon icon={Add01Icon} strokeWidth={1.8} className="size-4" />
@@ -297,7 +297,7 @@ function SettingsMenu() {
   const setDefaultModel = useApp((s) => s.setDefaultModel)
   const muted = useApp((s) => s.muted)
   const toggleMuted = useApp((s) => s.toggleMuted)
-  const elderBadge = useApp((s) => s.elderBadge)
+  const advisorBadge = useApp((s) => s.advisorBadge)
   const gitMissing = gitIdentity === null
   const open = (dialog: Parameters<typeof set>[0]['dialog']) => set({ dialog })
 
@@ -308,8 +308,8 @@ function SettingsMenu() {
         {gitMissing ? (
           <span className="absolute top-1.5 right-1.5 size-2 rounded-full border-2 border-background bg-amber" />
         ) : (
-          elderBadge &&
-          elderBadge.proposed > 0 && <span className="absolute top-1.5 right-1.5 size-2 rounded-full border-2 border-background bg-foreground" aria-label="New Advisor topics" />
+          advisorBadge &&
+          advisorBadge.proposed > 0 && <span className="absolute top-1.5 right-1.5 size-2 rounded-full border-2 border-background bg-foreground" aria-label="New Advisor topics" />
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-60">
@@ -345,10 +345,10 @@ function SettingsMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuGroup>
           <DropdownMenuItem onClick={() => open({ kind: 'add-project' })}>Add a project</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => open({ kind: 'nirvana' })}>Closed sessions</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => open({ kind: 'elder' })}>
+          <DropdownMenuItem onClick={() => open({ kind: 'closed-sessions' })}>Closed sessions</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => open({ kind: 'advisor' })}>
             Advisor
-            {elderBadge && elderBadge.proposed > 0 && <span className="ml-auto text-meta text-coral">{elderBadge.proposed} new</span>}
+            {advisorBadge && advisorBadge.proposed > 0 && <span className="ml-auto text-meta text-coral">{advisorBadge.proposed} new</span>}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => open({ kind: 'host' })}>Machine</DropdownMenuItem>
         </DropdownMenuGroup>

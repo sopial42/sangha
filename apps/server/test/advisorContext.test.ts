@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import type { ElderSettings } from '@sangha/shared'
+import type { AdvisorSettings } from '@sangha/shared'
 import { Store, type SessionRow } from '../src/db'
-import { buildContext } from '../src/elderContext'
+import { buildContext } from '../src/advisorContext'
 
-const SETTINGS: ElderSettings = {
+const SETTINGS: AdvisorSettings = {
   enabled: true,
   model: 'sonnet',
   levels: { manual: true, sangha: true, project: true },
@@ -56,7 +56,7 @@ describe('buildContext', () => {
     const store = new Store(':memory:')
     store.createSession(row('a', 'other'))
     store.archive('a')
-    store.setNote('a', 'nirvana', String(store.getSession('a')!.archivedAt), { summary: 'secret summary' })
+    store.setNote('a', 'closed', String(store.getSession('a')!.archivedAt), { summary: 'secret summary' })
     const ctx = buildContext(SETTINGS, 0, store) // 'other' is not in settings.projects
     expect(ctx.text).not.toContain('secret summary')
   })

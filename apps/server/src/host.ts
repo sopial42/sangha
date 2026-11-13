@@ -164,24 +164,24 @@ export type OwnerCandidate = { sessionId: string; path: string; note: string | n
 /** Every session that could own a worktree: live sessions (their own cwd) and archived ones (their worktree kept, see `Sessions.archivedWorktrees`). */
 export function ownerCandidates(
   sessions: Pick<SessionSummary, 'id' | 'cwd' | 'note' | 'title' | 'status'>[],
-  nirvana: HostNirvanaWorktree[],
+  closed: HostClosedWorktree[],
 ): OwnerCandidate[] {
   return [
     ...sessions.filter((s): s is typeof s & { cwd: string } => !!s.cwd).map((s) => ({ sessionId: s.id, path: s.cwd, note: s.note, title: s.title, alive: true, working: s.status === 'working' })),
-    ...nirvana.map((n) => ({ sessionId: n.id, path: n.path, note: n.note, title: n.title, alive: false, working: false })),
+    ...closed.map((n) => ({ sessionId: n.id, path: n.path, note: n.note, title: n.title, alive: false, working: false })),
   ]
 }
 
 const toOwner = (c: OwnerCandidate): NonNullable<HostWorktree['owner']> => ({ sessionId: c.sessionId, note: c.note, title: c.title, alive: c.alive, working: c.working })
 
 /**
- * What a worktree is: `priest` (a session's own) when a live session works right there; `subagent` when it was
+ * What a worktree is: `session` (a session's own) when a live session works right there; `subagent` when it was
  * made for one (nested under an owner's `.claude/worktrees/`, or named after an owner's worktree plus a `-`
  * suffix, in the same folder; the owner can be live or closed); `orphan` otherwise, even when its path
  * matches a closed session's worktree directly (that case keeps the plain closed-session naming, see `suggest`).
  */
 export function classifyWorktree(path: string, candidates: OwnerCandidate[]): { kind: HostWorktree['kind']; owner: HostWorktree['owner'] } {
-  if (candidates.some((c) => c.alive && c.path === path)) return { kind: 'priest', owner: null }
+  if (candidates.some((c) => c.alive && c.path === path)) return { kind: 'session', owner: null }
   const nested = candidates.find((c) => path.startsWith(`${c.path}/.claude/worktrees/`))
   if (nested) return { kind: 'subagent', owner: toOwner(nested) }
   const parent = dirname(path)
@@ -200,7 +200,7 @@ export function removableInfo(
   owner: HostWorktree['owner'],
   where: { checked: boolean; external: boolean } = { checked: true, external: false },
 ): { removable: boolean; blocker: string | null } {
-  if (kind === 'priest') return { removable: false, blocker: "this is a live session's worktree: close the session first" }
+  if (kind === 'session') return { removable: false, blocker: "this is a live session's worktree: close the session first" }
   // Not checked on disk yet: zero changes would only mean "not looked at", never "safe".
   if (!where.checked) return { removable: false, blocker: 'still checking' }
   // Made outside Sangha (Kiat Operator under ~/.kiat-operator, scripts under /tmp…) and claimed by no session: another
@@ -281,7 +281,7 @@ export class RedTracker {
 // ── Suggestions ─────────────────────────────────────────────────────────────
 
 /** An archived session that once worked in a worktree: enough to name it when it is now orphaned, or to own one of its subagents. */
-export type HostNirvanaWorktree = { id: string; path: string; title: string; note: string | null; archivedAt: number }
+export type HostClosedWorktree = { id: string; path: string; title: string; note: string | null; archivedAt: number }
 
 export type SuggestInput = {
   metrics: HostMetric[]
@@ -291,7 +291,7 @@ export type SuggestInput = {
   worktrees: HostWorktree[]
   sessions: Pick<SessionSummary, 'id' | 'title' | 'status' | 'external'>[]
   /** Archived sessions, to name an orphan worktree after who left it behind (see `disk:orphan:`). */
-  nirvana?: HostNirvanaWorktree[]
+  closed?: HostClosedWorktree[]
 }
 
 /** Shortens a title to a word boundary, for a session named beside its note. */
@@ -303,14 +303,14 @@ function shorten(s: string, max = 24): string {
 }
 
 /** How a session is named in a suggestion: its own note first (what you call it), its title alongside, shortened. */
-function namePriest(note: string | null, title: string): string {
+function nameSession(note: string | null, title: string): string {
   return note ? `"${note}" (${shorten(title)})` : `"${title}"`
 }
 
 const dateFr = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
 /** What to do about each metric red for longer than RED_AFTER_MS. Sangha only suggests: you run the commands. */
-export function suggest({ metrics, now, processes, containers, worktrees, sessions, nirvana = [] }: SuggestInput): HostSuggestion[] {
+export function suggest({ metrics, now, processes, containers, worktrees, sessions, closed = [] }: SuggestInput): HostSuggestion[] {
   const out: HostSuggestion[] = []
   const long = (key: HostMetricKey) => {
     const m = metrics.find((x) => x.key === key)
@@ -341,7 +341,7 @@ export function suggest({ metrics, now, processes, containers, worktrees, sessio
       })
     if (working.length >= 3)
       out.push({
-        id: 'cpu:priests',
+        id: 'cpu:sessions',
         metric: 'cpu',
         title: `${working.length} sessions are working at the same time`,
         detail: 'Their builds and tests slow each other down. Interrupt the ones that can wait and resume them one at a time.',
@@ -372,7 +372,7 @@ export function suggest({ metrics, now, processes, containers, worktrees, sessio
     const idle = sessions.filter((s) => (s.status === 'idle' || s.status === 'waiting') && !s.external)
     if (idle.length >= 4)
       out.push({
-        id: `${key}:idle-priests`,
+        id: `${key}:idle-sessions`,
         metric: key,
         title: `${idle.length} sessions are sitting idle`,
         detail: 'Each one keeps its Claude process open. Close the ones whose work is done.',
@@ -386,7 +386,7 @@ export function suggest({ metrics, now, processes, containers, worktrees, sessio
       out.push({
         id: `disk:worktree:${idle.path}`,
         metric: 'disk',
-        title: `Disk nearly full for ${minutes('disk')} min: the worktree of ${namePriest(idle.sessionNote, idle.sessionTitle ?? '')} takes ${bytes(idle.bytes)}`,
+        title: `Disk nearly full for ${minutes('disk')} min: the worktree of ${nameSession(idle.sessionNote, idle.sessionTitle ?? '')} takes ${bytes(idle.bytes)}`,
         detail: 'Closing this session deletes its worktree (Sangha refuses if any work would be lost).',
         sessionId: idle.sessionId!,
       })
@@ -398,8 +398,8 @@ export function suggest({ metrics, now, processes, containers, worktrees, sessio
         const ownerName = removable.owner.note ? `"${removable.owner.note}"` : `"${removable.owner.title}"`
         who = `a subagent worktree of ${ownerName}${removable.owner.alive ? '' : ' (closed)'}`
       } else {
-        const left = nirvana.find((n) => n.path === removable.path)
-        who = left ? `${namePriest(left.note, left.title)}, closed on ${dateFr(left.archivedAt)}` : `${removable.project}/${removable.name}`
+        const left = closed.find((n) => n.path === removable.path)
+        who = left ? `${nameSession(left.note, left.title)}, closed on ${dateFr(left.archivedAt)}` : `${removable.project}/${removable.name}`
       }
       out.push({
         id: `disk:orphan:${removable.path}`,
@@ -457,7 +457,7 @@ export class HostMonitor {
     private workspacesDir: string,
     private sessions: () => SessionSummary[],
     /** Archived sessions, so an orphan worktree can be named after who left it behind (see `suggest`), or own one of its subagents. */
-    private nirvana: () => HostNirvanaWorktree[] = () => [],
+    private closed: () => HostClosedWorktree[] = () => [],
     /** Whether the quota reserve holds every session right now: Haiku comments on worktrees wait their turn like any other (see `Sessions.blocked`). */
     private reserveBlocked: () => boolean = () => false,
     /** Every project that is a git repository: name and root, to discover every worktree it has (see `Projects.repos`). */
@@ -602,7 +602,7 @@ export class HostMonitor {
 
   /** One batched Haiku call for every worktree whose HEAD has no comment cached yet (see `WorktreeCommentCache`). */
   private async refreshComments(discovered: { path: string; project: string; name: string }[], facts: Map<string, WorktreeFacts>) {
-    const candidates = ownerCandidates(this.sessions(), this.nirvana())
+    const candidates = ownerCandidates(this.sessions(), this.closed())
     const entries = discovered.map((w) => {
       const f = facts.get(w.path)
       const { owner } = classifyWorktree(w.path, candidates)
@@ -621,7 +621,7 @@ export class HostMonitor {
   }
 
   private mapWorktrees(sessions: SessionSummary[]): HostWorktree[] {
-    const candidates = ownerCandidates(sessions, this.nirvana())
+    const candidates = ownerCandidates(sessions, this.closed())
     return this.discovered
       .map((w) => {
         const s = sessions.find((x) => x.cwd === w.path)
@@ -692,7 +692,7 @@ export class HostMonitor {
       worktrees,
       worktreesSizedAt: this.sizedAt,
       redAfterMs: RED_AFTER_MS,
-      suggestions: suggest({ metrics, now, processes, containers, worktrees, sessions, nirvana: this.nirvana() }),
+      suggestions: suggest({ metrics, now, processes, containers, worktrees, sessions, closed: this.closed() }),
     }
     for (const fn of this.listeners) fn(this.report)
   }

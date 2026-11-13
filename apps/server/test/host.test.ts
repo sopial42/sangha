@@ -19,7 +19,7 @@ import {
   removeCommand,
   suggest,
   worktreeName,
-  type HostNirvanaWorktree,
+  type HostClosedWorktree,
 } from '../src/host'
 
 describe('parsers', () => {
@@ -138,11 +138,11 @@ describe('removeCommand', () => {
 describe('ownerCandidates and classifyWorktree', () => {
   const liveWorking = { id: 's1', cwd: '/w/.worktrees/p/lead-1', note: 'LGT', title: 'Lead', status: 'working' as const }
   const liveIdle = { id: 's2', cwd: '/w/.worktrees/p/lead-2', note: null, title: 'Lead 2', status: 'idle' as const }
-  const nirvanaEntry: HostNirvanaWorktree = { id: 'p3', path: '/w/.worktrees/p/lead-3', title: 'kiat team lead', note: '🦺🦺🦺🦺', archivedAt: 1 }
+  const closedEntry: HostClosedWorktree = { id: 'p3', path: '/w/.worktrees/p/lead-3', title: 'kiat team lead', note: '🦺🦺🦺🦺', archivedAt: 1 }
 
-  it('is a session worktree (priest) when a live session works right there', () => {
+  it('is a session worktree (kind session) when a live session works right there', () => {
     const candidates = ownerCandidates([liveWorking], [])
-    expect(classifyWorktree('/w/.worktrees/p/lead-1', candidates)).toEqual({ kind: 'priest', owner: null })
+    expect(classifyWorktree('/w/.worktrees/p/lead-1', candidates)).toEqual({ kind: 'session', owner: null })
   })
 
   it('is a subagent when nested under a live session worktree\'s .claude/worktrees', () => {
@@ -154,7 +154,7 @@ describe('ownerCandidates and classifyWorktree', () => {
   })
 
   it('is a subagent when nested under a closed session\'s worktree', () => {
-    const candidates = ownerCandidates([], [nirvanaEntry])
+    const candidates = ownerCandidates([], [closedEntry])
     expect(classifyWorktree('/w/.worktrees/p/lead-3/.claude/worktrees/agent-abc', candidates)).toEqual({
       kind: 'subagent',
       owner: { sessionId: 'p3', note: '🦺🦺🦺🦺', title: 'kiat team lead', alive: false, working: false },
@@ -162,7 +162,7 @@ describe('ownerCandidates and classifyWorktree', () => {
   })
 
   it('is a subagent when its name is the owner worktree\'s name plus a suffix, in the same folder', () => {
-    const candidates = ownerCandidates([], [nirvanaEntry])
+    const candidates = ownerCandidates([], [closedEntry])
     expect(classifyWorktree('/w/.worktrees/p/lead-3-e179', candidates)).toEqual({
       kind: 'subagent',
       owner: { sessionId: 'p3', note: '🦺🦺🦺🦺', title: 'kiat team lead', alive: false, working: false },
@@ -170,23 +170,23 @@ describe('ownerCandidates and classifyWorktree', () => {
   })
 
   it('does not match a name prefix across different folders', () => {
-    const candidates = ownerCandidates([], [{ ...nirvanaEntry, path: '/other/project/lead-3' }])
+    const candidates = ownerCandidates([], [{ ...closedEntry, path: '/other/project/lead-3' }])
     expect(classifyWorktree('/w/.worktrees/p/lead-3-e179', candidates)).toEqual({ kind: 'orphan', owner: null })
   })
 
-  it('prefers an exact live match (priest) over a name-prefix match', () => {
+  it('prefers an exact live match (kind session) over a name-prefix match', () => {
     // lead-2 happens to live in the same folder as a worktree literally named lead-2 itself: it is the session's own, not a subagent of someone else.
     const candidates = ownerCandidates([liveWorking, liveIdle], [])
-    expect(classifyWorktree('/w/.worktrees/p/lead-2', candidates)).toEqual({ kind: 'priest', owner: null })
+    expect(classifyWorktree('/w/.worktrees/p/lead-2', candidates)).toEqual({ kind: 'session', owner: null })
   })
 
   it('is an orphan when nothing claims it, even if its path matches a closed session directly (kept for the closed-session naming)', () => {
-    const candidates = ownerCandidates([], [nirvanaEntry])
+    const candidates = ownerCandidates([], [closedEntry])
     expect(classifyWorktree('/w/.worktrees/p/lead-3', candidates)).toEqual({ kind: 'orphan', owner: null })
   })
 
   it('is an orphan when nobody at all claims it', () => {
-    expect(classifyWorktree('/w/.worktrees/p/nobody', ownerCandidates([liveWorking], [nirvanaEntry]))).toEqual({ kind: 'orphan', owner: null })
+    expect(classifyWorktree('/w/.worktrees/p/nobody', ownerCandidates([liveWorking], [closedEntry]))).toEqual({ kind: 'orphan', owner: null })
   })
 })
 
@@ -205,7 +205,7 @@ describe('removableInfo', () => {
   })
 
   it('a live session\'s own worktree is never removable', () => {
-    expect(removableInfo('priest', clean, null)).toEqual({ removable: false, blocker: "this is a live session's worktree: close the session first" })
+    expect(removableInfo('session', clean, null)).toEqual({ removable: false, blocker: "this is a live session's worktree: close the session first" })
   })
 
   it('blocks on uncommitted changes, counting files', () => {
@@ -285,8 +285,8 @@ describe('suggest', () => {
 
   it('offers to close the session with the heaviest idle worktree, and to remove a removable orphan one', () => {
     const worktrees = [
-      wt({ path: '/w/.worktrees/p/busy', name: 'busy', bytes: 9 * GB, sessionId: 's1', sessionTitle: 'Busy', status: 'working', kind: 'priest', removable: false, blocker: "this is a live session's worktree: close the session first" }),
-      wt({ path: '/w/.worktrees/p/done', name: 'done', bytes: 4 * GB, sessionId: 's2', sessionTitle: 'Done', status: 'idle', kind: 'priest', removable: false, blocker: "this is a live session's worktree: close the session first" }),
+      wt({ path: '/w/.worktrees/p/busy', name: 'busy', bytes: 9 * GB, sessionId: 's1', sessionTitle: 'Busy', status: 'working', kind: 'session', removable: false, blocker: "this is a live session's worktree: close the session first" }),
+      wt({ path: '/w/.worktrees/p/done', name: 'done', bytes: 4 * GB, sessionId: 's2', sessionTitle: 'Done', status: 'idle', kind: 'session', removable: false, blocker: "this is a live session's worktree: close the session first" }),
       wt({ path: '/w/.worktrees/p/old', name: 'old', bytes: GB, removeCommand: removeCommand('/w/.worktrees/p/old') }),
     ]
     const s = suggest({ ...base, worktrees, metrics: [metric('disk', 0)] })
@@ -334,7 +334,7 @@ describe('suggest', () => {
         sessionTitle: 'I want to build two payment screens',
         sessionNote: 'RIB ET MAIL',
         status: 'idle',
-        kind: 'priest',
+        kind: 'session',
         removable: false,
         blocker: "this is a live session's worktree: close the session first",
       }),
@@ -345,21 +345,21 @@ describe('suggest', () => {
 
   it('names an orphan worktree after the closed session that used it, note first', () => {
     const worktrees = [wt({ path: '/w/.worktrees/p/old', name: 'old', bytes: GB, removeCommand: removeCommand('/w/.worktrees/p/old') })]
-    const nirvana = [{ id: 'n1', path: '/w/.worktrees/p/old', title: 'fixing the cart', note: 'RIB ET MAIL', archivedAt: new Date(2026, 2, 7).getTime() }]
-    const s = suggest({ ...base, worktrees, nirvana, metrics: [metric('disk', 0)] })
+    const closed = [{ id: 'n1', path: '/w/.worktrees/p/old', title: 'fixing the cart', note: 'RIB ET MAIL', archivedAt: new Date(2026, 2, 7).getTime() }]
+    const s = suggest({ ...base, worktrees, closed, metrics: [metric('disk', 0)] })
     expect(s[0]?.title).toBe('Worktree with no session: "RIB ET MAIL" (fixing the cart), closed on Mar 7 (1.0 GB)')
   })
 
   it('falls back to the title alone when the closed session has no note', () => {
     const worktrees = [wt({ path: '/w/.worktrees/p/old', name: 'old', bytes: GB, removeCommand: removeCommand('/w/.worktrees/p/old') })]
-    const nirvana = [{ id: 'n1', path: '/w/.worktrees/p/old', title: 'fixing the cart', note: null, archivedAt: new Date(2026, 2, 7).getTime() }]
-    const s = suggest({ ...base, worktrees, nirvana, metrics: [metric('disk', 0)] })
+    const closed = [{ id: 'n1', path: '/w/.worktrees/p/old', title: 'fixing the cart', note: null, archivedAt: new Date(2026, 2, 7).getTime() }]
+    const s = suggest({ ...base, worktrees, closed, metrics: [metric('disk', 0)] })
     expect(s[0]?.title).toBe('Worktree with no session: "fixing the cart", closed on Mar 7 (1.0 GB)')
   })
 
   it('keeps naming it by path when no closed session ever used it', () => {
     const worktrees = [wt({ path: '/w/.worktrees/p/old', name: 'old', bytes: GB, removeCommand: removeCommand('/w/.worktrees/p/old') })]
-    const s = suggest({ ...base, worktrees, nirvana: [], metrics: [metric('disk', 0)] })
+    const s = suggest({ ...base, worktrees, closed: [], metrics: [metric('disk', 0)] })
     expect(s[0]?.title).toBe('Worktree with no session: p/old (1.0 GB)')
   })
 })

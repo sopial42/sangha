@@ -23,15 +23,15 @@ describe('TranscriptReader', () => {
   })
 
   it('turns Agent calls into subagents, done only on their real report', () => {
-    expect(events).toContainEqual(expect.objectContaining({ t: 'monk.summoned', monkId: 't2', agentType: 'kiat-backend-coder' }))
-    const done = events.filter((e) => e.t === 'monk.done')
-    expect(done).toEqual([{ t: 'monk.done', monkId: 't2', status: 'completed', summary: 'Auth split in 3 files.' }])
+    expect(events).toContainEqual(expect.objectContaining({ t: 'subagent.started', subagentId: 't2', agentType: 'kiat-backend-coder' }))
+    const done = events.filter((e) => e.t === 'subagent.done')
+    expect(done).toEqual([{ t: 'subagent.done', subagentId: 't2', status: 'completed', summary: 'Auth split in 3 files.' }])
   })
 
   it('shows the session’s words and tools, never the sidechain', () => {
-    expect(events).toContainEqual({ t: 'buddha.text', text: 'On it.' })
-    expect(events).toContainEqual({ t: 'buddha.tool', tool: 'Read', summary: '/repo/auth.ts' })
-    expect(events.some((e) => e.t === 'buddha.text' && e.text === 'subagent chatter')).toBe(false)
+    expect(events).toContainEqual({ t: 'assistant.text', text: 'On it.' })
+    expect(events).toContainEqual({ t: 'assistant.tool', tool: 'Read', summary: '/repo/auth.ts' })
+    expect(events.some((e) => e.t === 'assistant.text' && e.text === 'subagent chatter')).toBe(false)
   })
 })
 
@@ -55,7 +55,7 @@ describe('background subagents', () => {
       { type: 'queue-operation', content: '<task-notification>\n<tool-use-id>tb</tool-use-id>\n<status>completed</status>\n<summary>Verdict: OK &amp; done</summary>\n</task-notification>' },
       { type: 'user', message: { content: '<task-notification>\n<tool-use-id>tb</tool-use-id>\n<status>completed</status>\n</task-notification>' } },
     ].flatMap((l) => r.push(parseLine(JSON.stringify(l))!))
-    expect(evs.filter((e) => e.t === 'monk.done')).toEqual([{ t: 'monk.done', monkId: 'tb', status: 'completed', summary: 'Verdict: OK & done' }])
+    expect(evs.filter((e) => e.t === 'subagent.done')).toEqual([{ t: 'subagent.done', subagentId: 'tb', status: 'completed', summary: 'Verdict: OK & done' }])
   })
 })
 

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api, lotusFailure } from '../api'
+import { api, setAsideFailure } from '../api'
 import { useApp } from '../store'
 import { Modal, message } from './Modal'
 import { Button } from '@/components/ui/button'
@@ -7,11 +7,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 
 /**
- * A session's name, your own word for it. `lotus`: opened when setting aside a session that has no
+ * A session's name, your own word for it. `setAside`: opened when setting aside a session that has no
  * name yet. Once set aside, hovering it is all you see of it, so a name now says where it stands; it is
  * set aside once saved (or without one).
  */
-export function NoteEditor({ id, lotus, onClose }: { id: string; lotus?: boolean; onClose: () => void }) {
+export function NoteEditor({ id, setAside, onClose }: { id: string; setAside?: boolean; onClose: () => void }) {
   const session = useApp((s) => s.sessions[id])
   const [note, setNote] = useState(session?.note ?? '')
   const [busy, setBusy] = useState(false)
@@ -28,11 +28,11 @@ export function NoteEditor({ id, lotus, onClose }: { id: string; lotus?: boolean
       setBusy(false)
       return
     }
-    if (lotus) {
+    if (setAside) {
       try {
-        await api.lotus(id, true)
+        await api.setAside(id, true)
       } catch (err) {
-        setError(lotusFailure(err))
+        setError(setAsideFailure(err))
         setBusy(false)
         return
       }
@@ -42,12 +42,12 @@ export function NoteEditor({ id, lotus, onClose }: { id: string; lotus?: boolean
 
   return (
     <Modal
-      title={lotus ? 'Name it before setting it aside?' : session.note ? 'Rename session' : 'Name this session'}
+      title={setAside ? 'Name it before setting it aside?' : session.note ? 'Rename session' : 'Name this session'}
       description={session.title}
       onClose={onClose}
       footer={
         <>
-          {lotus ? (
+          {setAside ? (
             <Button type="button" variant="ghost" onClick={() => void save(null)} disabled={busy} className="sm:mr-auto">
               Set aside without a name
             </Button>
@@ -62,7 +62,7 @@ export function NoteEditor({ id, lotus, onClose }: { id: string; lotus?: boolean
             Cancel
           </Button>
           <Button type="button" onClick={() => void save(note.trim() || null)} disabled={busy}>
-            {lotus ? 'Set aside' : 'Save'}
+            {setAside ? 'Set aside' : 'Save'}
           </Button>
         </>
       }
@@ -85,7 +85,7 @@ export function NoteEditor({ id, lotus, onClose }: { id: string; lotus?: boolean
               }
             }}
           />
-          {lotus && <FieldDescription>Once set aside, its name is what you see when you hover it: a word to remind you where it stands.</FieldDescription>}
+          {setAside && <FieldDescription>Once set aside, its name is what you see when you hover it: a word to remind you where it stands.</FieldDescription>}
         </Field>
         {error && (
           <p className="text-small text-danger" role="alert">

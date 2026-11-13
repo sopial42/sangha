@@ -1,15 +1,15 @@
 import { create } from 'zustand'
-import type { Envelope, HostReport, ModelChoice, MonkProfile, MonkStatus, ProjectInfo, Quota, QuotaReserveState, SessionSummary, Usage, GitIdentity } from '@sangha/shared'
+import type { Envelope, HostReport, ModelChoice, SubagentProfile, SubagentStatus, ProjectInfo, Quota, QuotaReserveState, SessionSummary, Usage, GitIdentity } from '@sangha/shared'
 
 export type LogItem = { at: number } & ({ kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string })
 
-export type MonkInstance = {
-  monkId: string
+export type SubagentRun = {
+  subagentId: string
   agentType: string
   description: string
   prompt: string
   depth: number
-  status: MonkStatus
+  status: SubagentStatus
   lastTool: { tool: string; summary: string } | null
   log: LogItem[]
   summary: string
@@ -21,10 +21,10 @@ export type MonkInstance = {
 
 export type ChatItem =
   | { kind: 'user'; text: string; at: number; seq: number }
-  | { kind: 'buddha'; text: string; at: number; seq: number }
+  | { kind: 'assistant'; text: string; at: number; seq: number }
   | { kind: 'tool'; tool: string; summary: string; at: number }
-  | { kind: 'summon'; monkId: string; at: number }
-  | { kind: 'done'; monkId: string; at: number }
+  | { kind: 'summon'; subagentId: string; at: number }
+  | { kind: 'done'; subagentId: string; at: number }
   | { kind: 'turn'; ok: boolean; costUsdEquiv: number; durationMs: number; at: number }
   | { kind: 'error'; text: string; at: number }
 
@@ -32,8 +32,8 @@ export type SessionView = {
   lastSeq: number
   chat: ChatItem[]
   draft: string
-  monks: Record<string, MonkInstance>
-  monkOrder: string[]
+  subagents: Record<string, SubagentRun>
+  subagentOrder: string[]
   busy: boolean
   quota: Quota | null
   model: string | null
@@ -47,8 +47,8 @@ export const emptyView = (): SessionView => ({
   lastSeq: 0,
   chat: [],
   draft: '',
-  monks: {},
-  monkOrder: [],
+  subagents: {},
+  subagentOrder: [],
   busy: false,
   quota: null,
   model: null,
@@ -62,26 +62,26 @@ export const emptyView = (): SessionView => ({
 export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
   if (seq <= v.lastSeq) return v
   const s: SessionView = { ...v, lastSeq: seq }
-  const patchMonk = (id: string, f: (m: MonkInstance) => Partial<MonkInstance>) => {
-    const m = s.monks[id]
-    if (m) s.monks = { ...s.monks, [id]: { ...m, ...f(m) } }
+  const patchSubagent = (id: string, f: (m: SubagentRun) => Partial<SubagentRun>) => {
+    const m = s.subagents[id]
+    if (m) s.subagents = { ...s.subagents, [id]: { ...m, ...f(m) } }
   }
   switch (ev.t) {
     case 'session.started':
       return { ...s, model: ev.model, skills: ev.skills ?? [], plugins: ev.plugins ?? [] }
     case 'user.message':
       return { ...s, chat: [...s.chat, { kind: 'user', text: ev.text, at, seq }] }
-    case 'buddha.delta':
+    case 'assistant.delta':
       return { ...s, draft: s.draft + ev.text }
-    case 'buddha.text':
-      return { ...s, draft: '', chat: [...s.chat, { kind: 'buddha', text: ev.text, at, seq }] }
-    case 'buddha.tool':
+    case 'assistant.text':
+      return { ...s, draft: '', chat: [...s.chat, { kind: 'assistant', text: ev.text, at, seq }] }
+    case 'assistant.tool':
       return { ...s, chat: [...s.chat, { kind: 'tool', tool: ev.tool, summary: ev.summary, at }] }
-    case 'monk.summoned':
-      s.monks = {
-        ...s.monks,
-        [ev.monkId]: {
-          monkId: ev.monkId,
+    case 'subagent.started':
+      s.subagents = {
+        ...s.subagents,
+        [ev.subagentId]: {
+          subagentId: ev.subagentId,
           agentType: ev.agentType,
           description: ev.description,
           prompt: ev.prompt,
@@ -99,21 +99,21 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
       // The same subagent can be announced twice (a replayed transcript): one entry, or the list repeats keys.
       return {
         ...s,
-        monkOrder: s.monkOrder.includes(ev.monkId) ? s.monkOrder : [...s.monkOrder, ev.monkId],
-        chat: [...s.chat, { kind: 'summon', monkId: ev.monkId, at }],
+        subagentOrder: s.subagentOrder.includes(ev.subagentId) ? s.subagentOrder : [...s.subagentOrder, ev.subagentId],
+        chat: [...s.chat, { kind: 'summon', subagentId: ev.subagentId, at }],
       }
-    case 'monk.tool':
-      patchMonk(ev.monkId, (m) => ({ lastTool: { tool: ev.tool, summary: ev.summary }, log: [...m.log, { kind: 'tool', tool: ev.tool, summary: ev.summary, at }] }))
+    case 'subagent.tool':
+      patchSubagent(ev.subagentId, (m) => ({ lastTool: { tool: ev.tool, summary: ev.summary }, log: [...m.log, { kind: 'tool', tool: ev.tool, summary: ev.summary, at }] }))
       return s
-    case 'monk.text':
-      patchMonk(ev.monkId, (m) => ({ log: [...m.log, { kind: 'text', text: ev.text, at }] }))
+    case 'subagent.text':
+      patchSubagent(ev.subagentId, (m) => ({ log: [...m.log, { kind: 'text', text: ev.text, at }] }))
       return s
-    case 'monk.progress':
-      patchMonk(ev.monkId, () => ({ tokens: ev.tokens, toolUses: ev.toolUses }))
+    case 'subagent.progress':
+      patchSubagent(ev.subagentId, () => ({ tokens: ev.tokens, toolUses: ev.toolUses }))
       return s
-    case 'monk.done':
-      patchMonk(ev.monkId, () => ({ status: ev.status, summary: ev.summary, endedAt: at }))
-      return { ...s, chat: [...s.chat, { kind: 'done', monkId: ev.monkId, at }] }
+    case 'subagent.done':
+      patchSubagent(ev.subagentId, () => ({ status: ev.status, summary: ev.summary, endedAt: at }))
+      return { ...s, chat: [...s.chat, { kind: 'done', subagentId: ev.subagentId, at }] }
     case 'turn.done':
       return {
         ...s,
@@ -136,7 +136,7 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
     // Its autonomy (`SessionSummary.autonomy`) is derived server-side from this and reflected in the
     // sessions list, not in this per-session chat view: nothing to patch here.
     case 'loop.wake':
-    // Aggregated server-side for the Advisor (see `elderSanghaStats`), not shown per session.
+    // Aggregated server-side for the Advisor (see `advisorSanghaStats`), not shown per session.
     case 'tool.error':
       return s
     case 'error':
@@ -146,22 +146,22 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
 
 export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-project' } | { kind: 'dismiss'; id: string }
   | { kind: 'remove-project'; name: string }
-  // `lotus`: asked on the way to setting it aside, where its name is all you'll see of it.
-  | { kind: 'note'; id: string; lotus?: boolean }
-  | { kind: 'nirvana' }
+  // `setAside`: asked on the way to setting it aside, where its name is all you'll see of it.
+  | { kind: 'note'; id: string; setAside?: boolean }
+  | { kind: 'closed-sessions' }
   | { kind: 'costs' }
   | { kind: 'providers' }
   | { kind: 'git' }
-  | { kind: 'shepherd'; id: string }
+  | { kind: 'handoff'; id: string }
   | { kind: 'env'; id: string }
   | { kind: 'autonomy'; id: string }
   | { kind: 'host' }
   | { kind: 'mcp' }
   | { kind: 'mcp-library' }
-  | { kind: 'elder' } | null
+  | { kind: 'advisor' } | null
 
 type AppState = {
-  profiles: MonkProfile[]
+  profiles: SubagentProfile[]
   /** The models a session can run on, as the server offers them. */
   models: ModelChoice[]
   /** The model new sessions start with ('' : the agent's own), remembered across reloads. */
@@ -175,18 +175,18 @@ type AppState = {
   reserve: QuotaReserveState | null
   /** The machine Sangha runs on, sampled every few seconds; null until the first sample lands. */
   host: HostReport | null
-  /** The Advisor's `proposed` topics count and whether it is running a pass, fed by the global `elder` event. */
-  elderBadge: { proposed: number; running: boolean } | null
-  /** Bumped on every `{kind:'nirvana'}` global event: the closed sessions dialog refetches (arrivals, summaries, reopenings). */
-  nirvanaTick: number
+  /** The Advisor's `proposed` topics count and whether it is running a pass, fed by the global `advisor` event. */
+  advisorBadge: { proposed: number; running: boolean } | null
+  /** Bumped on every `{kind:'closed'}` global event: the closed sessions dialog refetches (arrivals, summaries, reopenings). */
+  closedTick: number
   /** Bumped on every `{kind:'session'}` global event: what the cost chip watches, throttled, to refresh its total. */
   sessionsVersion: number
   /** No chime when a session finishes, remembered across reloads. */
   muted: boolean
-  /** Session shown in the panel: a priest id, 'buddha', or null. */
+  /** Session shown in the panel: a session id, the orchestrator id, or null. */
   selectedId: string | null
   view: SessionView
-  selectedMonk: string | null
+  selectedSubagent: string | null
   dialog: Dialog
   /** Who sessions commit as: undefined while loading, null when not set (git is closed to them). */
   gitIdentity: GitIdentity | null | undefined
@@ -236,13 +236,13 @@ export const useApp = create<AppState>((set) => ({
   quota: null,
   reserve: null,
   host: null,
-  elderBadge: null,
-  nirvanaTick: 0,
+  advisorBadge: null,
+  closedTick: 0,
   sessionsVersion: 0,
   muted: initialMuted,
   selectedId: null,
   view: emptyView(),
-  selectedMonk: null,
+  selectedSubagent: null,
   dialog: null,
   gitIdentity: undefined,
   interruptedIds: new Set(),

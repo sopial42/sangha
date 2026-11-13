@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import type { MonasteryEvent } from '@sangha/shared'
+import type { SessionEvent } from '@sangha/shared'
 import { Normalizer, nextCronFire, summarizeInput } from '../src/normalize'
 
-function replay(name: string): MonasteryEvent[] {
+function replay(name: string): SessionEvent[] {
   const n = new Normalizer()
   return readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')
     .trim()
@@ -14,8 +14,8 @@ function replay(name: string): MonasteryEvent[] {
 }
 
 describe('Normalizer on a real two-subagent session', () => {
-  const events = replay('parallel-monks.jsonl')
-  const of = <T extends MonasteryEvent['t']>(t: T) => events.filter((e): e is Extract<MonasteryEvent, { t: T }> => e.t === t)
+  const events = replay('parallel-subagents.jsonl')
+  const of = <T extends SessionEvent['t']>(t: T) => events.filter((e): e is Extract<SessionEvent, { t: T }> => e.t === t)
 
   it('announces the session with the declared agents', () => {
     const started = of('session.started')[0]!
@@ -24,25 +24,25 @@ describe('Normalizer on a real two-subagent session', () => {
   })
 
   it('summons each subagent once, keyed by the summoning tool_use id', () => {
-    const summoned = of('monk.summoned')
+    const summoned = of('subagent.started')
     expect(summoned.map((s) => s.agentType).sort()).toEqual(['counter', 'reader'])
-    expect(summoned.every((s) => s.monkId.startsWith('toolu_'))).toBe(true)
+    expect(summoned.every((s) => s.subagentId.startsWith('toolu_'))).toBe(true)
   })
 
   it('attributes subagent tools and completion to the right subagent', () => {
-    const ids = new Map(of('monk.summoned').map((s) => [s.agentType, s.monkId]))
-    const tools = of('monk.tool')
-    expect(tools).toContainEqual(expect.objectContaining({ monkId: ids.get('reader'), tool: 'Read' }))
-    expect(tools).toContainEqual(expect.objectContaining({ monkId: ids.get('counter'), tool: 'Bash' }))
-    const done = of('monk.done')
-    expect(done.map((d) => d.monkId).sort()).toEqual([...ids.values()].sort())
+    const ids = new Map(of('subagent.started').map((s) => [s.agentType, s.subagentId]))
+    const tools = of('subagent.tool')
+    expect(tools).toContainEqual(expect.objectContaining({ subagentId: ids.get('reader'), tool: 'Read' }))
+    expect(tools).toContainEqual(expect.objectContaining({ subagentId: ids.get('counter'), tool: 'Bash' }))
+    const done = of('subagent.done')
+    expect(done.map((d) => d.subagentId).sort()).toEqual([...ids.values()].sort())
     expect(done.every((d) => d.status === 'completed')).toBe(true)
   })
 
   it('hides the summoning tool from the orchestrator but streams its words', () => {
-    expect(of('buddha.tool').some((e) => e.tool === 'Agent' || e.tool === 'Task')).toBe(false)
-    expect(of('buddha.delta').length).toBeGreaterThan(0)
-    expect(of('buddha.text').length).toBeGreaterThan(0)
+    expect(of('assistant.tool').some((e) => e.tool === 'Agent' || e.tool === 'Task')).toBe(false)
+    expect(of('assistant.delta').length).toBeGreaterThan(0)
+    expect(of('assistant.text').length).toBeGreaterThan(0)
   })
 
   it('reports quota windows and turn cost', () => {
@@ -75,18 +75,18 @@ describe('summarizeInput', () => {
   })
 })
 
-describe('Normalizer.taskIdOfMonk', () => {
-  it('maps a subagent back to the SDK task id stopTask expects, distinct from its monkId (the summoning tool_use id)', () => {
+describe('Normalizer.taskIdOfSubagent', () => {
+  it('maps a subagent back to the SDK task id stopTask expects, distinct from its subagentId (the summoning tool_use id)', () => {
     const n = new Normalizer()
     n.push({ type: 'system', subtype: 'task_started', task_id: 't1', tool_use_id: 'toolu_abc', task_type: 'local_agent', subagent_type: 'reader', description: 'd', prompt: 'p', spawn_depth: 1 } as never)
-    expect(n.taskIdOfMonk('toolu_abc')).toBe('t1')
+    expect(n.taskIdOfSubagent('toolu_abc')).toBe('t1')
   })
 
   it('forgets the mapping once the task is done, so a stale id is never handed back', () => {
     const n = new Normalizer()
     n.push({ type: 'system', subtype: 'task_started', task_id: 't1', tool_use_id: 'toolu_abc', task_type: 'local_agent', subagent_type: 'reader', description: 'd', prompt: 'p', spawn_depth: 1 } as never)
     n.push({ type: 'system', subtype: 'task_notification', task_id: 't1', status: 'completed', summary: 'ok' } as never)
-    expect(n.taskIdOfMonk('toolu_abc')).toBeUndefined()
+    expect(n.taskIdOfSubagent('toolu_abc')).toBeUndefined()
   })
 })
 
@@ -146,17 +146,17 @@ describe('Normalizer on /loop tools (ScheduleWakeup, CronCreate, CronDelete)', (
     expect(evs.find((e) => e.t === 'loop.wake')).toEqual({ t: 'loop.wake', nextAt: null, stop: true })
   })
 
-  it('still reports the plain buddha.tool event alongside loop.wake', () => {
+  it('still reports the plain assistant.tool event alongside loop.wake', () => {
     const n = new Normalizer()
     const evs = n.push(tool('ScheduleWakeup', { delaySeconds: 60, reason: 'soon' }) as never)
-    expect(evs.some((e) => e.t === 'buddha.tool' && e.tool === 'ScheduleWakeup')).toBe(true)
+    expect(evs.some((e) => e.t === 'assistant.tool' && e.tool === 'ScheduleWakeup')).toBe(true)
   })
 
   it('a subagent (parent set) calling these tools does not drive the session’s own autonomy', () => {
     const n = new Normalizer()
-    const evs = n.push(tool('ScheduleWakeup', { delaySeconds: 60 }, 'toolu_monk') as never)
+    const evs = n.push(tool('ScheduleWakeup', { delaySeconds: 60 }, 'toolu_subagent') as never)
     expect(evs.some((e) => e.t === 'loop.wake')).toBe(false)
-    expect(evs.some((e) => e.t === 'monk.tool')).toBe(true)
+    expect(evs.some((e) => e.t === 'subagent.tool')).toBe(true)
   })
 })
 
@@ -209,8 +209,8 @@ describe('Normalizer on MCP tool failures', () => {
 
   it('ignores a subagent’s own tool failure (parent set)', () => {
     const n = new Normalizer()
-    n.push(toolUse('toolu_1', 'mcp__bitbucket__get_pr', 'toolu_monk') as never)
-    expect(n.push(toolResult('toolu_1', true, 'boom', 'toolu_monk') as never)).toEqual([])
+    n.push(toolUse('toolu_1', 'mcp__bitbucket__get_pr', 'toolu_subagent') as never)
+    expect(n.push(toolResult('toolu_1', true, 'boom', 'toolu_subagent') as never)).toEqual([])
   })
 
   it('forgets a tool_use once its result arrives, success included (no unbounded growth over a long session)', () => {

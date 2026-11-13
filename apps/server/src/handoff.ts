@@ -10,7 +10,7 @@ const MIN = 60_000
 /** When the session gives no delay of its own: ask again later and later, never more than every 2 h. */
 const BACKOFF_MIN = [10, 20, 40, 60, 90, 120]
 
-export type ShepherdAnswer =
+export type HandoffAnswer =
   | { kind: 'yes'; handoff: string }
   | { kind: 'later'; delayMs: number | null; reason: string }
   | { kind: 'never'; reason: string }
@@ -36,7 +36,7 @@ export function parseDelay(text: string): number | null {
 }
 
 /** Its answer, read from the first line. A plain "no" or anything unclear only means "not now". */
-export function parseAnswer(answer: string): ShepherdAnswer {
+export function parseAnswer(answer: string): HandoffAnswer {
   const text = answer.trim()
   const lines = text.split('\n')
   const i = lines.findIndex((l) => l.trim())
@@ -57,7 +57,7 @@ const firstLine = (m: string) => plain(m.split('\n').find((l) => l.trim()) ?? ''
  * answering, I check the docs…"): the answer is its last message that opens on YES, NO, LATER or NEVER (or
  * their French forms), with everything after it (the hand-off may run over several messages).
  */
-export function readDecision(messages: string[]): ShepherdAnswer {
+export function readDecision(messages: string[]): HandoffAnswer {
   const i = messages.findLastIndex((m) => /^(YES|NO|LATER|NEVER|OUI|NON|PLUS TARD)\b/.test(firstLine(m)))
   return parseAnswer((i >= 0 ? messages.slice(i) : messages).join('\n\n'))
 }
@@ -71,7 +71,7 @@ export function nextDelay(attempts: number, requested: number | null): number {
   return BACKOFF_MIN[Math.min(attempts, BACKOFF_MIN.length - 1)]! * MIN
 }
 
-export function shepherdPrompt(contextK: number, previous: string | null): string {
+export function handoffPrompt(contextK: number, previous: string | null): string {
   return `This is the Sangha orchestrator. The user asked me to move you to a fresh session: your context weighs about ${contextK}K tokens, and you will do better in a new session, with a hand-off. I don't want to interrupt you at a bad moment, so you choose when.
 ${previous ? `\nLast time, you answered: "${previous.slice(0, 300)}"\n` : ''}
 Is this a good moment to hand over? Answer on the first line with:

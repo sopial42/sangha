@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { renewalMessage, writeHandoffContext } from '../src/shepherd'
+import { renewalMessage, writeHandoffContext } from '../src/handoff'
 
 describe('handoff context', () => {
   it('writes your context to a file and the fresh session is told to read it first', () => {

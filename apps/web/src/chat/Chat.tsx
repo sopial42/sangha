@@ -558,7 +558,7 @@ function Conversation({ author, external = null }: ChatProps) {
     let idx = -1
     for (let i = chat.length - 1; i >= 0 && idx < 0; i--) {
       const it = chat[i]!
-      if ((it.kind === 'buddha' || it.kind === 'user') && splitQuote(it.text).body.includes(head)) idx = i
+      if ((it.kind === 'assistant' || it.kind === 'user') && splitQuote(it.text).body.includes(head)) idx = i
     }
     if (idx < 0) return
     setFrom((f) => Math.min(f ?? startRef.current, Math.max(0, idx - 2)))
@@ -578,8 +578,8 @@ function Conversation({ author, external = null }: ChatProps) {
     return () => clearTimeout(t)
   }, [found])
 
-  const monkName = (id: string) => {
-    const m = view.monks[id]
+  const subagentName = (id: string) => {
+    const m = view.subagents[id]
     return m ? profileFor(m.agentType, profiles).name : 'a subagent'
   }
 
@@ -636,7 +636,7 @@ function Conversation({ author, external = null }: ChatProps) {
             </MessageContent>
           </Message>
         )
-      case 'buddha':
+      case 'assistant':
         return (
           <AgentMessage
             author={author}
@@ -654,27 +654,27 @@ function Conversation({ author, external = null }: ChatProps) {
         )
       case 'summon':
         return (
-          <Marker render={<button type="button" onClick={() => set({ selectedMonk: item.monkId })} />} className="ml-9 w-auto text-small hover:text-foreground">
+          <Marker render={<button type="button" onClick={() => set({ selectedSubagent: item.subagentId })} />} className="ml-9 w-auto text-small hover:text-foreground">
             <MarkerIcon>
               <HugeiconsIcon icon={UserGroupIcon} strokeWidth={1.8} />
             </MarkerIcon>
             <MarkerContent className="flex-1">
-              {author} started <span className="font-medium text-foreground">{monkName(item.monkId)}</span>
-              {view.monks[item.monkId]?.description ? `: ${view.monks[item.monkId]!.description}` : ''}
+              {author} started <span className="font-medium text-foreground">{subagentName(item.subagentId)}</span>
+              {view.subagents[item.subagentId]?.description ? `: ${view.subagents[item.subagentId]!.description}` : ''}
             </MarkerContent>
             <Time at={item.at} />
           </Marker>
         )
       case 'done': {
-        const m = view.monks[item.monkId]
+        const m = view.subagents[item.subagentId]
         const ok = m?.status === 'completed'
         return (
-          <Marker render={<button type="button" onClick={() => set({ selectedMonk: item.monkId })} />} className="ml-9 w-auto text-small hover:text-foreground">
+          <Marker render={<button type="button" onClick={() => set({ selectedSubagent: item.subagentId })} />} className="ml-9 w-auto text-small hover:text-foreground">
             <MarkerIcon className={ok ? undefined : 'text-danger'}>
               <HugeiconsIcon icon={ok ? CheckmarkCircle02Icon : AlertCircleIcon} strokeWidth={1.8} />
             </MarkerIcon>
             <MarkerContent className="flex-1">
-              <span className="font-medium text-foreground">{monkName(item.monkId)}</span> {ok ? 'finished' : `stopped: ${m?.status ?? 'unknown'}`}
+              <span className="font-medium text-foreground">{subagentName(item.subagentId)}</span> {ok ? 'finished' : `stopped: ${m?.status ?? 'unknown'}`}
             </MarkerContent>
             <Time at={item.at} />
           </Marker>
@@ -736,7 +736,7 @@ function Conversation({ author, external = null }: ChatProps) {
     }
     return rows
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view.chat, start, view.monks, author, profiles, sessionId, commented, found])
+  }, [view.chat, start, view.subagents, author, profiles, sessionId, commented, found])
   const hiddenOlder = useMemo(() => view.chat.slice(0, start).filter(visible).length, [view.chat, start])
 
   const empty = view.chat.length === 0 && !view.draft

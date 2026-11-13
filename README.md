@@ -49,9 +49,9 @@ Settings live in `.env` (created by `make setup` from `.env.example`):
 | Variable | Default | Purpose |
 |---|---|---|
 | `CLAUDE_CODE_OAUTH_TOKEN` | empty | Subscription token, required in Docker only (`make token`) |
-| `SANGHA_BUDDHA_MODEL` | `sonnet` | Model of the orchestrator |
+| `SANGHA_ORCHESTRATOR_MODEL` | `sonnet` | Model of the orchestrator |
 | `SANGHA_LEAD_MODEL` | `opus` | Model of the built-in Team lead agent |
-| `SANGHA_NOVICE_MODEL` | `sonnet` | Model of the Team lead's subagents |
+| `SANGHA_SUBAGENT_MODEL` | `sonnet` | Model of the Team lead's subagents |
 | `SANGHA_RECAP_MODEL` | `haiku` | Small model writing recaps and summaries |
 | `SANGHA_EXTERNAL_WINDOW_MIN` | `90` | How long an inactive terminal session stays on the board |
 | `SANGHA_PORT` | `8787` | Port of the app |
@@ -63,7 +63,7 @@ Project agents (`.claude/agents/*.md`) run as the session's main agent with the 
 ```
 apps/server       Hono + Claude Agent SDK
   session.ts        one long-lived Claude process per session, resumed after 20 min idle
-  buddha.ts         the orchestrator, with an in-process MCP server to list, start and drive sessions
+  orchestrator.ts   the orchestrator, with an in-process MCP server to list, start and drive sessions
   observer.ts       picks up sessions started outside Sangha from ~/.claude/projects
   recap.ts          small-model calls: recap on stop, progress point, summaries
   git.ts            one worktree per session, in workspaces/.worktrees/<project>/

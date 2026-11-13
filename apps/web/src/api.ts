@@ -1,4 +1,4 @@
-import type { CostReport, ElderSettings, ElderSettingsPatch, ElderState, ElderTopic, Envelope, Feedback, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, GlobalMcp, LibraryMcp, McpServer, MonkProfile, NirvanaEntry, NirvanaSearchResult, ProjectInfo, ProjectSuggestion, QuotaReserve, QuotaReserveState, SessionSummary } from '@sangha/shared'
+import type { CostReport, AdvisorSettings, AdvisorSettingsPatch, AdvisorState, AdvisorTopic, Envelope, Feedback, GitIdentity, HostChatTurn, HostReport, HostSuggestion, ModelChoice, Provider, GlobalEvent, GlobalMcp, LibraryMcp, McpServer, SubagentProfile, ClosedSession, ClosedSearchResult, ProjectInfo, ProjectSuggestion, QuotaReserve, QuotaReserveState, SessionSummary } from '@sangha/shared'
 import { emptyView, useApp } from './store'
 
 export class ApiError extends Error {
@@ -12,7 +12,7 @@ export class ApiError extends Error {
 }
 
 /** Why setting a session aside (or putting it back on the board) didn't save, in a word for you. */
-export const lotusFailure = (e: unknown) =>
+export const setAsideFailure = (e: unknown) =>
   e instanceof ApiError && e.status === 404
     ? 'Your Sangha server does not support setting sessions aside yet: restart it (make dev).'
     : `Could not set the session aside: ${e instanceof Error ? e.message : String(e)}.`
@@ -36,7 +36,7 @@ export const api = {
   /** The share of the plan quota kept untouched, and whether it currently bites. */
   quotaReserve: () => json<QuotaReserveState>('/api/quota-reserve'),
   saveQuotaReserve: (v: Partial<QuotaReserve>) => json<QuotaReserveState>('/api/quota-reserve', { method: 'PUT', body: JSON.stringify(v) }),
-  monks: () => json<MonkProfile[]>('/api/monks'),
+  subagents: () => json<SubagentProfile[]>('/api/subagent-profiles'),
   models: () => json<ModelChoice[]>('/api/models'),
   /** Endpoints other than Claude (address and credentials set once) and the models they offer. */
   providers: () => json<Provider[]>('/api/providers'),
@@ -56,7 +56,7 @@ export const api = {
   /** Ask the session now whether to continue in a fresh one. */
   renew: (id: string) => json<void>(`/api/sessions/${id}/renew`, post()),
   /** Let the orchestrator hand this session off to a fresh one (or take it back). */
-  shepherd: (id: string, on: boolean, context?: string) => json<unknown>(`/api/sessions/${id}/shepherd`, post({ on, context })),
+  handoff: (id: string, on: boolean, context?: string) => json<unknown>(`/api/sessions/${id}/handoff`, post({ on, context })),
   /**
    * His autonomy: starts a `/goal` or a `/loop` (the server stops the other one first); `null` stops
    * whichever runs, immediately.
@@ -65,7 +65,7 @@ export const api = {
     json<void>(`/api/sessions/${id}/autonomy`, post(body)),
   silence: (id: string, silent: boolean) => json<void>(`/api/sessions/${id}/silence`, post({ silent })),
   /** Set a session aside (off the board), or put it back. */
-  lotus: (id: string, lotus: boolean) => json<void>(`/api/sessions/${id}/lotus`, post({ lotus })),
+  setAside: (id: string, setAside: boolean) => json<void>(`/api/sessions/${id}/set-aside`, post({ setAside })),
   /** Your own name for a session (null clears it). */
   note: (id: string, note: string | null) => json<void>(`/api/sessions/${id}/note`, post({ note })),
   /** Your messages still waiting for its turn to end: change one, take it back, or send it right away. */
@@ -80,9 +80,9 @@ export const api = {
   removeProject: (name: string, force = false) => json<void>(`/api/projects/${encodeURIComponent(name)}${force ? '?force=1' : ''}`, { method: 'DELETE' }),
   archive: (id: string, force = false) => json<void>(`/api/sessions/${id}${force ? '?force=1' : ''}`, { method: 'DELETE' }),
   /** Closed sessions, newest first. */
-  nirvana: () => json<NirvanaEntry[]>('/api/nirvana'),
+  closedSessions: () => json<ClosedSession[]>('/api/closed-sessions'),
   /** Ask a model to find, among closed sessions, the ones matching a question: best first, each with why it matches. */
-  nirvanaSearch: (q: string) => json<NirvanaSearchResult>('/api/nirvana/search', post({ q })),
+  searchClosed: (q: string) => json<ClosedSearchResult>('/api/closed-sessions/search', post({ q })),
   /** Reopen a closed session, in a fresh session. */
   /** Relaunch the Claude process on the same conversation, so it rereads its agent file, tools and MCP. */
   restart: (id: string) => json<void>(`/api/sessions/${id}/restart`, post()),
@@ -90,7 +90,7 @@ export const api = {
   remoteControl: (id: string) => json<{ url: string } | { pending: true }>(`/api/sessions/${id}/remote-control`, post()),
   stopRemote: (id: string) => json<void>(`/api/sessions/${id}/remote-control/stop`, post()),
   setEnv: (id: string, env: Record<string, string>, restart: boolean) => json<void>(`/api/sessions/${id}/env`, { method: 'PUT', body: JSON.stringify({ env, restart }) }),
-  reincarnate: (id: string) => json<SessionSummary>(`/api/sessions/${id}/reincarnate`, post()),
+  reopen: (id: string) => json<SessionSummary>(`/api/sessions/${id}/reopen`, post()),
   /** What every session would have cost at API prices, since monitoring began, broken down by month. */
   costs: () => json<CostReport>('/api/costs'),
   /** Your latest screenshot, copied where a session can read it: its path to put in the message. */
@@ -112,13 +112,13 @@ export const api = {
   /** `values`: credentials to save in .env (an empty one keeps what is saved); `active`: switch it on or off. */
   setLibraryMcp: (name: string, change: { active?: boolean; values?: Record<string, string> }) => json<LibraryMcp[]>(`/api/mcp-library/${encodeURIComponent(name)}`, post(change)),
   /** The Advisor: its settings, state (next pass, running, last error), topics, last reports and chat. */
-  elder: () => json<ElderState>('/api/elder'),
-  saveElderSettings: (patch: ElderSettingsPatch) => json<ElderSettings>('/api/elder/settings', { method: 'PUT', body: JSON.stringify(patch) }),
-  /** "Run now": fires an Advisor pass right away; the dialog follows along via the `elder` global event. */
-  runElderNow: () => json<void>('/api/elder/run', post()),
-  askElder: (text: string) => json<{ reply: string }>('/api/elder/ask', post({ text })),
-  voteElderTopic: (id: string, vote: 'up' | 'down') => json<ElderTopic>(`/api/elder/topics/${id}/vote`, post({ vote })),
-  doneElderTopic: (id: string) => json<ElderTopic>(`/api/elder/topics/${id}/done`, post()),
+  advisor: () => json<AdvisorState>('/api/advisor'),
+  saveAdvisorSettings: (patch: AdvisorSettingsPatch) => json<AdvisorSettings>('/api/advisor/settings', { method: 'PUT', body: JSON.stringify(patch) }),
+  /** "Run now": fires an Advisor pass right away; the dialog follows along via the `advisor` global event. */
+  runAdvisorNow: () => json<void>('/api/advisor/run', post()),
+  askAdvisor: (text: string) => json<{ reply: string }>('/api/advisor/ask', post({ text })),
+  voteAdvisorTopic: (id: string, vote: 'up' | 'down') => json<AdvisorTopic>(`/api/advisor/topics/${id}/vote`, post({ vote })),
+  doneAdvisorTopic: (id: string) => json<AdvisorTopic>(`/api/advisor/topics/${id}/done`, post()),
   /** A comment or a thumbs up/down on a message (`eventSeq`) or on the whole conversation (omitted): the Advisor reads it later. */
   sendFeedback: (b: { sessionId: string; eventSeq?: number; rating?: 'up' | 'down'; comment?: string }) => json<Feedback>('/api/feedback', post(b)),
   sessionFeedback: (id: string) => json<Feedback[]>(`/api/sessions/${id}/feedback`),
@@ -129,7 +129,7 @@ export function openEvents(onError: () => void) {
   const es = new EventSource('/api/events')
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data) as GlobalEvent
-    const { set, sessions, nirvanaTick, sessionsVersion } = useApp.getState()
+    const { set, sessions, closedTick, sessionsVersion } = useApp.getState()
     switch (ev.kind) {
       case 'snapshot':
         set({ sessions: Object.fromEntries(ev.sessions.map((s) => [s.id, s])), ...(ev.quota ? { quota: ev.quota } : {}), reserve: ev.reserve })
@@ -150,9 +150,9 @@ export function openEvents(onError: () => void) {
       case 'reserve':
         set({ reserve: ev.reserve })
         break
-      case 'nirvana':
+      case 'closed':
         // Closed sessions changed (arrival, summary written, reopened): the dialog watches this counter to refetch.
-        set({ nirvanaTick: nirvanaTick + 1 })
+        set({ closedTick: closedTick + 1 })
         break
       case 'projects':
         void api.projects().then((projects) => set({ projects }))
@@ -160,8 +160,8 @@ export function openEvents(onError: () => void) {
       case 'host':
         set({ host: ev.host })
         break
-      case 'elder':
-        set({ elderBadge: { proposed: ev.proposed, running: ev.running } })
+      case 'advisor':
+        set({ advisorBadge: { proposed: ev.proposed, running: ev.running } })
         break
     }
   }
@@ -182,7 +182,7 @@ const setUrl = (query: string) => history.replaceState(null, '', query ? `?${que
 export function openSession(id: string) {
   stop()
   const { set, applyMany } = useApp.getState()
-  set({ selectedId: id, view: emptyView(), selectedMonk: null })
+  set({ selectedId: id, view: emptyView(), selectedSubagent: null })
   setUrl(`session=${encodeURIComponent(id)}`)
   const es = new EventSource(`/api/sessions/${id}/events`)
   source = es
@@ -207,5 +207,5 @@ export function closeSession() {
   if (!selectedId) return
   stop()
   setUrl('')
-  set({ selectedId: null, view: emptyView(), selectedMonk: null })
+  set({ selectedId: null, view: emptyView(), selectedSubagent: null })
 }

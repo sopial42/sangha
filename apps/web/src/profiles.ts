@@ -1,16 +1,11 @@
 import { createElement, type ReactNode } from 'react'
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
 import { CheckListIcon, CommandLineIcon, File01Icon, Globe02Icon, MagicWand01Icon, PencilEdit02Icon, Plug01Icon, Search01Icon, SparklesIcon, Wrench01Icon } from '@hugeicons/core-free-icons'
-import type { MonkProfile } from '@sangha/shared'
+import type { SubagentProfile } from '@sangha/shared'
 
-const WANDERER_ROBES = ['#7d8a6a', '#6a7d8a', '#8a6a7d', '#9a8a5a', '#5a7a7a']
-
-/** Profile for a known subagent, or a generated one (stable colour from its name) for built-in / plugin subagents. */
-export function profileFor(agentType: string, profiles: MonkProfile[]): MonkProfile {
-  const known = profiles.find((p) => p.agentType === agentType)
-  if (known) return known
-  const hash = [...agentType].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7)
-  return { agentType, name: agentType, role: 'Subagent', robe: WANDERER_ROBES[hash % WANDERER_ROBES.length]!, model: '' }
+/** Profile for a known subagent, or a plain one for built-in / plugin subagents. Colour means attention in Sangha, so subagents stay neutral. */
+export function profileFor(agentType: string, profiles: SubagentProfile[]): SubagentProfile {
+  return profiles.find((p) => p.agentType === agentType) ?? { agentType, name: agentType, role: 'Subagent', color: '#9c9b97', model: '' }
 }
 
 const TOOL_ICONS: Record<string, IconSvgElement> = {

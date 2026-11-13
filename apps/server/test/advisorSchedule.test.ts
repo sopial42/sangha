@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { ElderSettings, Quota } from '@sangha/shared'
-import { due, elderEngine, type PendingSession } from '../src/elderSchedule'
+import type { AdvisorSettings, Quota } from '@sangha/shared'
+import { due, advisorEngine, type PendingSession } from '../src/advisorSchedule'
 
-const SETTINGS: ElderSettings = {
+const SETTINGS: AdvisorSettings = {
   enabled: true,
   model: 'sonnet',
   levels: { manual: true, sangha: true, project: false },
@@ -12,7 +12,7 @@ const SETTINGS: ElderSettings = {
   maxInputChars: 24_000,
   lastRunAt: null,
 }
-const PROVIDER_SETTINGS: ElderSettings = { ...SETTINGS, model: 'ovh::llama-4' }
+const PROVIDER_SETTINGS: AdvisorSettings = { ...SETTINGS, model: 'ovh::llama-4' }
 
 const quota = (pct: number | null): Quota | null => (pct === null ? null : { status: 'allowed', fiveHour: null, sevenDay: { utilization: pct / 100, resetsAt: null } })
 
@@ -20,11 +20,11 @@ const quota = (pct: number | null): Quota | null => (pct === null ? null : { sta
 const THURSDAY_NOON = new Date(2026, 0, 1, 12, 0, 0).getTime()
 const FRIDAY_2300 = new Date(2026, 0, 2, 23, 0, 0).getTime()
 
-describe('elderEngine', () => {
+describe('advisorEngine', () => {
   it('reads claude from a bare alias, a provider from provider::model', () => {
-    expect(elderEngine('sonnet')).toBe('claude')
-    expect(elderEngine('')).toBe('claude')
-    expect(elderEngine('ovh::llama-4')).toBe('provider')
+    expect(advisorEngine('sonnet')).toBe('claude')
+    expect(advisorEngine('')).toBe('claude')
+    expect(advisorEngine('ovh::llama-4')).toBe('provider')
   })
 })
 
@@ -132,7 +132,7 @@ describe('due: the manual level off disables the conversation pass', () => {
   it('never proposes a conversation pass when the manual level is off', () => {
     const morning = new Date(2026, 0, 5, 8, 0, 0).getTime()
     const noon = morning + 4 * 3600_000
-    const off: ElderSettings = { ...PROVIDER_SETTINGS, lastRunAt: morning, levels: { ...PROVIDER_SETTINGS.levels, manual: false } }
+    const off: AdvisorSettings = { ...PROVIDER_SETTINGS, lastRunAt: morning, levels: { ...PROVIDER_SETTINGS.levels, manual: false } }
     const session: PendingSession = { id: 's1', archived: true, idleMs: 0, hasPendingFeedback: true }
     expect(due(noon, off, null, [session])).toBeNull()
   })

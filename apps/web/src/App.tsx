@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, openEvents, openSession } from './api'
 import { Dialogs } from './dialogs'
+import { currentId } from './lib/legacy'
 import { useSessionNav } from './nav'
 import { keepAudioUnlocked, watchHostSuggestions, watchSessions } from './notify'
 import { useApp } from './store'
@@ -43,7 +44,7 @@ export function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
-    Promise.all([api.monks(), api.projects()])
+    Promise.all([api.subagents(), api.projects()])
       .then(([profiles, projects]) => {
         set({ profiles, projects })
         setOffline(false)
@@ -59,7 +60,7 @@ export function App() {
     const unwatchHost = watchHostSuggestions()
     keepAudioUnlocked()
     const session = params.get('session')
-    if (session) openSession(session)
+    if (session) openSession(currentId(session))
     return () => {
       close()
       unwatch()

@@ -8,7 +8,6 @@ import { clone, commonDir, currentBranch, git, isGitRepo } from './git'
 import { readHead } from './files'
 import { SANGHA_ROLES } from './roles'
 
-const ROBES = ['#c2703d', '#8e2f2f', '#b8860b', '#4f6d7a', '#6b8e4e', '#7a4f8e', '#a0522d', '#3f7f7a', '#9c6b98', '#5a6f3a']
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
@@ -83,10 +82,6 @@ export class Projects {
     return e.path
   }
 
-  color(name: string): string {
-    return this.store.projectColor(name, ROBES)
-  }
-
   /** Every project that is a git repository: name and root, for worktree discovery (see `host.ts`). */
   repos(): { name: string; path: string }[] {
     return this.entries()
@@ -100,7 +95,6 @@ export class Projects {
         name: e.name,
         path: e.path,
         local: e.local,
-        color: this.color(e.name),
         isGit: isGitRepo(e.path),
         branch: await currentBranch(e.path),
         agents: [...agentsIn(e.path), ...SANGHA_ROLES],
@@ -141,7 +135,7 @@ export class Projects {
   }
 
   /**
-   * Point a local project at the folder it moved to. It keeps its name, color and sessions; their
+   * Point a local project at the folder it moved to. It keeps its name and sessions; their
    * worktrees are repaired so they find the repository again.
    */
   async relocate(name: string, path: string): Promise<void> {

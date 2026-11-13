@@ -140,7 +140,7 @@ function WorktreeOwner({ w, sessions }: { w: HostWorktree; sessions: Record<stri
 /** The kind badge: what this worktree is, for a subagent one with its owner's name and whether it's still around. */
 function worktreeKind(w: HostWorktree): { label: string; orphan: boolean } {
   if (w.kind === 'orphan') return { label: 'Orphan', orphan: true }
-  if (w.kind === 'priest') return { label: 'Session', orphan: false }
+  if (w.kind === 'session') return { label: 'Session', orphan: false }
   const owner = w.owner
   const who = owner ? (owner.note ?? owner.title) : ''
   let label = `Subagent of ${who}`

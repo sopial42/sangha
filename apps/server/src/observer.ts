@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, readlinkSync, statSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { basename, join } from 'node:path'
-import type { NoviceSummary, SessionSummary } from '@sangha/shared'
+import type { SubagentSummary, SessionSummary } from '@sangha/shared'
 import { readHead, readTailLines } from './files'
 import { currentBranch } from './git'
 import { CLAUDE_PROJECTS, encodeDir, type Projects } from './projects'
@@ -158,7 +158,7 @@ export class Observer {
   procOf = (id: string) => this.found.get(id)?.proc ?? null
 
   /** Transcript of one of an outside session's subagents, by the tool_use id that summoned it. */
-  noviceFile(id: string, monkId: string): string | null {
+  subagentFile(id: string, subagentId: string): string | null {
     const file = this.fileOf(id)
     if (!file) return null
     const dir = join(file.replace(/\.jsonl$/, ''), 'subagents')
@@ -167,7 +167,7 @@ export class Observer {
       if (!f.endsWith('.meta.json')) continue
       try {
         const meta = JSON.parse(readFileSync(join(dir, f), 'utf8')) as { toolUseId?: string }
-        if (meta.toolUseId === monkId) return join(dir, f.replace(/\.meta\.json$/, '.jsonl'))
+        if (meta.toolUseId === subagentId) return join(dir, f.replace(/\.meta\.json$/, '.jsonl'))
       } catch {
         // unreadable meta: skip
       }
@@ -240,8 +240,8 @@ export class Observer {
         }
         if (!cwd || !project) continue
         const id = EXTERNAL_PREFIX + sessionId
-        const novices = this.novices(f.path, now)
-        const lastMove = Math.max(f.mtime, ...novices.map((n) => n.mtime))
+        const subagents = this.subagents(f.path, now)
+        const lastMove = Math.max(f.mtime, ...subagents.map((n) => n.mtime))
         // Sent away: it comes back only once you wrote to it after that, not because it keeps working.
         const hiddenAt = this.hidden.get(id)
         if (hiddenAt !== undefined && hiddenAt >= (lastUserMessageAt(tail) ?? 0)) continue
@@ -274,12 +274,12 @@ export class Observer {
             status,
             activity: working ? formatTool(lastTool(tail)) : null,
             doing: null,
-            novices: novices.filter((n) => now - n.mtime < WORKING_MS).map(({ mtime: _m, ...n }) => n),
+            subagents: subagents.filter((n) => now - n.mtime < WORKING_MS).map(({ mtime: _m, ...n }) => n),
             recap: !working && cached?.key === f.mtime ? cached.recap : null,
             external: true,
             alive: !!proc,
             silenced: false, // decorated by Sessions
-            lotus: false, // decorated by Sessions
+            setAside: false, // decorated by Sessions
             note: null, // decorated by Sessions
             reminder: null,
             // Not tracked for an outside session: its `/goal` or `/loop` would go straight to its own terminal,
@@ -289,7 +289,7 @@ export class Observer {
             queued: [],
             context: contextTokens(tail),
             renewal: null, // decorated by Sessions
-            shepherd: null,
+            handoff: null,
             cost: null, // decorated by Sessions
             cwd,
             pr: null, // decorated by Sessions
@@ -381,10 +381,10 @@ export class Observer {
   }
 
   /** Subagents live next to the transcript: <session>/subagents/agent-*.jsonl with a .meta.json. */
-  private novices(transcript: string, now: number): (NoviceSummary & { mtime: number })[] {
+  private subagents(transcript: string, now: number): (SubagentSummary & { mtime: number })[] {
     const dir = join(transcript.replace(/\.jsonl$/, ''), 'subagents')
     if (!existsSync(dir)) return []
-    const out: (NoviceSummary & { mtime: number })[] = []
+    const out: (SubagentSummary & { mtime: number })[] = []
     for (const f of readdirSync(dir)) {
       if (!f.endsWith('.jsonl')) continue
       const path = join(dir, f)
@@ -398,7 +398,7 @@ export class Observer {
       }
       const lines = now - mtime < WORKING_MS ? readTailLines(path, 64 * 1024).map(parseLine).filter((l) => l !== null) : []
       out.push({
-        monkId: meta.toolUseId ?? basename(f, '.jsonl'),
+        subagentId: meta.toolUseId ?? basename(f, '.jsonl'),
         agentType: meta.agentType ?? 'general-purpose',
         description: meta.description ?? '',
         lastTool: lastTool(lines),
@@ -424,8 +424,8 @@ function lastExchange(file: string): string {
     .slice(Math.max(0, from))
     .flatMap((ev) => {
       if (ev.t === 'user.message') return [`USER: ${ev.text.slice(0, 2000)}`]
-      if (ev.t === 'buddha.text') return [`AGENT: ${ev.text.slice(0, 3000)}`]
-      if (ev.t === 'monk.done') return [`SUBAGENT (${ev.status}): ${ev.summary.slice(0, 1200)}`]
+      if (ev.t === 'assistant.text') return [`AGENT: ${ev.text.slice(0, 3000)}`]
+      if (ev.t === 'subagent.done') return [`SUBAGENT (${ev.status}): ${ev.summary.slice(0, 1200)}`]
       return []
     })
     .join('\n\n')

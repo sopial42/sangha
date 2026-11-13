@@ -1,4 +1,4 @@
-import type { MonasteryEvent } from '@sangha/shared'
+import type { SessionEvent } from '@sangha/shared'
 import { summarizeInput } from './normalize'
 
 // Claude Code transcripts (~/.claude/projects/<dir>/<session>.jsonl): one JSON object per line.
@@ -44,19 +44,19 @@ export function parseLine(raw: string): Line | null {
 }
 
 /**
- * Translates a transcript into MonasteryEvents so an outside session reads like a Sangha one.
+ * Translates a transcript into SessionEvents so an outside session reads like a Sangha one.
  * Stateful: remembers which tool_use ids summoned subagents.
  */
 export class TranscriptReader {
   private summons = new Set<string>()
 
-  push(line: Line): MonasteryEvent[] {
+  push(line: Line): SessionEvent[] {
     if (line.isSidechain) return []
     // A background subagent reports through a <task-notification>, wherever the harness queued it.
     const note = notification(typeof line.message?.content === 'string' ? line.message.content : typeof line.content === 'string' ? line.content : '')
     if (note && this.summons.has(note.toolUseId)) {
       this.summons.delete(note.toolUseId)
-      return [{ t: 'monk.done', monkId: note.toolUseId, status: note.status, summary: note.summary }]
+      return [{ t: 'subagent.done', subagentId: note.toolUseId, status: note.status, summary: note.summary }]
     }
     // A message queued while the agent was busy (typed in the terminal, or relayed from Sangha).
     if (line.attachment?.type === 'queued_command' && typeof line.attachment.prompt === 'string') {
@@ -72,7 +72,7 @@ export class TranscriptReader {
     if (line.type === 'user') {
       if (typeof content === 'string') return isChatter(content) ? [] : [{ t: 'user.message', text: content }]
       if (!Array.isArray(content)) return []
-      const out: MonasteryEvent[] = []
+      const out: SessionEvent[] = []
       for (const b of content) {
         if (b.type === 'text' && b.text && !isChatter(b.text)) out.push({ t: 'user.message', text: b.text })
         if (b.type === 'tool_result' && b.tool_use_id && this.summons.has(b.tool_use_id)) {
@@ -80,28 +80,28 @@ export class TranscriptReader {
           // A background subagent answers "launched" at once; its real report comes later.
           if (!/running in the background|launched successfully|async agent/i.test(text)) {
             this.summons.delete(b.tool_use_id)
-            out.push({ t: 'monk.done', monkId: b.tool_use_id, status: 'completed', summary: text.slice(0, 4000) })
+            out.push({ t: 'subagent.done', subagentId: b.tool_use_id, status: 'completed', summary: text.slice(0, 4000) })
           }
         }
       }
       return out
     }
     if (line.type === 'assistant' && Array.isArray(content)) {
-      const out: MonasteryEvent[] = []
+      const out: SessionEvent[] = []
       for (const b of content) {
-        if (b.type === 'text' && b.text?.trim()) out.push({ t: 'buddha.text', text: b.text })
+        if (b.type === 'text' && b.text?.trim()) out.push({ t: 'assistant.text', text: b.text })
         if (b.type !== 'tool_use' || !b.name) continue
         if (SUMMON_TOOLS.has(b.name) && b.id) {
           this.summons.add(b.id)
           out.push({
-            t: 'monk.summoned',
-            monkId: b.id,
+            t: 'subagent.started',
+            subagentId: b.id,
             agentType: String(b.input?.subagent_type ?? 'general-purpose'),
             description: String(b.input?.description ?? ''),
             prompt: String(b.input?.prompt ?? ''),
             depth: 1,
           })
-        } else out.push({ t: 'buddha.tool', tool: b.name, summary: summarizeInput(b.input) })
+        } else out.push({ t: 'assistant.tool', tool: b.name, summary: summarizeInput(b.input) })
       }
       return out
     }
@@ -216,11 +216,11 @@ export function aiTitle(lines: Line[]): string | null {
   return [...lines].reverse().find((x) => x.type === 'ai-title' && x.aiTitle)?.aiTitle ?? null
 }
 
-export type NoviceLogItem = { at: number } & ({ kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string })
+export type SubagentLogItem = { at: number } & ({ kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string })
 
 /** A subagent's own transcript (subagents/agent-*.jsonl, all sidechain lines): its words and tools. */
-export function noviceLog(lines: Line[]): NoviceLogItem[] {
-  const out: NoviceLogItem[] = []
+export function subagentLog(lines: Line[]): SubagentLogItem[] {
+  const out: SubagentLogItem[] = []
   for (const l of lines) {
     const c = l.message?.content
     if (l.type !== 'assistant' || !Array.isArray(c)) continue

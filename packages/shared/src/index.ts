@@ -1,5 +1,5 @@
 // Contract between server and web. The server turns raw Agent SDK messages
-// into MonasteryEvents; the web only ever sees these.
+// into SessionEvents; the web only ever sees these.
 
 export type Usage = {
   inputTokens: number
@@ -26,30 +26,30 @@ export type QuotaReserve = { enabled: boolean; pct: number }
 /** The reserve as set, plus whether it bites right now (always on the week: the only window left). */
 export type QuotaReserveState = QuotaReserve & { reached: boolean; window: 'sevenDay' | null }
 
-export type MonkStatus = 'working' | 'completed' | 'failed' | 'stopped'
+export type SubagentStatus = 'working' | 'completed' | 'failed' | 'stopped'
 
 /**
- * Why a session stopped, as a small model read its last words: `fini` (done, nothing left), `question`
- * (it needs you), `attente` (waiting on something that runs without you: CI, deploy, review…). Each plays a
- * different sound. The values are French on the wire and in stored recaps.
+ * Why a session stopped, as a small model read its last words: `done` (nothing left), `question`
+ * (it needs you), `waiting` (waiting on something that runs without you: CI, deploy, review…). Each plays a
+ * different sound. Older databases stored French values: `Store` migrates them once at startup.
  */
-export type RecapState = 'fini' | 'question' | 'attente'
+export type RecapState = 'done' | 'question' | 'waiting'
 
 export type SessionRecap = { done: string; next: string; state?: RecapState }
 
-export type MonasteryEvent =
+export type SessionEvent =
   | { t: 'session.started'; model: string; agents: string[]; skills: string[]; plugins: string[]; claudeSessionId: string }
   | { t: 'user.message'; text: string }
-  | { t: 'buddha.delta'; text: string }
-  | { t: 'buddha.text'; text: string }
-  | { t: 'buddha.tool'; tool: string; summary: string }
+  | { t: 'assistant.delta'; text: string }
+  | { t: 'assistant.text'; text: string }
+  | { t: 'assistant.tool'; tool: string; summary: string }
   /** The session's own `/loop` machinery firing or ending (ScheduleWakeup, CronCreate, CronDelete): what `SessionSummary.autonomy`'s loop derivation reads. `nextAt`: its next scheduled wake-up, epoch ms, when known. */
   | { t: 'loop.wake'; nextAt: number | null; stop: boolean }
-  | { t: 'monk.summoned'; monkId: string; agentType: string; description: string; prompt: string; depth: number }
-  | { t: 'monk.tool'; monkId: string; tool: string; summary: string }
-  | { t: 'monk.text'; monkId: string; text: string }
-  | { t: 'monk.progress'; monkId: string; description: string; tokens: number; toolUses: number }
-  | { t: 'monk.done'; monkId: string; status: Exclude<MonkStatus, 'working'>; summary: string }
+  | { t: 'subagent.started'; subagentId: string; agentType: string; description: string; prompt: string; depth: number }
+  | { t: 'subagent.tool'; subagentId: string; tool: string; summary: string }
+  | { t: 'subagent.text'; subagentId: string; text: string }
+  | { t: 'subagent.progress'; subagentId: string; description: string; tokens: number; toolUses: number }
+  | { t: 'subagent.done'; subagentId: string; status: Exclude<SubagentStatus, 'working'>; summary: string }
   | { t: 'turn.done'; ok: boolean; costUsdEquiv: number; durationMs: number; usage: Usage }
   | { t: 'quota'; quota: Quota }
   | { t: 'busy'; busy: boolean }
@@ -62,7 +62,7 @@ export type MonasteryEvent =
   | { t: 'tool.error'; tool: string; server: string; message: string }
 
 /** An event as stored and streamed: numbered per session, timestamped. */
-export type Envelope = { seq: number; at: number; ev: MonasteryEvent }
+export type Envelope = { seq: number; at: number; ev: SessionEvent }
 
 /**
  * What a session runs as. Either the Sangha role (lead) or an agent defined by the
@@ -76,13 +76,12 @@ export type AgentOption = {
   model: string | null
 }
 
-/** A git repository (or plain folder) under workspaces/. Its color tints its sessions. */
+/** A git repository (or plain folder) under workspaces/. */
 export type ProjectInfo = {
   name: string
   /** Absolute path: under workspaces/, or anywhere on this machine for a local project. */
   path: string
   local: boolean
-  color: string
   isGit: boolean
   branch: string | null
   agents: AgentOption[]
@@ -92,7 +91,7 @@ export type ProjectInfo = {
 export type ProjectSuggestion = { name: string; path: string; lastUsed: number }
 
 /** The single orchestrator: a dispatcher session that can start and follow sessions for you. */
-export const BUDDHA_SESSION_ID = 'buddha'
+export const ORCHESTRATOR_SESSION_ID = 'orchestrator'
 
 /** What a session thinks with: 'claude' (your subscription), or the id of a provider you added (e.g. OVH AI endpoints). */
 export type Engine = string
@@ -169,7 +168,7 @@ export type SessionInfo = {
  */
 export type SessionStatus = 'working' | 'waiting' | 'idle' | 'error' | 'interrupted'
 
-export type NoviceSummary = { monkId: string; agentType: string; description: string; lastTool: { tool: string; summary: string } | null }
+export type SubagentSummary = { subagentId: string; agentType: string; description: string; lastTool: { tool: string; summary: string } | null }
 
 /** See `SessionSummary.autonomy`. */
 export type AutonomyState =
@@ -182,7 +181,7 @@ export type SessionSummary = SessionInfo & {
   activity: string | null
   /** While it works: what it is doing overall, in one short sentence (a small model's summary). */
   doing: string | null
-  novices: NoviceSummary[]
+  subagents: SubagentSummary[]
   /** Recap of its last piece of work, while it waits for you. */
   recap: SessionRecap | null
   /** A Claude Code session started outside Sangha (e.g. in a terminal). */
@@ -192,7 +191,7 @@ export type SessionSummary = SessionInfo & {
   /** Muted: it stays quiet (no highlight, sound or notification) even when it waits for you. */
   silenced: boolean
   /** Set aside: kept in a separate stack on the board instead of with its project. */
-  lotus: boolean
+  setAside: boolean
   /** Your own note about it, shown with it on the board (null when there is none). */
   note: string | null
   /** A standing instruction of yours (e.g. "be concise"), recalled to it with each of your messages. */
@@ -217,12 +216,12 @@ export type SessionSummary = SessionInfo & {
   /** Starting fresh in a new session: asked and awaiting its answer, or postponed (asked again 100K later). */
   renewal: 'asked' | 'postponed' | null
   /** The orchestrator hands it off to a fresh session: when it asks next, or that it awaits the answer, or was refused. */
-  shepherd: { state: 'pending' | 'asked' | 'refused'; nextAt: number; note: string | null } | null
+  handoff: { state: 'pending' | 'asked' | 'refused'; nextAt: number; note: string | null } | null
   /** Folder the session works in (its worktree, or the project itself). */
   cwd: string | null
   /** The pull request of the branch checked out in its folder, once it opened one (draft included). */
   pr: PullRequest | null
-  /** Scripts it left running in the background (subagents excepted: see `novices`), oldest first. */
+  /** Scripts it left running in the background (subagents excepted: see `subagents`), oldest first. */
   scripts: BackgroundScript[]
   /** While its conversation is driven from claude.ai: the Remote Control link (Sangha's own process stays off). */
   remote?: string | null
@@ -296,7 +295,7 @@ export type CostReport = {
 }
 
 /** A closed session: kept in the closed sessions history, and it can be reopened. */
-export type NirvanaEntry = {
+export type ClosedSession = {
   id: string
   project: string
   agent: string
@@ -325,13 +324,13 @@ export type GlobalEvent =
   /** The quota reserve changed (set by you, or reached / released as the quota moves). */
   | { kind: 'reserve'; reserve: QuotaReserveState }
   /** The closed sessions history changed (a session was closed, a summary was written, one was reopened): reload it. */
-  | { kind: 'nirvana' }
+  | { kind: 'closed' }
   /** Projects were added or removed: reload them. */
   | { kind: 'projects' }
   /** The machine Sangha runs on, sampled every few seconds (see HostReport). */
   | { kind: 'host'; host: HostReport }
   /** The Advisor's count of `proposed` topics changed, or a run started or ended. */
-  | { kind: 'elder'; proposed: number; running: boolean }
+  | { kind: 'advisor'; proposed: number; running: boolean }
 
 /** ok: fine; warn: getting tight; red: saturated. */
 export type HostLevel = 'ok' | 'warn' | 'red'
@@ -368,10 +367,10 @@ export type HostWorktree = {
   sessionNote: string | null
   status: SessionStatus | null
   /**
-   * What it is: a session's own worktree (`priest`); one a session made for its subagents / parallel epics
+   * What it is: a session's own worktree (`session`); one a session made for its subagents / parallel epics
    * (e.g. `kiat-team-lead-bc7d86-e181`, or Claude Code's `.claude/worktrees/agent-*`); or an orphan nobody claims. Values are wire values.
    */
-  kind: 'priest' | 'subagent' | 'orphan'
+  kind: 'session' | 'subagent' | 'orphan'
   /** For a subagent worktree: the session that made it (live or closed), with its note. */
   owner: { sessionId: string; note: string | null; title: string; alive: boolean; working: boolean } | null
   /** Safety facts, checked on disk: uncommitted changes, commits on no remote branch, a process running inside. */
@@ -393,7 +392,7 @@ export type HostWorktree = {
  * runs it). `sessionId`: the session concerned, e.g. to close it and free its worktree.
  */
 /** An AI search through closed sessions: the matching sessions, best first, each with why it matches. */
-export type NirvanaSearchResult = { results: { id: string; reason: string }[] }
+export type ClosedSearchResult = { results: { id: string; reason: string }[] }
 
 export type HostSuggestion = {
   id: string
@@ -434,11 +433,11 @@ export type HostReport = {
 }
 
 /** Visual identity of a subagent, served by the server so web and agent config stay in one place. */
-export type MonkProfile = {
+export type SubagentProfile = {
   agentType: string
   name: string
   role: string
-  robe: string // CSS color
+  color: string // CSS color
   model: string
 }
 
@@ -513,26 +512,26 @@ export type Feedback = {
   processedAt: number | null
 }
 
-export type ElderTopicStatus = 'proposed' | 'accepted' | 'rejected' | 'done'
+export type AdvisorTopicStatus = 'proposed' | 'accepted' | 'rejected' | 'done'
 
 /** An improvement suggestion. `scope`: 'manual' | 'sangha' | 'project:<name>'. */
-export type ElderTopic = {
+export type AdvisorTopic = {
   id: string
   scope: string
   title: string
   detail: string
   /** Ids of the feedback and sessions that support it. */
   evidence: string[]
-  status: ElderTopicStatus
+  status: AdvisorTopicStatus
   createdAt: number
   updatedAt: number
 }
 
-export type ElderReportKind = 'daily' | 'weekly' | 'conversation' | 'manual' | 'skipped'
+export type AdvisorReportKind = 'daily' | 'weekly' | 'conversation' | 'manual' | 'skipped'
 
-export type ElderReport = {
+export type AdvisorReport = {
   id: string
-  kind: ElderReportKind
+  kind: AdvisorReportKind
   text: string
   /** Topics created or updated by this report. */
   topicIds: string[]
@@ -541,9 +540,9 @@ export type ElderReport = {
   createdAt: number
 }
 
-export type ElderChatTurn = { id: number; role: 'user' | 'elder'; text: string; createdAt: number }
+export type AdvisorChatTurn = { id: number; role: 'user' | 'advisor'; text: string; createdAt: number }
 
-export type ElderSettings = {
+export type AdvisorSettings = {
   enabled: boolean
   /** A ModelChoice id: 'sonnet' by default, or '<provider>::<model>'. */
   model: string
@@ -560,20 +559,20 @@ export type ElderSettings = {
 }
 
 /** A partial settings change: nested objects can be partial too. */
-export type ElderSettingsPatch = Partial<Omit<ElderSettings, 'levels' | 'weekly'>> & {
-  levels?: Partial<ElderSettings['levels']>
-  weekly?: Partial<ElderSettings['weekly']>
+export type AdvisorSettingsPatch = Partial<Omit<AdvisorSettings, 'levels' | 'weekly'>> & {
+  levels?: Partial<AdvisorSettings['levels']>
+  weekly?: Partial<AdvisorSettings['weekly']>
 }
 
-export type ElderState = {
-  settings: ElderSettings
+export type AdvisorState = {
+  settings: AdvisorSettings
   /** Best effort: the real decision is still `due()`'s. */
   nextRunAt: number | null
   running: boolean
   lastError: string | null
-  topics: ElderTopic[]
+  topics: AdvisorTopic[]
   /** The latest 10. */
-  reports: ElderReport[]
+  reports: AdvisorReport[]
   /** The latest 20 messages. */
-  chat: ElderChatTurn[]
+  chat: AdvisorChatTurn[]
 }

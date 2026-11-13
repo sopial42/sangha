@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { extname, join } from 'node:path'
-import { HANDOFF_DIR } from './shepherd'
+import { HANDOFF_DIR } from './handoff'
 import { UserError } from './session'
 
 const IMAGE = /\.(png|jpe?g|heic|tiff?)$/i

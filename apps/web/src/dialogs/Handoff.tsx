@@ -11,7 +11,7 @@ import { Modal, message } from './Modal'
  * Hands a session to the Orchestrator, who moves it to a fresh session at the right moment. What you
  * write here (as long as needed) goes to a file under /tmp that the fresh session reads first, like a skill.
  */
-export function ShepherdDialog({ id, onClose }: { id: string; onClose: () => void }) {
+export function HandoffDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const session = useApp((s) => s.sessions[id])
   const [context, setContext] = useState('')
   const [busy, setBusy] = useState(false)
@@ -23,7 +23,7 @@ export function ShepherdDialog({ id, onClose }: { id: string; onClose: () => voi
     setBusy(true)
     setError(null)
     try {
-      await api.shepherd(id, true, context.trim() || undefined)
+      await api.handoff(id, true, context.trim() || undefined)
       onClose()
     } catch (err) {
       setError(message(err))
@@ -45,20 +45,20 @@ export function ShepherdDialog({ id, onClose }: { id: string; onClose: () => voi
           <Button variant="ghost" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button type="submit" form="shepherd-form" disabled={busy}>
+          <Button type="submit" form="handoff-form" disabled={busy}>
             Hand off
           </Button>
         </>
       }
     >
-      <form id="shepherd-form" onSubmit={handOff}>
+      <form id="handoff-form" onSubmit={handOff}>
         <FieldGroup>
           <Field>
-            <FieldLabel htmlFor="shepherd-context">
+            <FieldLabel htmlFor="handoff-context">
               Context for the fresh session <span className="font-normal text-muted-foreground">(optional)</span>
             </FieldLabel>
             <Textarea
-              id="shepherd-context"
+              id="handoff-context"
               autoFocus
               className="min-h-72 text-small"
               value={context}

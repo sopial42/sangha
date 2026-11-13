@@ -11,9 +11,9 @@ const ClosedSessions = lazy(() => import('./ClosedSessions').then((m) => ({ defa
 const Costs = lazy(() => import('./Costs').then((m) => ({ default: m.Costs })))
 const McpDialog = lazy(() => import('./Mcp').then((m) => ({ default: m.McpDialog })))
 const McpLibraryDialog = lazy(() => import('./Mcp').then((m) => ({ default: m.McpLibraryDialog })))
-const ElderDialog = lazy(() => import('./Elder').then((m) => ({ default: m.ElderDialog })))
+const AdvisorDialog = lazy(() => import('./Advisor').then((m) => ({ default: m.AdvisorDialog })))
 const EnvDialog = lazy(() => import('./Env').then((m) => ({ default: m.EnvDialog })))
-const ShepherdDialog = lazy(() => import('./Shepherd').then((m) => ({ default: m.ShepherdDialog })))
+const HandoffDialog = lazy(() => import('./Handoff').then((m) => ({ default: m.HandoffDialog })))
 const AutonomyDialog = lazy(() => import('./Autonomy').then((m) => ({ default: m.AutonomyDialog })))
 const GitIdentityDialog = lazy(() => import('./GitIdentity').then((m) => ({ default: m.GitIdentityDialog })))
 const Providers = lazy(() => import('./Providers').then((m) => ({ default: m.Providers })))
@@ -35,8 +35,8 @@ function pick(dialog: NonNullable<ReturnType<typeof useApp.getState>['dialog']>,
     case 'remove-project':
       return <RemoveProject name={dialog.name} onClose={close} />
     case 'note':
-      return <NoteEditor id={dialog.id} lotus={dialog.lotus} onClose={close} />
-    case 'nirvana':
+      return <NoteEditor id={dialog.id} setAside={dialog.setAside} onClose={close} />
+    case 'closed-sessions':
       return <ClosedSessions onClose={close} />
     case 'costs':
       return <Costs onClose={close} />
@@ -44,8 +44,8 @@ function pick(dialog: NonNullable<ReturnType<typeof useApp.getState>['dialog']>,
       return <Providers onClose={close} />
     case 'git':
       return <GitIdentityDialog onClose={close} />
-    case 'shepherd':
-      return <ShepherdDialog id={dialog.id} onClose={close} />
+    case 'handoff':
+      return <HandoffDialog id={dialog.id} onClose={close} />
     case 'env':
       return <EnvDialog id={dialog.id} onClose={close} />
     case 'autonomy':
@@ -59,7 +59,7 @@ function pick(dialog: NonNullable<ReturnType<typeof useApp.getState>['dialog']>,
       return <McpLibraryDialog onClose={() => set({ dialog: { kind: 'mcp' } })} />
     case 'dismiss':
       return <Dismiss id={dialog.id} onClose={close} />
-    case 'elder':
-      return <ElderDialog onClose={close} />
+    case 'advisor':
+      return <AdvisorDialog onClose={close} />
   }
 }

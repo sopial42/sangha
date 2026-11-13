@@ -55,8 +55,8 @@ export class CostMeter {
   /** Cost of a session: its transcript plus its subagents' (subagents/*.jsonl next to it). */
   session(transcript: string): number {
     const dir = join(transcript.replace(/\.jsonl$/, ''), 'subagents')
-    const novices = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')).map((f) => join(dir, f)) : []
-    return [transcript, ...novices].reduce((sum, f) => sum + this.file(f), 0)
+    const subagents = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')).map((f) => join(dir, f)) : []
+    return [transcript, ...subagents].reduce((sum, f) => sum + this.file(f), 0)
   }
 
   private file(path: string): number {

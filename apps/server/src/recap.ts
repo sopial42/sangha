@@ -1,5 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { NirvanaSearchResult, RecapState, SessionRecap } from '@sangha/shared'
+import type { ClosedSearchResult, RecapState, SessionRecap } from '@sangha/shared'
 import { cleanScriptSummary, scriptPrompt } from './scripts'
 
 const RECAP_MODEL = process.env.SANGHA_RECAP_MODEL ?? 'haiku'
@@ -7,7 +7,7 @@ const MAX_INPUT = 8000
 
 export type Recap = SessionRecap
 
-const STATES: RecapState[] = ['fini', 'question', 'attente']
+const STATES: RecapState[] = ['done', 'question', 'waiting']
 
 const SCHEMA = {
   type: 'object',
@@ -17,7 +17,7 @@ const SCHEMA = {
     state: {
       type: 'string',
       enum: STATES,
-      description: '"fini": the task is done and it is waiting for nothing. "question": it asks a question or waits for a decision from the user. "attente": it waits for something that runs without the user (CI, deployment, review, computation, another agent).',
+      description: '"done": the task is done and it is waiting for nothing. "question": it asks a question or waits for a decision from the user. "waiting": it waits for something that runs without the user (CI, deployment, review, computation, another agent).',
     },
   },
   required: ['done', 'next', 'state'],
@@ -34,7 +34,7 @@ Read its last message above all: if it is waiting for something that runs withou
 a review, a computation, another agent), say so ("Waiting for CI results before merging"): that is not an
 instruction for the user. If it asks a question or waits for a decision, say which one.
 Only if everything is done and it waits for nothing: "next" = "Nothing: it is waiting for your next instruction."
-"state" classifies this stop: "fini", "question" (even a simple offer like "shall I do it?") or "attente".
+"state" classifies this stop: "done", "question" (even a simple offer like "shall I do it?") or "waiting".
 Very short user messages ("go on", "continue", "ok") say nothing about the task: rely on the earlier
 exchanges.
 ${STYLE}`
@@ -159,7 +159,7 @@ export async function scriptSummary(command: string, title: string): Promise<str
 }
 
 /** One closed session, as fed to the model: enough to judge whether it answers the question. */
-export type NirvanaSearchEntry = {
+export type ClosedSearchEntry = {
   id: string
   /** archivedAt, "YYYY-MM-DD". */
   date: string
@@ -172,7 +172,7 @@ export type NirvanaSearchEntry = {
   summary: string | null
 }
 
-const NIRVANA_SEARCH_SCHEMA = {
+const CLOSED_SEARCH_SCHEMA = {
   type: 'object',
   properties: {
     results: {
@@ -192,7 +192,7 @@ const NIRVANA_SEARCH_SCHEMA = {
   additionalProperties: false,
 }
 
-const NIRVANA_SEARCH_SYSTEM = `You search a list of a user's past agent sessions (closed ones, kept in Sangha) to answer
+const CLOSED_SEARCH_SYSTEM = `You search a list of a user's past agent sessions (closed ones, kept in Sangha) to answer
 one of their questions. Each line below is one session: its id, the date it was closed, the project and git branch
 it worked on, which agent ran it, the user's own short note about it if they left one, its title (their first
 message, truncated) and a one- or two-sentence summary of what happened in it.
@@ -201,18 +201,18 @@ ids that appear below: never invent one.
 Answer with strict JSON only: {"results":[{"id":"...","reason":"..."}]}.
 Write every "reason" as one short sentence in English explaining why that session matches.`
 
-function nirvanaSearchLine(e: NirvanaSearchEntry): string {
+function closedSearchLine(e: ClosedSearchEntry): string {
   return `id=${e.id} date=${e.date} project=${e.project} branch=${e.branch ?? '-'} agent=${e.agent} note=${e.note ?? '-'} title=${e.title} summary=${e.summary ?? '-'}`
 }
 
 /** The model's whole input: one compact line per entry, then the question, in that order, so a
  * truncation from the tail (see `ask`) drops the oldest entries rather than the question itself. */
-export function buildNirvanaSearchPrompt(entries: NirvanaSearchEntry[], question: string): string {
-  return [...entries.map(nirvanaSearchLine), '', `QUESTION: ${question}`].join('\n')
+export function buildClosedSearchPrompt(entries: ClosedSearchEntry[], question: string): string {
+  return [...entries.map(closedSearchLine), '', `QUESTION: ${question}`].join('\n')
 }
 
 /** The model's raw answer, filtered down to known ids, well-shaped entries, at most 15, order kept. */
-export function parseNirvanaSearchResult(raw: unknown, validIds: Set<string>): NirvanaSearchResult {
+export function parseClosedSearchResult(raw: unknown, validIds: Set<string>): ClosedSearchResult {
   const list = raw && typeof raw === 'object' && Array.isArray((raw as { results?: unknown }).results) ? (raw as { results: unknown[] }).results : []
   const results = list
     .filter((r): r is { id: string; reason: string } => {
@@ -225,10 +225,10 @@ export function parseNirvanaSearchResult(raw: unknown, validIds: Set<string>): N
 }
 
 /** Which closed sessions best answer a question, best first: a small model reads a compact line per session. */
-export async function nirvanaSearch(entries: NirvanaSearchEntry[], question: string): Promise<NirvanaSearchResult> {
-  const prompt = buildNirvanaSearchPrompt(entries, question)
-  const out = await ask<{ results: unknown }>(NIRVANA_SEARCH_SYSTEM, NIRVANA_SEARCH_SCHEMA, prompt, 40_000)
-  return parseNirvanaSearchResult(out, new Set(entries.map((e) => e.id)))
+export async function searchClosed(entries: ClosedSearchEntry[], question: string): Promise<ClosedSearchResult> {
+  const prompt = buildClosedSearchPrompt(entries, question)
+  const out = await ask<{ results: unknown }>(CLOSED_SEARCH_SYSTEM, CLOSED_SEARCH_SCHEMA, prompt, 40_000)
+  return parseClosedSearchResult(out, new Set(entries.map((e) => e.id)))
 }
 
 /** One worktree left on disk, as fed to the model: enough to judge what it was for and whether it still matters. */

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { SentIcon, ThumbsDownIcon, ThumbsUpIcon } from '@hugeicons/core-free-icons'
-import type { ElderSettingsPatch, ElderState, ElderTopic, ElderTopicStatus } from '@sangha/shared'
+import type { AdvisorSettingsPatch, AdvisorState, AdvisorTopic, AdvisorTopicStatus } from '@sangha/shared'
 import { api, openSession } from '@/api'
 import { nameOf } from '@/lib/sessions'
 import { cn } from '@/lib/utils'
@@ -21,10 +21,10 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { Modal, message } from './Modal'
 import { clock } from '@/lib/time'
 
-const ELDER_STATUS_LABEL: Record<ElderTopicStatus | 'all', string> = { all: 'All', proposed: 'Proposed', accepted: 'Accepted', rejected: 'Rejected', done: 'Done' }
-const ELDER_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const ELDER_LEVEL_LABEL: Record<'manual' | 'sangha' | 'project', string> = { manual: 'Manual feedback', sangha: 'Sangha', project: 'Projects' }
-const REPORT_KIND: Record<ElderState['reports'][number]['kind'], string> = {
+const ADVISOR_STATUS_LABEL: Record<AdvisorTopicStatus | 'all', string> = { all: 'All', proposed: 'Proposed', accepted: 'Accepted', rejected: 'Rejected', done: 'Done' }
+const ADVISOR_WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+const ADVISOR_LEVEL_LABEL: Record<'manual' | 'sangha' | 'project', string> = { manual: 'Manual feedback', sangha: 'Sangha', project: 'Projects' }
+const REPORT_KIND: Record<AdvisorState['reports'][number]['kind'], string> = {
   daily: 'Daily',
   weekly: 'Weekly',
   conversation: 'End of conversation',
@@ -33,7 +33,7 @@ const REPORT_KIND: Record<ElderState['reports'][number]['kind'], string> = {
 }
 
 /** 'manual' → Manual feedback, 'sangha' → Sangha, 'project:<name>' → Project <name>. */
-function elderScopeLabel(scope: string): string {
+function advisorScopeLabel(scope: string): string {
   if (scope === 'manual') return 'Manual feedback'
   if (scope === 'sangha') return 'Sangha'
   const project = /^project:(.+)$/.exec(scope)?.[1]
@@ -41,7 +41,7 @@ function elderScopeLabel(scope: string): string {
 }
 
 /** A topic's evidence: a link to the conversation when it's a session still known here, a quiet word otherwise. */
-export function ElderEvidence({ evidence }: { evidence: string[] }) {
+export function AdvisorEvidence({ evidence }: { evidence: string[] }) {
   const sessions = useApp((s) => s.sessions)
   if (!evidence.length) return null
   return (
@@ -69,32 +69,32 @@ export function ElderEvidence({ evidence }: { evidence: string[] }) {
  * own, the projects you actually follow as checkboxes, a day and an hour for the weekly pass), never a
  * raw string to type by hand.
  */
-export function ElderDialog({ onClose }: { onClose: () => void }) {
+export function AdvisorDialog({ onClose }: { onClose: () => void }) {
   const projects = useApp((s) => s.projects)
   const models = useApp((s) => s.models)
-  const elderBadge = useApp((s) => s.elderBadge)
-  const [state, setState] = useState<ElderState | null>(null)
+  const advisorBadge = useApp((s) => s.advisorBadge)
+  const [state, setState] = useState<AdvisorState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [tab, setTab] = useState<'topics' | 'reports' | 'chat' | 'settings'>('topics')
-  const [statusFilter, setStatusFilter] = useState<ElderTopicStatus | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<AdvisorTopicStatus | 'all'>('all')
   const [chatText, setChatText] = useState('')
   const [chatBusy, setChatBusy] = useState(false)
   const [running, setRunning] = useState(false)
 
-  const load = () => api.elder().then(setState, (e: unknown) => setError(message(e)))
+  const load = () => api.advisor().then(setState, (e: unknown) => setError(message(e)))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => void load(), [])
   // Its badge changed (a pass started, ended, or a topic count moved): the open panel follows along.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => void (state && load()), [elderBadge?.proposed, elderBadge?.running])
+  useEffect(() => void (state && load()), [advisorBadge?.proposed, advisorBadge?.running])
 
-  const vote = (id: string, v: 'up' | 'down') => api.voteElderTopic(id, v).then(load, (e: unknown) => setError(message(e)))
-  const markDone = (id: string) => api.doneElderTopic(id).then(load, (e: unknown) => setError(message(e)))
+  const vote = (id: string, v: 'up' | 'down') => api.voteAdvisorTopic(id, v).then(load, (e: unknown) => setError(message(e)))
+  const markDone = (id: string) => api.doneAdvisorTopic(id).then(load, (e: unknown) => setError(message(e)))
   const runNow = async () => {
     setRunning(true)
     setError(null)
     try {
-      await api.runElderNow()
+      await api.runAdvisorNow()
       await load()
     } catch (e) {
       setError(message(e))
@@ -108,7 +108,7 @@ export function ElderDialog({ onClose }: { onClose: () => void }) {
     setChatBusy(true)
     setError(null)
     try {
-      await api.askElder(text)
+      await api.askAdvisor(text)
       setChatText('')
       await load()
     } catch (e) {
@@ -117,7 +117,7 @@ export function ElderDialog({ onClose }: { onClose: () => void }) {
       setChatBusy(false)
     }
   }
-  const saveSettings = (patch: ElderSettingsPatch) => api.saveElderSettings(patch).then(load, (e: unknown) => setError(message(e)))
+  const saveSettings = (patch: AdvisorSettingsPatch) => api.saveAdvisorSettings(patch).then(load, (e: unknown) => setError(message(e)))
   const toggleProject = (name: string) => {
     if (!state) return
     const next = state.settings.projects.includes(name) ? state.settings.projects.filter((p) => p !== name) : [...state.settings.projects, name]
@@ -139,8 +139,8 @@ export function ElderDialog({ onClose }: { onClose: () => void }) {
       </Modal>
     )
 
-  const byScope = (topics: ElderTopic[]) => {
-    const groups = new Map<string, ElderTopic[]>()
+  const byScope = (topics: AdvisorTopic[]) => {
+    const groups = new Map<string, AdvisorTopic[]>()
     for (const t of topics) groups.set(t.scope, [...(groups.get(t.scope) ?? []), t])
     return [...groups.entries()]
   }
@@ -151,7 +151,7 @@ export function ElderDialog({ onClose }: { onClose: () => void }) {
     ...(models.some((m) => m.id === state.settings.model) ? [] : [{ value: state.settings.model, label: state.settings.model }]),
     ...models.map((m) => ({ value: m.id, label: m.label })),
   ]
-  const weekdayItems = ELDER_WEEKDAYS.map((d, i) => ({ value: String(i), label: d }))
+  const weekdayItems = ADVISOR_WEEKDAYS.map((d, i) => ({ value: String(i), label: d }))
 
   return (
     <Modal
@@ -208,38 +208,38 @@ export function ElderDialog({ onClose }: { onClose: () => void }) {
               spacing={0}
               value={[statusFilter]}
               onValueChange={(v) => {
-                const next = v[0] as ElderTopicStatus | 'all' | undefined
+                const next = v[0] as AdvisorTopicStatus | 'all' | undefined
                 if (next) setStatusFilter(next)
               }}
               aria-label="Filter topics by status"
             >
               {(['all', 'proposed', 'accepted', 'rejected', 'done'] as const).map((f) => (
                 <ToggleGroupItem key={f} value={f} className="px-3">
-                  {ELDER_STATUS_LABEL[f]}
+                  {ADVISOR_STATUS_LABEL[f]}
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
             {topics.length === 0 ? (
               <Empty>
                 <EmptyHeader>
-                  <EmptyTitle>No {statusFilter === 'all' ? '' : `${ELDER_STATUS_LABEL[statusFilter].toLowerCase()} `}topics yet</EmptyTitle>
+                  <EmptyTitle>No {statusFilter === 'all' ? '' : `${ADVISOR_STATUS_LABEL[statusFilter].toLowerCase()} `}topics yet</EmptyTitle>
                   <EmptyDescription>The Advisor proposes topics after each pass.</EmptyDescription>
                 </EmptyHeader>
               </Empty>
             ) : (
               byScope(topics).map(([scope, list]) => (
                 <section key={scope} className="flex flex-col gap-2">
-                  <h3 className="text-meta font-semibold text-muted-foreground">{elderScopeLabel(scope)}</h3>
+                  <h3 className="text-meta font-semibold text-muted-foreground">{advisorScopeLabel(scope)}</h3>
                   <ItemGroup className="gap-2">
                     {list.map((t) => (
                       <Item key={t.id} variant="outline" className="items-start">
                         <ItemContent className="min-w-0">
                           <ItemTitle className="line-clamp-none">
                             {t.title}
-                            <span className="text-meta font-normal text-muted-foreground">{ELDER_STATUS_LABEL[t.status]}</span>
+                            <span className="text-meta font-normal text-muted-foreground">{ADVISOR_STATUS_LABEL[t.status]}</span>
                           </ItemTitle>
                           <ItemDescription className="line-clamp-none text-small whitespace-pre-wrap">{t.detail}</ItemDescription>
-                          <ElderEvidence evidence={t.evidence} />
+                          <AdvisorEvidence evidence={t.evidence} />
                         </ItemContent>
                         <ItemActions>
                           {t.status === 'accepted' && (
@@ -332,10 +332,10 @@ export function ElderDialog({ onClose }: { onClose: () => void }) {
             <FieldGroup>
               <Field orientation="horizontal">
                 <FieldContent>
-                  <FieldLabel htmlFor="elder-enabled">On</FieldLabel>
+                  <FieldLabel htmlFor="advisor-enabled">On</FieldLabel>
                   <FieldDescription>Runs passes on the schedule below.</FieldDescription>
                 </FieldContent>
-                <Switch id="elder-enabled" checked={state.settings.enabled} onCheckedChange={(checked) => saveSettings({ enabled: checked })} />
+                <Switch id="advisor-enabled" checked={state.settings.enabled} onCheckedChange={(checked) => saveSettings({ enabled: checked })} />
               </Field>
               <Field>
                 <FieldLabel>Model</FieldLabel>
@@ -361,9 +361,9 @@ export function ElderDialog({ onClose }: { onClose: () => void }) {
                 <FieldLegend variant="label">What it reads</FieldLegend>
                 {(['manual', 'sangha', 'project'] as const).map((lvl) => (
                   <Field key={lvl} orientation="horizontal">
-                    <Checkbox id={`elder-level-${lvl}`} checked={state.settings.levels[lvl]} onCheckedChange={(checked) => saveSettings({ levels: { [lvl]: checked } })} />
-                    <FieldLabel htmlFor={`elder-level-${lvl}`} className="font-normal">
-                      {ELDER_LEVEL_LABEL[lvl]}
+                    <Checkbox id={`advisor-level-${lvl}`} checked={state.settings.levels[lvl]} onCheckedChange={(checked) => saveSettings({ levels: { [lvl]: checked } })} />
+                    <FieldLabel htmlFor={`advisor-level-${lvl}`} className="font-normal">
+                      {ADVISOR_LEVEL_LABEL[lvl]}
                     </FieldLabel>
                   </Field>
                 ))}
@@ -376,8 +376,8 @@ export function ElderDialog({ onClose }: { onClose: () => void }) {
                   ) : (
                     projects.map((p) => (
                       <Field key={p.name} orientation="horizontal">
-                        <Checkbox id={`elder-project-${p.name}`} checked={state.settings.projects.includes(p.name)} onCheckedChange={() => toggleProject(p.name)} />
-                        <FieldLabel htmlFor={`elder-project-${p.name}`} className="font-normal">
+                        <Checkbox id={`advisor-project-${p.name}`} checked={state.settings.projects.includes(p.name)} onCheckedChange={() => toggleProject(p.name)} />
+                        <FieldLabel htmlFor={`advisor-project-${p.name}`} className="font-normal">
                           {p.name}
                         </FieldLabel>
                       </Field>
@@ -386,8 +386,8 @@ export function ElderDialog({ onClose }: { onClose: () => void }) {
                 </FieldSet>
               )}
               <Field>
-                <FieldLabel htmlFor="elder-daily">Daily time</FieldLabel>
-                <Input id="elder-daily" type="time" className="w-32" value={state.settings.dailyAt} onChange={(e) => saveSettings({ dailyAt: e.target.value })} />
+                <FieldLabel htmlFor="advisor-daily">Daily time</FieldLabel>
+                <Input id="advisor-daily" type="time" className="w-32" value={state.settings.dailyAt} onChange={(e) => saveSettings({ dailyAt: e.target.value })} />
                 <FieldDescription>Used with a provider model.</FieldDescription>
               </Field>
               <FieldSet>
@@ -410,13 +410,13 @@ export function ElderDialog({ onClose }: { onClose: () => void }) {
                     </Select>
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="elder-weekly-at">Time</FieldLabel>
-                    <Input id="elder-weekly-at" type="time" value={state.settings.weekly.at} onChange={(e) => saveSettings({ weekly: { at: e.target.value } })} />
+                    <FieldLabel htmlFor="advisor-weekly-at">Time</FieldLabel>
+                    <Input id="advisor-weekly-at" type="time" value={state.settings.weekly.at} onChange={(e) => saveSettings({ weekly: { at: e.target.value } })} />
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="elder-quota">Max quota used (%)</FieldLabel>
+                    <FieldLabel htmlFor="advisor-quota">Max quota used (%)</FieldLabel>
                     <Input
-                      id="elder-quota"
+                      id="advisor-quota"
                       type="number"
                       min={0}
                       max={100}
@@ -427,9 +427,9 @@ export function ElderDialog({ onClose }: { onClose: () => void }) {
                 </div>
               </FieldSet>
               <Field>
-                <FieldLabel htmlFor="elder-max-chars">Context limit (characters)</FieldLabel>
+                <FieldLabel htmlFor="advisor-max-chars">Context limit (characters)</FieldLabel>
                 <Input
-                  id="elder-max-chars"
+                  id="advisor-max-chars"
                   type="number"
                   className="w-40"
                   min={1000}

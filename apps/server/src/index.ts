@@ -5,7 +5,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE, type SSEStreamingApi } from 'hono/streaming'
 import type { Envelope, GitIdentity, GlobalEvent, HostChatTurn, HostSuggestion, Provider, QuotaReserve } from '@sangha/shared'
-import { buddhaOptions } from './buddha'
+import { orchestratorOptions } from './orchestrator'
 import { assertQuotaOnly, config } from './config'
 import { probeModels } from './providers'
 import { Store } from './db'
@@ -16,13 +16,13 @@ import { library } from './library'
 import { askAboutSuggestion } from './hostChat'
 import { QuotaReserveSetting } from './quotaReserve'
 import { attachLatestScreenshot } from './screenshot'
-import { profiles } from './monks'
+import { profiles } from './subagents'
 import { readNewLines, readTailLines } from './files'
 import { EXTERNAL_PREFIX, Observer } from './observer'
 import { Projects } from './projects'
 import { type CreateSession, Sessions, UserError } from './session'
-import { noviceLog, parseLine, TranscriptReader } from './transcript'
-import { Elder } from './elder'
+import { subagentLog, parseLine, TranscriptReader } from './transcript'
+import { Advisor } from './advisor'
 
 assertQuotaOnly()
 
@@ -32,7 +32,7 @@ const projects = new Projects(store)
 const gitIdentity = new GitIdentitySetting(dirname(config.dbPath), () => store.setting<GitIdentity>('gitIdentity'), (v) => store.setSetting('gitIdentity', v))
 // The share of the plan quota you ask Sangha to always keep unused (see quotaReserve).
 const quotaReserve = new QuotaReserveSetting(() => store.setting<QuotaReserve>('quotaReserve'), (v) => store.setSetting('quotaReserve', v))
-const sessions = new Sessions(store, projects, (s) => buddhaOptions(s, projects), quotaReserve, gitIdentity)
+const sessions = new Sessions(store, projects, (s) => orchestratorOptions(s, projects), quotaReserve, gitIdentity)
 const observer = new Observer(
   store,
   projects,
@@ -48,8 +48,8 @@ sessions.startRenewalLoop()
 sessions.startPullsLoop()
 const host = new HostMonitor(config.workspacesDir, () => sessions.summaries(), () => sessions.archivedWorktrees(), () => sessions.blocked(), () => projects.repos())
 host.start()
-const elder = new Elder(store, sessions.providers, () => sessions.summaries(), () => sessions.quota)
-elder.start()
+const advisor = new Advisor(store, sessions.providers, () => sessions.summaries(), () => sessions.quota)
+advisor.start()
 
 const app = new Hono()
 
@@ -60,7 +60,7 @@ app.onError((err, c) => {
 })
 
 app.get('/api/health', (c) => c.json({ ok: true }))
-app.get('/api/monks', (c) => c.json(profiles()))
+app.get('/api/subagent-profiles', (c) => c.json(profiles()))
 app.get('/api/models', async (c) => c.json(await sessions.providers.choices()))
 app.get('/api/providers', (c) => c.json(sessions.providers.all()))
 app.post('/api/providers', async (c) => {
@@ -129,29 +129,29 @@ app.get('/api/projects/:name/branches', async (c) => {
 })
 
 // The Advisor: reviews feedback and how Sangha runs, makes proposals, and never changes anything itself.
-app.get('/api/elder', (c) => c.json(elder.state()))
-app.put('/api/elder/settings', async (c) => c.json(elder.setSettings(await c.req.json())))
-app.post('/api/elder/run', (c) => {
-  void elder.runPass('manual')
+app.get('/api/advisor', (c) => c.json(advisor.state()))
+app.put('/api/advisor/settings', async (c) => c.json(advisor.setSettings(await c.req.json())))
+app.post('/api/advisor/run', (c) => {
+  void advisor.runPass('manual')
   return c.body(null, 202)
 })
-app.post('/api/elder/ask', async (c) => {
+app.post('/api/advisor/ask', async (c) => {
   const { text } = await c.req.json<{ text: string }>()
   if (!text?.trim()) throw new UserError('The message is empty.')
-  return c.json(await elder.ask(text.trim()))
+  return c.json(await advisor.ask(text.trim()))
 })
-app.post('/api/elder/topics/:id/vote', async (c) => {
+app.post('/api/advisor/topics/:id/vote', async (c) => {
   const { vote } = await c.req.json<{ vote: 'up' | 'down' }>()
   if (vote !== 'up' && vote !== 'down') throw new UserError('Invalid vote.')
-  return c.json(elder.voteTopic(c.req.param('id'), vote))
+  return c.json(advisor.voteTopic(c.req.param('id'), vote))
 })
-app.post('/api/elder/topics/:id/done', (c) => c.json(elder.doneTopic(c.req.param('id'))))
+app.post('/api/advisor/topics/:id/done', (c) => c.json(advisor.doneTopic(c.req.param('id'))))
 app.post('/api/feedback', async (c) => {
   const body = await c.req.json<{ sessionId: string; eventSeq?: number; rating?: 'up' | 'down'; comment?: string }>()
   if (!body.sessionId) throw new UserError('A session is required.')
   if (!body.rating && !body.comment?.trim()) throw new UserError('A rating or a comment is required.')
   if (!store.getSession(body.sessionId)) throw new UserError('Unknown session.')
-  return c.json(elder.addFeedback(body), 201)
+  return c.json(advisor.addFeedback(body), 201)
 })
 app.get('/api/sessions/:id/feedback', (c) => c.json(store.feedbackForSession(c.req.param('id'))))
 
@@ -192,19 +192,19 @@ app.get('/api/sessions/:id/progress', async (c) => {
   return c.json({ progress: await sessions.progressOf(c.req.param('id'), c.req.query('fresh') === '1') })
 })
 // A subagent of an outside session: its own transcript (Sangha's subagents stream with their session).
-app.get('/api/sessions/:id/novices/:monkId/log', (c) => {
-  const file = observer.noviceFile(c.req.param('id'), c.req.param('monkId'))
+app.get('/api/sessions/:id/subagents/:subagentId/log', (c) => {
+  const file = observer.subagentFile(c.req.param('id'), c.req.param('subagentId'))
   if (!file) return c.json({ log: [] })
-  return c.json({ log: noviceLog(readTailLines(file, 4 * 1024 * 1024).map(parseLine).filter((l) => l !== null)) })
+  return c.json({ log: subagentLog(readTailLines(file, 4 * 1024 * 1024).map(parseLine).filter((l) => l !== null)) })
 })
 app.post('/api/sessions/:id/renew', async (c) => {
   await sessions.askRenewal(c.req.param('id'))
   return c.body(null, 202)
 })
 // The orchestrator hands the session off to a fresh one (or stops).
-app.post('/api/sessions/:id/shepherd', async (c) => {
+app.post('/api/sessions/:id/handoff', async (c) => {
   const { on, context } = await c.req.json<{ on: boolean; context?: string }>()
-  return c.json(sessions.shepherd(c.req.param('id'), on, typeof context === 'string' ? context : undefined))
+  return c.json(sessions.handoff(c.req.param('id'), on, typeof context === 'string' ? context : undefined))
 })
 app.post('/api/sessions/:id/silence', async (c) => {
   const { silent } = await c.req.json<{ silent: boolean }>()
@@ -212,9 +212,9 @@ app.post('/api/sessions/:id/silence', async (c) => {
   return c.body(null, 204)
 })
 // Set a session aside on the board, or bring it back.
-app.post('/api/sessions/:id/lotus', async (c) => {
-  const { lotus } = await c.req.json<{ lotus: boolean }>()
-  sessions.lotus(c.req.param('id'), !!lotus)
+app.post('/api/sessions/:id/set-aside', async (c) => {
+  const { setAside } = await c.req.json<{ setAside: boolean }>()
+  sessions.setAside(c.req.param('id'), !!setAside)
   return c.body(null, 204)
 })
 app.post('/api/sessions/:id/queued/:mid', async (c) => {
@@ -297,14 +297,14 @@ app.delete('/api/sessions/:id', async (c) => {
   console.log(`dismiss ${c.req.param('id').slice(0, 8)}: ${result.ok ? 'gone' : 'needs confirmation'} (${c.req.header('user-agent')?.slice(0, 60) ?? '?'})`)
   return result.ok ? c.body(null, 204) : c.json(result, 409)
 })
-app.post('/api/sessions/:id/reincarnate', async (c) => c.json(await sessions.reincarnate(c.req.param('id'))))
+app.post('/api/sessions/:id/reopen', async (c) => c.json(await sessions.reopen(c.req.param('id'))))
 
 // Closed sessions, most recently closed first.
-app.get('/api/nirvana', (c) => c.json(sessions.nirvana()))
+app.get('/api/closed-sessions', (c) => c.json(sessions.closedSessions()))
 // A small model's best guess at which closed sessions answer a question, best first.
-app.post('/api/nirvana/search', async (c) => {
+app.post('/api/closed-sessions/search', async (c) => {
   const { q } = await c.req.json<{ q?: string }>()
-  return c.json(await sessions.searchNirvana(q ?? ''))
+  return c.json(await sessions.searchClosedSessions(q ?? ''))
 })
 
 // What all sessions have cost at API prices since monitoring began.
@@ -349,14 +349,14 @@ app.get('/api/events', (c) =>
       queue.push({ kind: 'host', host: report })
       wake?.()
     })
-    const unsubscribeElder = elder.subscribe((ev) => {
+    const unsubscribeAdvisor = advisor.subscribe((ev) => {
       queue.push(ev)
       wake?.()
     })
     stream.onAbort(() => {
       unsubscribe()
       unsubscribeHost()
-      unsubscribeElder()
+      unsubscribeAdvisor()
       wake?.()
     })
     await drain(stream, queue, (ev) => stream.writeSSE({ data: JSON.stringify(ev) }), (w) => (wake = w))
@@ -439,7 +439,7 @@ const server = serve({ fetch: app.fetch, port: config.port, hostname: process.en
 const shutdown = () => {
   observer.stop()
   host.stop()
-  elder.stop()
+  advisor.stop()
   sessions.closeAll()
   server.close()
   process.exit(0)
