@@ -5,3 +5,4 @@ data
 workspaces
 .env
 .git
+apps/site

@@ -1,27 +1,31 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import type { AutonomyState, Engine, Envelope, ElderChatTurn, ElderReport, ElderTopic, Feedback, MonasteryEvent, Provider, QueuedMessage, Quota, SessionInfo } from '@sangha/shared'
+import { ORCHESTRATOR_SESSION_ID } from '@sangha/shared'
+import type { AutonomyState, Engine, Envelope, AdvisorChatTurn, AdvisorReport, AdvisorTopic, Feedback, SessionEvent, Provider, QueuedMessage, Quota, SessionInfo } from '@sangha/shared'
 
 /**
- * Sent straight to a session to end an active loop (see `Sessions.autonomy`): the exact words asked of him
- * when you stop it, so a loop still ends even if he never gets a turn to call `ScheduleWakeup(stop: true)`
- * or `CronDelete` himself (e.g. you stopped him mid-turn, or he ignores the instruction). `lastAutonomy`
- * below matches it verbatim as a second way a loop ends, alongside his own tool calls.
+ * Sent straight to a session to end an active loop (see `Sessions.autonomy`): the exact words asked of it
+ * when you stop it, so a loop still ends even if it never gets a turn to call `ScheduleWakeup(stop: true)`
+ * or `CronDelete` itself (e.g. you stopped it mid-turn, or it ignores the instruction). `lastAutonomy`
+ * below matches it verbatim as a second way a loop ends, alongside its own tool calls.
  */
-export const LOOP_STOP_MESSAGE = "Arrête la boucle /loop : ne programme plus aucun réveil (ScheduleWakeup avec stop) et supprime tes tâches CronCreate. Ne fais rien d'autre."
+export const LOOP_STOP_MESSAGE = 'Stop the /loop: schedule no more wake-ups (ScheduleWakeup with stop) and delete your CronCreate jobs. Do nothing else.'
 
-export type NoteKind = 'recap' | 'progress' | 'doing' | 'nirvana'
+/** The French stop message older versions sent: still in stored event logs, so still matched as a loop end. */
+const LEGACY_LOOP_STOP_MESSAGE = "Arrête la boucle /loop : ne programme plus aucun réveil (ScheduleWakeup avec stop) et supprime tes tâches CronCreate. Ne fais rien d'autre."
+
+export type NoteKind = 'recap' | 'progress' | 'doing' | 'closed'
 export type Note<T> = { key: string; value: T; at: number }
 
 export type Renewal = { bucket: number; state: 'asked' | 'postponed' | 'done'; askedAt: number }
 
 /**
- * Buddha seeing a priest through to a fresh session. pending: he asks again at `nextAt`; asked: awaiting
- * the answer to the question sent at `askedAt`; refused: an outright no; done: he moved on.
- * `seenAt`: his words before this are already read. `note`: his last answer.
+ * The orchestrator handing a session off to a fresh session. pending: it asks again at `nextAt`; asked:
+ * awaiting the answer to the question sent at `askedAt`; refused: an outright no; done: it started fresh.
+ * `seenAt`: its words before this are already read. `note`: its last answer.
  */
-export type Shepherd = {
+export type Handoff = {
   state: 'pending' | 'asked' | 'refused' | 'done'
   nextAt: number
   askedAt: number
@@ -51,6 +55,21 @@ const SESSION_COLUMNS: Record<string, string> = {
   model: 'TEXT',
 }
 
+/**
+ * Tables older versions named after the old vocabulary, renamed once at startup (before the tables below are
+ * created, so the new name never starts out empty beside the old one).
+ */
+const LEGACY_TABLES: [from: string, to: string][] = [
+  ['elder_topics', 'advisor_topics'],
+  ['elder_reports', 'advisor_reports'],
+  ['elder_chat', 'advisor_chat'],
+  ['shepherds', 'handoffs'],
+  ['lotus', 'set_aside'],
+]
+
+/** The orchestrator's id (and agent) in older databases. */
+const LEGACY_ORCHESTRATOR_ID = 'buddha'
+
 // Index of sessions and their event log. Claude Code's own JSONL transcripts
 // remain the source of truth for the conversation (used by resume).
 export class Store {
@@ -59,8 +78,9 @@ export class Store {
   constructor(path: string) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true })
     this.db = new DatabaseSync(path)
+    this.db.exec('PRAGMA journal_mode = WAL')
+    this.renameLegacyTables()
     this.db.exec(`
-      PRAGMA journal_mode = WAL;
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         project TEXT NOT NULL,
@@ -74,10 +94,6 @@ export class Store {
         at INTEGER NOT NULL,
         ev TEXT NOT NULL,
         PRIMARY KEY (session_id, seq)
-      );
-      CREATE TABLE IF NOT EXISTS project_colors (
-        name TEXT PRIMARY KEY,
-        color TEXT NOT NULL
       );
       CREATE TABLE IF NOT EXISTS ai_notes (
         session_id TEXT NOT NULL,
@@ -97,7 +113,7 @@ export class Store {
         state TEXT NOT NULL,
         asked_at INTEGER NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS shepherds (
+      CREATE TABLE IF NOT EXISTS handoffs (
         session_id TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
@@ -112,7 +128,7 @@ export class Store {
       CREATE TABLE IF NOT EXISTS silenced (
         session_id TEXT PRIMARY KEY
       );
-      CREATE TABLE IF NOT EXISTS lotus (
+      CREATE TABLE IF NOT EXISTS set_aside (
         session_id TEXT PRIMARY KEY
       );
       CREATE TABLE IF NOT EXISTS notes (
@@ -175,7 +191,7 @@ export class Store {
         created_at INTEGER NOT NULL,
         processed_at INTEGER
       );
-      CREATE TABLE IF NOT EXISTS elder_topics (
+      CREATE TABLE IF NOT EXISTS advisor_topics (
         id TEXT PRIMARY KEY,
         scope TEXT NOT NULL,
         title TEXT NOT NULL,
@@ -185,7 +201,7 @@ export class Store {
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS elder_reports (
+      CREATE TABLE IF NOT EXISTS advisor_reports (
         id TEXT PRIMARY KEY,
         kind TEXT NOT NULL,
         text TEXT NOT NULL,
@@ -194,14 +210,84 @@ export class Store {
         tokens INTEGER,
         created_at INTEGER NOT NULL
       );
-      CREATE TABLE IF NOT EXISTS elder_chat (
+      CREATE TABLE IF NOT EXISTS advisor_chat (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         role TEXT NOT NULL,
         text TEXT NOT NULL,
         created_at INTEGER NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS migrations (
+        name TEXT PRIMARY KEY,
+        at INTEGER NOT NULL
+      );
     `)
     this.migrate()
+    this.once('vocabulary', () => this.migrateVocabulary())
+  }
+
+  private hasTable(name: string): boolean {
+    return !!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)
+  }
+
+  /** See LEGACY_TABLES. Should both exist (an older version ran again meanwhile), the old rows join the new table. */
+  private renameLegacyTables() {
+    for (const [from, to] of LEGACY_TABLES) {
+      if (!this.hasTable(from)) continue
+      if (!this.hasTable(to)) this.db.exec(`ALTER TABLE ${from} RENAME TO ${to}`)
+      else this.db.exec(`INSERT OR IGNORE INTO ${to} SELECT * FROM ${from}; DROP TABLE ${from};`)
+    }
+  }
+
+  /** Runs a data migration the first time only, recorded in `migrations`, all or nothing. */
+  private once(name: string, run: () => void) {
+    if (this.db.prepare('SELECT 1 FROM migrations WHERE name = ?').get(name)) return
+    this.db.exec('BEGIN')
+    try {
+      run()
+      this.db.prepare('INSERT INTO migrations (name, at) VALUES (?, ?)').run(name, Date.now())
+      this.db.exec('COMMIT')
+    } catch (err) {
+      this.db.exec('ROLLBACK')
+      throw err
+    }
+  }
+
+  /**
+   * Stored values from older versions, written with the old vocabulary: the orchestrator's id, event types and
+   * fields, recap states, note kinds, the Advisor's settings key and chat role.
+   */
+  private migrateVocabulary() {
+    // The orchestrator's id, in every column holding a session id (events reference sessions: checked at commit).
+    if (this.getSession(LEGACY_ORCHESTRATOR_ID) && !this.getSession(ORCHESTRATOR_SESSION_ID)) {
+      this.db.exec('PRAGMA defer_foreign_keys = ON')
+      const tables = (this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]).map((t) => t.name)
+      for (const table of tables) {
+        const cols = (this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name)
+        for (const col of cols.filter((c) => c === 'session_id' || c === 'next_id')) {
+          this.db.prepare(`UPDATE ${table} SET ${col} = ? WHERE ${col} = ?`).run(ORCHESTRATOR_SESSION_ID, LEGACY_ORCHESTRATOR_ID)
+        }
+      }
+      this.db.prepare('UPDATE sessions SET id = ?, agent = ? WHERE id = ?').run(ORCHESTRATOR_SESSION_ID, ORCHESTRATOR_SESSION_ID, LEGACY_ORCHESTRATOR_ID)
+      this.db.prepare('UPDATE advisor_topics SET evidence = replace(evidence, ?, ?)').run(JSON.stringify(LEGACY_ORCHESTRATOR_ID), JSON.stringify(ORCHESTRATOR_SESSION_ID))
+    }
+    // Event types: buddha.* (the main thread's stream) and monk.* (a subagent's, with its monkId).
+    this.db.exec(`
+      UPDATE events SET ev = json_set(ev, '$.t', 'assistant.' || substr(json_extract(ev, '$.t'), 8))
+        WHERE ev LIKE '{"t":"buddha.%';
+      UPDATE events SET ev = json_set(json_remove(ev, '$.monkId'),
+          '$.t', CASE json_extract(ev, '$.t') WHEN 'monk.summoned' THEN 'subagent.started' ELSE 'subagent.' || substr(json_extract(ev, '$.t'), 6) END,
+          '$.subagentId', json_extract(ev, '$.monkId'))
+        WHERE ev LIKE '{"t":"monk.%';
+      UPDATE events SET ev = json_set(ev, '$.state', CASE json_extract(ev, '$.state') WHEN 'fini' THEN 'done' ELSE 'waiting' END)
+        WHERE ev LIKE '{"t":"recap"%' AND json_extract(ev, '$.state') IN ('fini', 'attente');
+      UPDATE ai_notes SET value = json_set(value, '$.state', CASE json_extract(value, '$.state') WHEN 'fini' THEN 'done' ELSE 'waiting' END)
+        WHERE kind = 'recap' AND json_extract(value, '$.state') IN ('fini', 'attente');
+      UPDATE OR IGNORE ai_notes SET kind = 'closed' WHERE kind = 'nirvana';
+      DELETE FROM ai_notes WHERE kind = 'nirvana';
+      UPDATE OR IGNORE settings SET key = 'advisor' WHERE key = 'elder';
+      DELETE FROM settings WHERE key = 'elder';
+      UPDATE advisor_chat SET role = 'advisor' WHERE role = 'elder';
+    `)
   }
 
   private migrate() {
@@ -228,7 +314,7 @@ export class Store {
     return (this.db.prepare('SELECT * FROM sessions WHERE archived_at IS NULL ORDER BY created_at').all() as Row[]).map(toSession)
   }
 
-  /** Every session ever created, archived included, for the monastery-wide cost report. */
+  /** Every session ever created, archived included, for the board-wide cost report. */
   allSessions(): SessionRow[] {
     return (this.db.prepare('SELECT * FROM sessions ORDER BY created_at').all() as Row[]).map(toSession)
   }
@@ -254,17 +340,17 @@ export class Store {
     this.db.prepare('UPDATE sessions SET archived_at = ? WHERE id = ?').run(Date.now(), id)
   }
 
-  /** Sent to nirvana: archived sessions, newest dismissal first, at most `limit`. */
-  /** Sessions still in the monastery that work in this folder (a priest and the one he renewed into share it). */
+  /** Sessions still open that work in this folder (a session and the fresh one it started share it). */
   othersInWorktree(worktree: string, exceptId: string): string[] {
     return (this.db.prepare('SELECT id FROM sessions WHERE worktree = ? AND id != ? AND archived_at IS NULL').all(worktree, exceptId) as { id: string }[]).map((r) => r.id)
   }
 
+  /** Closed sessions, most recently closed first, at most `limit`. */
   archivedSessions(limit = 200): SessionRow[] {
     return (this.db.prepare('SELECT * FROM sessions WHERE archived_at IS NOT NULL ORDER BY archived_at DESC LIMIT ?').all(limit) as Row[]).map(toSession)
   }
 
-  /** Reincarnate: bring an archived session back into the courtyard. */
+  /** Reopen: bring a closed session back onto the board. */
   unarchive(id: string) {
     this.db.prepare('UPDATE sessions SET archived_at = NULL WHERE id = ?').run(id)
   }
@@ -273,7 +359,7 @@ export class Store {
     this.db.prepare('UPDATE sessions SET last_seen_seq = (SELECT COALESCE(MAX(seq), 0) FROM events WHERE session_id = ?) WHERE id = ?').run(id, id)
   }
 
-  append(sessionId: string, ev: MonasteryEvent): Envelope {
+  append(sessionId: string, ev: SessionEvent): Envelope {
     const { seq } = this.db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM events WHERE session_id = ?').get(sessionId) as { seq: number }
     const env: Envelope = { seq, at: Date.now(), ev }
     this.db.prepare('INSERT INTO events (session_id, seq, at, ev) VALUES (?, ?, ?, ?)').run(sessionId, seq, env.at, JSON.stringify(ev))
@@ -288,18 +374,18 @@ export class Store {
     }))
   }
 
-  /** Novices summoned but never reported done: after a restart, their process is gone. */
-  danglingNovices(sessionId: string): string[] {
+  /** Subagents summoned but never reported done: after a restart, their process is gone. */
+  danglingSubagents(sessionId: string): string[] {
     const open = new Set<string>()
     for (const { ev } of this.events(sessionId)) {
-      if (ev.t === 'monk.summoned') open.add(ev.monkId)
-      if (ev.t === 'monk.done') open.delete(ev.monkId)
+      if (ev.t === 'subagent.started') open.add(ev.subagentId)
+      if (ev.t === 'subagent.done') open.delete(ev.subagentId)
     }
     return [...open]
   }
 
   /** Latest event of a given type, e.g. to know whether a session was busy when the server stopped. */
-  lastEvent<T extends MonasteryEvent['t']>(sessionId: string, t: T): (Envelope & { ev: Extract<MonasteryEvent, { t: T }> }) | null {
+  lastEvent<T extends SessionEvent['t']>(sessionId: string, t: T): (Envelope & { ev: Extract<SessionEvent, { t: T }> }) | null {
     const r = this.db
       .prepare('SELECT seq, at, ev FROM events WHERE session_id = ? AND ev LIKE ? ORDER BY seq DESC LIMIT 1')
       .get(sessionId, `{"t":"${t}"%`) as EventRow | undefined
@@ -313,30 +399,30 @@ export class Store {
   }
 
   /**
-   * His autonomy — Claude Code `/goal` or `/loop`, never both at once (see `AutonomyState`) — derived from
+   * Its autonomy (Claude Code `/goal` or `/loop`, never both at once, see `AutonomyState`), derived from
    * the event log rather than a column of its own. The last `/goal ...` or `/loop ...` message decides
    * which mode is current: `Sessions.autonomy` only ever starts one after stopping the other, so whichever
    * command came last is the one that counts, and the fields of the other mode are simply dropped.
    *
-   * `goal`: unchanged from before autonomy existed — a clear (`clear|stop|off|cancel`, case-insensitively,
+   * `goal`: unchanged from before autonomy existed: a clear (`clear|stop|off|cancel`, case-insensitively,
    * or a bare `/goal`) goes inactive but keeps the text of the last real goal before it, so the UI can
    * offer to relaunch the same one.
    *
-   * `loop`: the argument's leading `\d+[smhd]` token, if any, is the interval ("5m" etc. — a fixed
+   * `loop`: the argument's leading `\d+[smhd]` token, if any, is the interval ("5m" etc., a fixed
    * schedule, CronCreate); its absence means self-paced (ScheduleWakeup, called again every turn). Right
-   * after the `/loop` message he is optimistically active (no turn has had the chance yet to prove
+   * after the `/loop` message it is optimistically active (no turn has had the chance yet to prove
    * otherwise). From then on:
-   *  - a `loop.wake` (see normalize.ts, emitted for his own ScheduleWakeup/CronCreate/CronDelete calls)
-   *    sets `nextAt` and active/inactive straight from its own `stop` flag — this alone is what a
+   *  - a `loop.wake` (see normalize.ts, emitted for its own ScheduleWakeup/CronCreate/CronDelete calls)
+   *    sets `nextAt` and active/inactive straight from its own `stop` flag: this alone is what a
    *    fixed-interval loop lives on: CronCreate fires once, and no turn ever needs to revisit it;
    *  - for a self-paced loop (no interval) specifically, a `turn.done` that was not preceded by a
    *    `loop.wake` since the previous `turn.done` (or since the `/loop` message, for the first one) means
-   *    he finished a turn without rescheduling himself: the loop died quietly, with nothing to tell it so;
-   *  - the exact `LOOP_STOP_MESSAGE` (Sangha's own stop, sent when you stop him before he gets a say) also
-   *    ends it, whatever his turns do afterwards.
+   *    it finished a turn without rescheduling itself: the loop died quietly, with nothing to tell it so;
+   *  - the exact `LOOP_STOP_MESSAGE` (Sangha's own stop, sent when you stop it before it gets a say; the
+   *    legacy French one too) also ends it, whatever its turns do afterwards.
    * `nextAt` is only ever reported while active (null again once stopped, even if a wake-up had been due).
    *
-   * Null: he never got either. `summary()` calls this for every session on every poll, so the scan is
+   * Null: it never had either. `summary()` calls this for every session on every poll, so the scan is
    * narrowed to the three relevant event types with a LIKE prefix match (SQLite's LIKE is ASCII
    * case-insensitive) before the few candidates are parsed and correlated in JS.
    */
@@ -353,14 +439,14 @@ export class Store {
     let active = false
     let nextAt: number | null = null
     // Whether a loop.wake has happened since the loop was (re)established or since the last turn.done:
-    // what tells a self-paced loop's next turn.done whether he rescheduled himself or went quiet.
+    // what tells a self-paced loop's next turn.done whether it rescheduled itself or went quiet.
     let wakeSinceLastTurn = false
 
     for (const { ev: raw } of rows) {
-      const ev = JSON.parse(raw) as MonasteryEvent
+      const ev = JSON.parse(raw) as SessionEvent
       if (ev.t === 'user.message') {
         const trimmed = ev.text.trim()
-        if (trimmed === LOOP_STOP_MESSAGE) {
+        if (trimmed === LOOP_STOP_MESSAGE || trimmed === LEGACY_LOOP_STOP_MESSAGE) {
           if (mode === 'loop') active = false
           continue
         }
@@ -394,7 +480,7 @@ export class Store {
         continue
       }
       if (ev.t === 'loop.wake') {
-        if (mode !== 'loop') continue // stray: only his own tool calls emit this, but stay defensive
+        if (mode !== 'loop') continue // stray: only its own tool calls emit this, but stay defensive
         wakeSinceLastTurn = true
         active = !ev.stop
         nextAt = ev.stop ? null : ev.nextAt
@@ -436,7 +522,7 @@ export class Store {
   }
 
   /**
-   * Texts a small model wrote about a session (recap, progress, what he is doing), kept with the state
+   * Texts a small model wrote about a session (recap, progress, what it is doing), kept with the state
    * they describe (`key`), so a reload or a restart reuses them instead of asking again.
    */
   note<T>(id: string, kind: NoteKind): Note<T> | null {
@@ -450,17 +536,17 @@ export class Store {
       .run(id, kind, key, JSON.stringify(value), Date.now())
   }
 
-  /** Where each session stands on moving to a fresh one (asked at which context size, and its answer). */
+  /** Where each session stands on starting fresh (asked at which context size, and its answer). */
   renewal(id: string): Renewal | null {
     const r = this.db.prepare('SELECT bucket, state, asked_at FROM renewals WHERE session_id = ?').get(id) as { bucket: number; state: string; asked_at: number } | undefined
     return r ? { bucket: r.bucket, state: r.state as Renewal['state'], askedAt: r.asked_at } : null
   }
 
-  /** The fresh session a priest moved on to. */
+  /** The fresh session a session moved on to. */
   successor(id: string): string | null {
     const r = this.db.prepare('SELECT next_id FROM successors WHERE session_id = ?').get(id) as { next_id: string } | undefined
     if (r) return r.next_id
-    // Renewals made before links were kept: the session of the same project and title created as he left.
+    // Renewals made before links were kept: the session of the same project and title created as it left.
     const old = this.getSession(id)
     if (!old?.archivedAt) return null
     const guess = this.db
@@ -481,17 +567,17 @@ export class Store {
         .run(id, r.bucket, r.state, r.askedAt)
   }
 
-  shepherd(id: string): Shepherd | null {
-    const r = this.db.prepare('SELECT value FROM shepherds WHERE session_id = ?').get(id) as { value: string } | undefined
-    return r ? (JSON.parse(r.value) as Shepherd) : null
+  handoff(id: string): Handoff | null {
+    const r = this.db.prepare('SELECT value FROM handoffs WHERE session_id = ?').get(id) as { value: string } | undefined
+    return r ? (JSON.parse(r.value) as Handoff) : null
   }
 
-  setShepherd(id: string, s: Shepherd | null) {
-    if (!s) this.db.prepare('DELETE FROM shepherds WHERE session_id = ?').run(id)
-    else this.db.prepare('INSERT INTO shepherds (session_id, value) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET value = excluded.value').run(id, JSON.stringify(s))
+  setHandoff(id: string, s: Handoff | null) {
+    if (!s) this.db.prepare('DELETE FROM handoffs WHERE session_id = ?').run(id)
+    else this.db.prepare('INSERT INTO handoffs (session_id, value) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET value = excluded.value').run(id, JSON.stringify(s))
   }
 
-  /** Outside sessions sent away from the courtyard, with the activity date they had then (they return if they move again). */
+  /** Outside sessions removed from the board, with the activity date they had then (they return if they move again). */
   hiddenSessions(): Map<string, number> {
     const rows = this.db.prepare('SELECT session_id AS id, until_move_after AS at FROM hidden_sessions').all() as { id: string; at: number }[]
     return new Map(rows.map((r) => [r.id, r.at]))
@@ -501,7 +587,7 @@ export class Store {
     this.db.prepare('INSERT INTO hidden_sessions (session_id, until_move_after) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET until_move_after = excluded.until_move_after').run(id, at)
   }
 
-  /** What the sessions this one took over from had already cost (it moved on to a fresh session). */
+  /** What the sessions this one took over from had already cost (it started fresh). */
   carriedCost(id: string): number {
     const r = this.db.prepare('SELECT usd FROM carried_costs WHERE session_id = ?').get(id) as { usd: number } | undefined
     return r?.usd ?? 0
@@ -511,7 +597,7 @@ export class Store {
     this.db.prepare('INSERT INTO carried_costs (session_id, usd) VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET usd = excluded.usd').run(id, usd)
   }
 
-  /** Sessions you asked to keep quiet (Sangha priests and outside sessions alike). */
+  /** Sessions you asked to keep quiet (Sangha sessions and outside sessions alike). */
   silencedIds(): Set<string> {
     return new Set((this.db.prepare('SELECT session_id AS id FROM silenced').all() as { id: string }[]).map((r) => r.id))
   }
@@ -521,17 +607,17 @@ export class Store {
     else this.db.prepare('DELETE FROM silenced WHERE session_id = ?').run(id)
   }
 
-  /** Priests set aside in the lotus pond, the courtyard's waiting room (Sangha priests and outside sessions alike). */
-  lotusIds(): Set<string> {
-    return new Set((this.db.prepare('SELECT session_id AS id FROM lotus').all() as { id: string }[]).map((r) => r.id))
+  /** Sessions set aside (Sangha sessions and outside sessions alike). */
+  setAsideIds(): Set<string> {
+    return new Set((this.db.prepare('SELECT session_id AS id FROM set_aside').all() as { id: string }[]).map((r) => r.id))
   }
 
-  setLotus(id: string, lotus: boolean) {
-    if (lotus) this.db.prepare('INSERT OR IGNORE INTO lotus (session_id) VALUES (?)').run(id)
-    else this.db.prepare('DELETE FROM lotus WHERE session_id = ?').run(id)
+  setSetAside(id: string, setAside: boolean) {
+    if (setAside) this.db.prepare('INSERT OR IGNORE INTO set_aside (session_id) VALUES (?)').run(id)
+    else this.db.prepare('DELETE FROM set_aside WHERE session_id = ?').run(id)
   }
 
-  /** Free-text notes left on priests, by session id, in a single query for the whole courtyard. */
+  /** Free-text notes left on sessions, by session id, in a single query for the whole board. */
   notes(): Map<string, string> {
     return new Map((this.db.prepare('SELECT session_id AS id, note FROM notes').all() as { id: string; note: string }[]).map((r) => [r.id, r.note]))
   }
@@ -554,7 +640,7 @@ export class Store {
     this.db.prepare('DELETE FROM providers WHERE id = ?').run(id)
   }
 
-  /** Your messages waiting for a priest's turn to end, oldest first. */
+  /** Your messages waiting for a session's turn to end, oldest first. */
   queued(sessionId: string): QueuedMessage[] {
     return this.db.prepare('SELECT id, text, at FROM queued_messages WHERE session_id = ? ORDER BY at').all(sessionId) as QueuedMessage[]
   }
@@ -577,7 +663,6 @@ export class Store {
     return taken
   }
 
-  /** Standing instructions recalled to priests with each of your messages, by session id. */
   /** A session's own environment variables (empty when none). */
   sessionEnv(id: string): Record<string, string> {
     const r = this.db.prepare('SELECT value FROM session_env WHERE session_id = ?').get(id) as { value: string } | undefined
@@ -599,6 +684,7 @@ export class Store {
     this.db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, JSON.stringify(value))
   }
 
+  /** Standing instructions recalled to sessions with each of your messages, by session id. */
   reminders(): Map<string, string> {
     return new Map((this.db.prepare('SELECT session_id AS id, text FROM reminders').all() as { id: string; text: string }[]).map((r) => [r.id, r.text]))
   }
@@ -618,7 +704,7 @@ export class Store {
     this.db.prepare('INSERT INTO mcp_global (name, enabled) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled').run(name, enabled ? 1 : 0)
   }
 
-  /** A priest's own MCP switches, over the ones of all of Sangha. */
+  /** A session's own MCP switches, over the ones of all of Sangha. */
   sessionMcpPrefs(id: string): Record<string, boolean> {
     const rows = this.db.prepare('SELECT name, enabled FROM session_mcp WHERE session_id = ?').all(id) as { name: string; enabled: number }[]
     return Object.fromEntries(rows.map((r) => [r.name, !!r.enabled]))
@@ -633,7 +719,7 @@ export class Store {
         .run(id, name, enabled ? 1 : 0)
   }
 
-  /** Folders you took out of the monastery: auto-detection must not bring them back. */
+  /** Folders you removed from the board: auto-detection must not bring them back. */
   ignoredProjects(): Set<string> {
     return new Set((this.db.prepare('SELECT path FROM ignored_projects').all() as { path: string }[]).map((r) => r.path))
   }
@@ -643,21 +729,10 @@ export class Store {
     else this.db.prepare('DELETE FROM ignored_projects WHERE path = ?').run(path)
   }
 
-  /** Claude session ids driven by Sangha itself, so the observer does not mistake them for outside sessions. */
-  /** Claude Code session id → Sangha session id, for every priest Sangha started. */
+  /** Claude Code session id → Sangha session id, for every session Sangha started (so the observer does not mistake them for outside sessions). */
   claudeSessionIds(): Map<string, string> {
     const rows = this.db.prepare('SELECT claude_session_id AS claude, id FROM sessions WHERE claude_session_id IS NOT NULL').all() as { claude: string; id: string }[]
     return new Map(rows.map((r) => [r.claude, r.id]))
-  }
-
-  /** Stable robe color per project: the first palette color no other project wears. */
-  projectColor(name: string, palette: string[]): string {
-    const row = this.db.prepare('SELECT color FROM project_colors WHERE name = ?').get(name) as { color: string } | undefined
-    if (row) return row.color
-    const used = new Set((this.db.prepare('SELECT color FROM project_colors').all() as { color: string }[]).map((r) => r.color))
-    const color = palette.find((c) => !used.has(c)) ?? palette[used.size % palette.length]!
-    this.db.prepare('INSERT INTO project_colors (name, color) VALUES (?, ?)').run(name, color)
-    return color
   }
 
   addFeedback(f: Feedback) {
@@ -679,10 +754,10 @@ export class Store {
     for (const id of ids) stmt.run(at, id)
   }
 
-  /** Contexte figé pour un retour : le message commenté et ses voisins (ou la fin de la conversation), tronqué. */
+  /** Frozen context for a feedback: the message commented on and its neighbours (or the end of the conversation), truncated. */
   excerptAround(sessionId: string, eventSeq: number | null, maxChars = 1200): string {
     const all = this.events(sessionId)
-    const line = (e: Envelope) => (e.ev.t === 'user.message' ? `Toi : ${e.ev.text}` : e.ev.t === 'buddha.text' ? `Lui : ${e.ev.text}` : null)
+    const line = (e: Envelope) => (e.ev.t === 'user.message' ? `User: ${e.ev.text}` : e.ev.t === 'assistant.text' ? `Agent: ${e.ev.text}` : null)
     const picked =
       eventSeq == null
         ? all.slice(-6)
@@ -694,44 +769,44 @@ export class Store {
     return text.length > maxChars ? `…${text.slice(-maxChars)}` : text
   }
 
-  elderTopics(): ElderTopic[] {
-    return (this.db.prepare('SELECT * FROM elder_topics ORDER BY updated_at DESC').all() as ElderTopicRow[]).map(toTopic)
+  advisorTopics(): AdvisorTopic[] {
+    return (this.db.prepare('SELECT * FROM advisor_topics ORDER BY updated_at DESC').all() as AdvisorTopicRow[]).map(toTopic)
   }
 
-  elderTopic(id: string): ElderTopic | null {
-    const r = this.db.prepare('SELECT * FROM elder_topics WHERE id = ?').get(id) as ElderTopicRow | undefined
+  advisorTopic(id: string): AdvisorTopic | null {
+    const r = this.db.prepare('SELECT * FROM advisor_topics WHERE id = ?').get(id) as AdvisorTopicRow | undefined
     return r ? toTopic(r) : null
   }
 
-  upsertElderTopic(t: ElderTopic) {
+  upsertAdvisorTopic(t: AdvisorTopic) {
     this.db
       .prepare(
-        `INSERT INTO elder_topics (id, scope, title, detail, evidence, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO advisor_topics (id, scope, title, detail, evidence, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET scope = excluded.scope, title = excluded.title, detail = excluded.detail, evidence = excluded.evidence, status = excluded.status, updated_at = excluded.updated_at`,
       )
       .run(t.id, t.scope, t.title, t.detail, JSON.stringify(t.evidence), t.status, t.createdAt, t.updatedAt)
   }
 
-  elderReports(limit = 10): ElderReport[] {
-    return (this.db.prepare('SELECT * FROM elder_reports ORDER BY created_at DESC LIMIT ?').all(limit) as ElderReportRow[]).map(toReport)
+  advisorReports(limit = 10): AdvisorReport[] {
+    return (this.db.prepare('SELECT * FROM advisor_reports ORDER BY created_at DESC LIMIT ?').all(limit) as AdvisorReportRow[]).map(toReport)
   }
 
-  addElderReport(r: ElderReport) {
+  addAdvisorReport(r: AdvisorReport) {
     this.db
-      .prepare('INSERT INTO elder_reports (id, kind, text, topic_ids, cost_usd, tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .prepare('INSERT INTO advisor_reports (id, kind, text, topic_ids, cost_usd, tokens, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(r.id, r.kind, r.text, JSON.stringify(r.topicIds), r.costUsd, r.tokens, r.createdAt)
   }
 
-  elderChat(limit = 20): ElderChatTurn[] {
-    return (this.db.prepare('SELECT * FROM elder_chat ORDER BY id DESC LIMIT ?').all(limit) as ElderChatRow[]).map(toChatTurn).reverse()
+  advisorChat(limit = 20): AdvisorChatTurn[] {
+    return (this.db.prepare('SELECT * FROM advisor_chat ORDER BY id DESC LIMIT ?').all(limit) as AdvisorChatRow[]).map(toChatTurn).reverse()
   }
 
-  addElderChatMessage(role: 'user' | 'elder', text: string, at: number) {
-    this.db.prepare('INSERT INTO elder_chat (role, text, created_at) VALUES (?, ?, ?)').run(role, text, at)
+  addAdvisorChatMessage(role: 'user' | 'advisor', text: string, at: number) {
+    this.db.prepare('INSERT INTO advisor_chat (role, text, created_at) VALUES (?, ?, ?)').run(role, text, at)
   }
 
-  /** Agrégats pour le bloc « Sangha » du contexte d'Ananda : échecs d'outils MCP, erreurs, interruptions, renouvellements, prêtres confiés à Bouddha, coût total, depuis `since`. */
-  elderSanghaStats(since: number): { toolErrorsByServer: Record<string, number>; sessionErrors: number; interruptions: number; renewals: number; shepherded: number; costUsd: number } {
+  /** Aggregates for the "Sangha" block of the Advisor's context: MCP tool failures, errors, interruptions, fresh starts, sessions handed off by the orchestrator, total cost, since `since`. */
+  advisorSanghaStats(since: number): { toolErrorsByServer: Record<string, number>; sessionErrors: number; interruptions: number; renewals: number; handedOff: number; costUsd: number } {
     const rows = this.db
       .prepare(`SELECT session_id, ev FROM events WHERE at >= ? AND (ev LIKE '{"t":"tool.error"%' OR ev LIKE '{"t":"error"%' OR ev LIKE '{"t":"turn.done"%')`)
       .all(since) as { session_id: string; ev: string }[]
@@ -739,7 +814,7 @@ export class Store {
     let sessionErrors = 0
     let costUsd = 0
     for (const { ev: raw } of rows) {
-      const ev = JSON.parse(raw) as MonasteryEvent
+      const ev = JSON.parse(raw) as SessionEvent
       if (ev.t === 'tool.error') toolErrorsByServer[ev.server] = (toolErrorsByServer[ev.server] ?? 0) + 1
       else if (ev.t === 'error') sessionErrors++
       else if (ev.t === 'turn.done') costUsd += ev.costUsdEquiv
@@ -755,8 +830,8 @@ export class Store {
     const renewals = (
       this.db.prepare('SELECT COUNT(*) AS n FROM successors s JOIN sessions sess ON sess.id = s.next_id WHERE sess.created_at >= ?').get(since) as { n: number }
     ).n
-    const shepherded = (this.db.prepare('SELECT value FROM shepherds').all() as { value: string }[]).filter((r) => (JSON.parse(r.value) as Shepherd).seenAt >= since).length
-    return { toolErrorsByServer, sessionErrors, interruptions, renewals, shepherded, costUsd }
+    const handedOff = (this.db.prepare('SELECT value FROM handoffs').all() as { value: string }[]).filter((r) => (JSON.parse(r.value) as Handoff).seenAt >= since).length
+    return { toolErrorsByServer, sessionErrors, interruptions, renewals, handedOff, costUsd }
   }
 }
 
@@ -805,22 +880,22 @@ const toFeedback = (r: FeedbackRow): Feedback => ({
   processedAt: r.processed_at,
 })
 
-type ElderTopicRow = { id: string; scope: string; title: string; detail: string; evidence: string; status: string; created_at: number; updated_at: number }
-const toTopic = (r: ElderTopicRow): ElderTopic => ({
+type AdvisorTopicRow = { id: string; scope: string; title: string; detail: string; evidence: string; status: string; created_at: number; updated_at: number }
+const toTopic = (r: AdvisorTopicRow): AdvisorTopic => ({
   id: r.id,
   scope: r.scope,
   title: r.title,
   detail: r.detail,
   evidence: JSON.parse(r.evidence),
-  status: r.status as ElderTopic['status'],
+  status: r.status as AdvisorTopic['status'],
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 })
 
-type ElderReportRow = { id: string; kind: string; text: string; topic_ids: string; cost_usd: number | null; tokens: number | null; created_at: number }
-const toReport = (r: ElderReportRow): ElderReport => ({
+type AdvisorReportRow = { id: string; kind: string; text: string; topic_ids: string; cost_usd: number | null; tokens: number | null; created_at: number }
+const toReport = (r: AdvisorReportRow): AdvisorReport => ({
   id: r.id,
-  kind: r.kind as ElderReport['kind'],
+  kind: r.kind as AdvisorReport['kind'],
   text: r.text,
   topicIds: JSON.parse(r.topic_ids),
   costUsd: r.cost_usd,
@@ -828,5 +903,5 @@ const toReport = (r: ElderReportRow): ElderReport => ({
   createdAt: r.created_at,
 })
 
-type ElderChatRow = { id: number; role: string; text: string; created_at: number }
-const toChatTurn = (r: ElderChatRow): ElderChatTurn => ({ id: r.id, role: r.role as ElderChatTurn['role'], text: r.text, createdAt: r.created_at })
+type AdvisorChatRow = { id: number; role: string; text: string; created_at: number }
+const toChatTurn = (r: AdvisorChatRow): AdvisorChatTurn => ({ id: r.id, role: r.role as AdvisorChatTurn['role'], text: r.text, createdAt: r.created_at })

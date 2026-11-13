@@ -2,12 +2,26 @@
   "name": "sangha",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"],
-  "engines": { "node": ">=24" },
+  "packageManager": "pnpm@12.4.1",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "./scripts/dev.sh",
-    "build": "npm run build -w @sangha/server && npm run build -w @sangha/web",
-    "test": "npm test -w @sangha/server && npm test -w @sangha/mcp-bitbucket",
-    "typecheck": "tsc -p apps/server --noEmit && tsc -p apps/web --noEmit && tsc -p packages/mcp-bitbucket --noEmit"
+    "build": "pnpm --filter @sangha/server build && pnpm --filter @sangha/web build",
+    "test": "pnpm --filter @sangha/server test && pnpm --filter @sangha/mcp-bitbucket test",
+    "lint": "eslint .",
+    "typecheck": "tsc -p apps/server --noEmit && tsc -p apps/web --noEmit && tsc -p packages/mcp-bitbucket --noEmit",
+    "site:dev": "pnpm --filter @sangha/site dev",
+    "site:build": "pnpm --filter @sangha/site build",
+    "site:check": "pnpm --filter @sangha/site check"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.14.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.14.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.2"
   }
 }

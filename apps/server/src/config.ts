@@ -11,7 +11,7 @@ export const config = {
   envFile: resolve(process.env.SANGHA_ENV_FILE ?? join(homedir(), '.config', 'sangha', '.env')),
   dbPath: resolve(process.env.SANGHA_DB ?? `${root}/data/sangha.db`),
   idleCloseMs: Number(process.env.SANGHA_IDLE_CLOSE_MS ?? 20 * 60_000),
-  /** How long a priest must stay still before he is said to wait for you (and the bowl rings). */
+  /** How long a session must stay still before it is said to be waiting for you (and the notification sounds). */
   settleMs: Number(process.env.SANGHA_SETTLE_MS ?? 5_000),
 }
 

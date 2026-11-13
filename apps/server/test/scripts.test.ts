@@ -15,7 +15,7 @@ describe('trackScripts', () => {
     expect(second[0]!.since).toBe(1000)
   })
 
-  it('excludes local_agent tasks: novices are shown separately', () => {
+  it('excludes local_agent tasks: subagents are shown separately', () => {
     const next = trackScripts([], [task({ id: 'a1', type: 'local_agent', description: 'Agent lecteur' })], 1000)
     expect(next).toEqual([])
   })
@@ -28,9 +28,9 @@ describe('trackScripts', () => {
 
   it('carries over a summary already written for a script still running', () => {
     const first = trackScripts([], [task()], 1000)
-    first[0]!.summary = 'Lance les tests e2e'
+    first[0]!.summary = 'Runs the e2e tests'
     const second = trackScripts(first, [task()], 2000)
-    expect(second[0]!.summary).toBe('Lance les tests e2e')
+    expect(second[0]!.summary).toBe('Runs the e2e tests')
   })
 
   it('orders scripts oldest first', () => {
@@ -42,32 +42,32 @@ describe('trackScripts', () => {
 
 describe('cleanScriptSummary', () => {
   it('trims surrounding quotes', () => {
-    expect(cleanScriptSummary('"Lance les tests e2e"')).toBe('Lance les tests e2e')
-    expect(cleanScriptSummary('«Lance les tests e2e»')).toBe('Lance les tests e2e')
+    expect(cleanScriptSummary('"Runs the e2e tests"')).toBe('Runs the e2e tests')
+    expect(cleanScriptSummary('«Runs the e2e tests»')).toBe('Runs the e2e tests')
   })
 
   it('collapses newlines and extra spaces into a single line', () => {
-    expect(cleanScriptSummary('Lance   les tests\ne2e du  dossier')).toBe('Lance les tests e2e du dossier')
+    expect(cleanScriptSummary('Runs   the e2e\ntests of the  folder')).toBe('Runs the e2e tests of the folder')
   })
 
   it('caps the sentence to 12 words', () => {
-    const long = Array.from({ length: 20 }, (_, i) => `mot${i}`).join(' ')
+    const long = Array.from({ length: 20 }, (_, i) => `word${i}`).join(' ')
     const cleaned = cleanScriptSummary(long)
     const words = cleaned.split(' ')
     expect(words.length).toBe(12)
-    expect(words[11]).toBe('mot11…')
+    expect(words[11]).toBe('word11…')
   })
 
   it('leaves a short, clean sentence untouched', () => {
-    expect(cleanScriptSummary('Attend que la stack Docker locale démarre')).toBe('Attend que la stack Docker locale démarre')
+    expect(cleanScriptSummary('Waits for the local Docker stack to start')).toBe('Waits for the local Docker stack to start')
   })
 })
 
 describe('scriptPrompt', () => {
   it('includes the session title and the command', () => {
-    const p = scriptPrompt('npm run test:e2e', 'Corrige le panier')
+    const p = scriptPrompt('npm run test:e2e', 'Fix the cart')
     expect(p).toContain('npm run test:e2e')
-    expect(p).toContain('Corrige le panier')
+    expect(p).toContain('Fix the cart')
   })
 })
 
@@ -84,12 +84,12 @@ describe('ScriptSummaries', () => {
     const ready: [string, string, string][] = []
     const s = new ScriptSummaries(
       (sessionId, taskId, summary) => ready.push([sessionId, taskId, summary]),
-      async () => 'Lance les tests e2e',
+      async () => 'Runs the e2e tests',
     )
-    s.request('sess1', 'b1', 'npm run test:e2e', 'Corrige le panier')
+    s.request('sess1', 'b1', 'npm run test:e2e', 'Fix the cart')
     await s.drained()
-    expect(s.of('sess1', 'b1')).toBe('Lance les tests e2e')
-    expect(ready).toEqual([['sess1', 'b1', 'Lance les tests e2e']])
+    expect(s.of('sess1', 'b1')).toBe('Runs the e2e tests')
+    expect(ready).toEqual([['sess1', 'b1', 'Runs the e2e tests']])
   })
 
   it('does not call summarize twice for the same session/task once requested', async () => {

@@ -1,0 +1,126 @@
+import { createSdkMcpServer, tool, type Options } from '@anthropic-ai/claude-agent-sdk'
+import { z } from 'zod'
+import type { Projects } from './projects'
+import type { Sessions } from './session'
+
+const ORCHESTRATOR_MODEL = process.env.SANGHA_ORCHESTRATOR_MODEL ?? process.env.SANGHA_BUDDHA_MODEL ?? 'sonnet'
+
+const ORCHESTRATOR_PROMPT = `You are the orchestrator of Sangha. The user can ask you anything.
+Sangha holds the user's git projects. Each piece of work is done by a session: a separate Claude Code
+session running in its own git worktree (branch sangha/...), with its own subagents.
+
+With your sangha tools you list projects and the agents each one offers, start sessions, talk to them and read
+their reports. When the user asks for work on a project:
+- pick the agent that fits. Prefer the project's own agents (source "project", e.g. kiat-team-lead for a
+  full feature in a repo that ships it) over the Sangha role (lead);
+- write the session a complete, self-contained instruction: it does not see this conversation;
+- start several sessions in parallel when the user asks for several things.
+Do not do the project work yourself: delegate to sessions. You may read files to understand a request.
+Reply in the user's language, briefly: which session you started, on which project and agent, and why.
+
+A project is a git repository, known by its folder. When the user names one you do not see, look at its path
+in list_projects: a missing project was moved or renamed (e.g. Robia renamed Marianne), find its new folder and
+relocate_project it; a repository not in the list yet, add_project it. Never start a session on another project
+in its place.
+
+When the user asks you to see a session through to a fresh session ("start fresh", "hand off to a fresh session"),
+call manage_renewal: from then on Sangha asks the session itself, only while it is stopped, at the moment
+it chooses, and again until it has moved on, unless it refuses outright. Do not ask it yourself.`
+
+const text = (value: unknown) => ({ content: [{ type: 'text' as const, text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }] })
+
+/** The orchestrator's session options, with its tools: an in-process MCP server driving Sangha. */
+export function orchestratorOptions(sessions: Sessions, projects: Projects): Partial<Options> {
+  const server = createSdkMcpServer({
+    name: 'sangha',
+    version: '1.0.0',
+    tools: [
+      tool(
+        'list_projects',
+        'List the projects (with their folder) and the agents each one can run as a session. A project marked missing lost its folder (moved or renamed): relocate it before starting a session there.',
+        {},
+        async () =>
+          text([
+            ...(await projects.list()).map((p) => ({
+              name: p.name,
+              path: p.path,
+              branch: p.branch,
+              isGit: p.isGit,
+              agents: p.agents.map((a) => ({ id: a.id, source: a.source, description: a.description })),
+            })),
+            ...projects.missing().map((p) => ({ name: p.name, path: p.path, missing: true })),
+          ]),
+      ),
+      tool(
+        'add_project',
+        'Register a folder of this machine as a project, where it is (nothing is copied). Returns the project name.',
+        { path: z.string().describe('Absolute path of the folder, ~ allowed'), name: z.string().optional().describe('Project name (default: the folder name)') },
+        async ({ path, name }) => {
+          const created = projects.addLocal(path, name)
+          sessions.projectsChanged()
+          return text({ name: created })
+        },
+      ),
+      tool(
+        'relocate_project',
+        'Point a missing project at the folder it was moved or renamed to. It keeps its name, sessions and worktrees.',
+        { project: z.string().describe('Missing project name, from list_projects'), path: z.string().describe('Absolute path of its new folder, ~ allowed') },
+        async ({ project, path }) => {
+          await projects.relocate(project, path)
+          sessions.projectsChanged()
+          return text({ name: project, path: projects.dir(project) })
+        },
+      ),
+      tool('list_sessions', 'List the sessions with their status: working, waiting (finished, unread), idle, error, interrupted.', {}, async () =>
+        text(
+          sessions
+            .summaries()
+            .filter((s) => s.agent !== 'orchestrator')
+            .map((s) => ({ id: s.id, project: s.project, agent: s.agent, title: s.title, status: s.status, branch: s.branch, subagents: s.subagents.length, context: s.context, renewal: s.handoff })),
+        ),
+      ),
+      tool(
+        'start_session',
+        'Start a session on a project with the given agent and instruction. Returns the new session.',
+        {
+          project: z.string().describe('Project name, from list_projects'),
+          agent: z.string().describe('Agent id available for that project, from list_projects'),
+          prompt: z.string().describe('Complete, self-contained instruction for the session'),
+          base_ref: z.string().optional().describe('Git branch or commit to start from (default: the project HEAD)'),
+        },
+        async ({ project, agent, prompt, base_ref }) => {
+          const s = await sessions.create({ project, agent, prompt, baseRef: base_ref })
+          return text({ id: s.id, project: s.project, agent: s.agent, branch: s.branch, status: s.status })
+        },
+      ),
+      tool(
+        'send_to_session',
+        'Send a message to a running or finished session.',
+        { session_id: z.string(), message: z.string() },
+        async ({ session_id, message }) => {
+          return text(await sessions.reply(session_id, message))
+        },
+      ),
+      tool(
+        'manage_renewal',
+        'Take charge of moving a session to a fresh session (with a hand-off) as soon as it suits it, without ever interrupting its work: it is asked only while stopped, its own delay is respected (subagents running, a delicate step, a long sensitive task), and it is asked again until it has moved on; only an outright refusal ends it. Set on=false to stop.',
+        { session_id: z.string(), on: z.boolean().default(true) },
+        async ({ session_id, on }) => text(sessions.handoff(session_id, on) ?? 'no longer managed'),
+      ),
+      tool('read_session', 'Read a session status and its last words.', { session_id: z.string() }, async ({ session_id }) => {
+        const s = sessions.summaryOf(session_id)
+        if (!s) return text('unknown session')
+        return text({ status: s.status, project: s.project, agent: s.agent, branch: s.branch, activity: s.activity, context: s.context, renewal: s.handoff, lastWords: sessions.lastWords(session_id) })
+      }),
+    ],
+  })
+
+  return {
+    model: ORCHESTRATOR_MODEL,
+    mcpServers: { sangha: server },
+    plugins: [],
+    settingSources: [],
+    disallowedTools: ['Edit', 'Write', 'NotebookEdit', 'Bash', 'Agent', 'Task'],
+    systemPrompt: { type: 'preset', preset: 'claude_code', append: ORCHESTRATOR_PROMPT },
+  }
+}

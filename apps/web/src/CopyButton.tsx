@@ -1,4 +1,8 @@
 import { useState, type MouseEvent } from 'react'
+import { HugeiconsIcon } from '@hugeicons/react'
+import { Copy01Icon, Tick02Icon } from '@hugeicons/core-free-icons'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 /** A small icon that copies `text` to the clipboard, then shows a tick for a moment. */
 export function CopyButton({ text, className = '' }: { text: string; className?: string }) {
@@ -11,13 +15,22 @@ export function CopyButton({ text, className = '' }: { text: string; className?:
     })
   }
   return (
-    <button type="button" className={`copy-btn ${copied ? 'is-copied' : ''} ${className}`} onClick={copy} title={copied ? 'Copié' : 'Copier'} aria-label="Copier">
-      {copied ? '✓' : (
-        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden>
-          <rect x="5" y="5" width="9" height="9" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-          <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      )}
-    </button>
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      className={cn('text-muted-foreground hover:text-foreground', className)}
+      onClick={copy}
+      title={copied ? 'Copied' : 'Copy'}
+      aria-label={copied ? 'Copied' : 'Copy'}
+    >
+      {/* Keyed: the tick replaces the copy icon with a short blur-and-scale, so the swap reads as one change. */}
+      <HugeiconsIcon
+        key={copied ? 'copied' : 'copy'}
+        icon={copied ? Tick02Icon : Copy01Icon}
+        strokeWidth={1.8}
+        className="transition-[opacity,scale,filter] duration-150 ease-out-strong starting:scale-75 starting:opacity-0 starting:blur-[2px]"
+      />
+    </Button>
   )
 }

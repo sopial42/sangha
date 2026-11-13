@@ -2,7 +2,7 @@ import { providerEnv, type Engine, type ModelChoice, type Provider } from '@sang
 import type { Store } from './db'
 
 const CLAUDE: ModelChoice[] = [
-  { id: '', label: 'Claude · celui de l’agent', engine: 'claude', model: null },
+  { id: '', label: 'Claude · the agent’s default', engine: 'claude', model: null },
   { id: 'opus', label: 'Claude Opus', engine: 'claude', model: 'opus' },
   { id: 'sonnet', label: 'Claude Sonnet', engine: 'claude', model: 'sonnet' },
   { id: 'haiku', label: 'Claude Haiku', engine: 'claude', model: 'haiku' },

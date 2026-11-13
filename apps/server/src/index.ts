@@ -5,7 +5,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono, type Context } from 'hono'
 import { streamSSE, type SSEStreamingApi } from 'hono/streaming'
 import type { Envelope, GitIdentity, GlobalEvent, HostChatTurn, HostSuggestion, Provider, QuotaReserve } from '@sangha/shared'
-import { buddhaOptions } from './buddha'
+import { orchestratorOptions } from './orchestrator'
 import { assertQuotaOnly, config } from './config'
 import { probeModels } from './providers'
 import { Store } from './db'
@@ -16,23 +16,23 @@ import { library } from './library'
 import { askAboutSuggestion } from './hostChat'
 import { QuotaReserveSetting } from './quotaReserve'
 import { attachLatestScreenshot } from './screenshot'
-import { profiles } from './monks'
+import { profiles } from './subagents'
 import { readNewLines, readTailLines } from './files'
 import { EXTERNAL_PREFIX, Observer } from './observer'
 import { Projects } from './projects'
 import { type CreateSession, Sessions, UserError } from './session'
-import { noviceLog, parseLine, TranscriptReader } from './transcript'
-import { Elder } from './elder'
+import { subagentLog, parseLine, TranscriptReader } from './transcript'
+import { Advisor } from './advisor'
 
 assertQuotaOnly()
 
 const store = new Store(config.dbPath)
 const projects = new Projects(store)
-// Next to the database: the git config priests commit with (see gitIdentity).
+// Next to the database: the git config sessions commit with (see gitIdentity).
 const gitIdentity = new GitIdentitySetting(dirname(config.dbPath), () => store.setting<GitIdentity>('gitIdentity'), (v) => store.setSetting('gitIdentity', v))
 // The share of the plan quota you ask Sangha to always keep unused (see quotaReserve).
 const quotaReserve = new QuotaReserveSetting(() => store.setting<QuotaReserve>('quotaReserve'), (v) => store.setSetting('quotaReserve', v))
-const sessions = new Sessions(store, projects, (s) => buddhaOptions(s, projects), quotaReserve, gitIdentity)
+const sessions = new Sessions(store, projects, (s) => orchestratorOptions(s, projects), quotaReserve, gitIdentity)
 const observer = new Observer(
   store,
   projects,
@@ -48,8 +48,8 @@ sessions.startRenewalLoop()
 sessions.startPullsLoop()
 const host = new HostMonitor(config.workspacesDir, () => sessions.summaries(), () => sessions.archivedWorktrees(), () => sessions.blocked(), () => projects.repos())
 host.start()
-const elder = new Elder(store, sessions.providers, () => sessions.summaries(), () => sessions.quota)
-elder.start()
+const advisor = new Advisor(store, sessions.providers, () => sessions.summaries(), () => sessions.quota)
+advisor.start()
 
 const app = new Hono()
 
@@ -60,12 +60,12 @@ app.onError((err, c) => {
 })
 
 app.get('/api/health', (c) => c.json({ ok: true }))
-app.get('/api/monks', (c) => c.json(profiles()))
+app.get('/api/subagent-profiles', (c) => c.json(profiles()))
 app.get('/api/models', async (c) => c.json(await sessions.providers.choices()))
 app.get('/api/providers', (c) => c.json(sessions.providers.all()))
 app.post('/api/providers', async (c) => {
   const p = await c.req.json<Partial<Provider>>()
-  if (!p.name?.trim() || !p.baseUrl?.trim()) throw new UserError('nom et URL requis')
+  if (!p.name?.trim() || !p.baseUrl?.trim()) throw new UserError('Name and URL are required.')
   const provider: Provider = {
     id: p.id || `p${crypto.randomUUID().slice(0, 8)}`,
     name: p.name.trim(),
@@ -88,7 +88,7 @@ app.post('/api/providers/probe', async (c) => {
   try {
     return c.json(await probeModels(p))
   } catch (err) {
-    throw new UserError(`liste des modèles introuvable : ${err instanceof Error ? err.message : err}`)
+    throw new UserError(`Could not list the models: ${err instanceof Error ? err.message : err}`)
   }
 })
 
@@ -96,7 +96,7 @@ app.get('/api/projects', async (c) => c.json(await projects.list()))
 // A project is either a local folder (registered where it is) or a git URL (cloned into workspaces/).
 app.post('/api/projects', async (c) => {
   const { gitUrl, path, name } = await c.req.json<{ gitUrl?: string; path?: string; name?: string }>()
-  if (!gitUrl?.trim() && !path?.trim()) throw new UserError('chemin ou URL git manquant')
+  if (!gitUrl?.trim() && !path?.trim()) throw new UserError('A path or a git URL is required.')
   try {
     const created = path?.trim() ? projects.addLocal(path.trim(), name?.trim()) : await projects.add(gitUrl!.trim(), name?.trim())
     sessions.projectsChanged()
@@ -107,13 +107,13 @@ app.post('/api/projects', async (c) => {
 })
 app.delete('/api/projects/:name', async (c) => {
   const result = await sessions.removeProject(c.req.param('name'), c.req.query('force') === '1')
-  console.log(`☸ remove project ${c.req.param('name')}: ${result.ok ? 'gone' : 'needs confirmation'}`)
+  console.log(`remove project ${c.req.param('name')}: ${result.ok ? 'gone' : 'needs confirmation'}`)
   return result.ok ? c.body(null, 204) : c.json(result, 409)
 })
 // A local project whose folder moved or was renamed: point it at its new folder.
 app.patch('/api/projects/:name', async (c) => {
   const { path } = await c.req.json<{ path?: string }>()
-  if (!path?.trim()) throw new UserError('chemin manquant')
+  if (!path?.trim()) throw new UserError('A path is required.')
   try {
     await projects.relocate(c.req.param('name'), path.trim())
     sessions.projectsChanged()
@@ -128,30 +128,30 @@ app.get('/api/projects/:name/branches', async (c) => {
   return c.json(await branches(projects.dir(c.req.param('name'))))
 })
 
-// Ananda, le vieux sage : relit les retours et le fonctionnement de Sangha, propose, ne modifie jamais rien.
-app.get('/api/elder', (c) => c.json(elder.state()))
-app.put('/api/elder/settings', async (c) => c.json(elder.setSettings(await c.req.json())))
-app.post('/api/elder/run', (c) => {
-  void elder.runPass('manual')
+// The Advisor: reviews feedback and how Sangha runs, makes proposals, and never changes anything itself.
+app.get('/api/advisor', (c) => c.json(advisor.state()))
+app.put('/api/advisor/settings', async (c) => c.json(advisor.setSettings(await c.req.json())))
+app.post('/api/advisor/run', (c) => {
+  void advisor.runPass('manual')
   return c.body(null, 202)
 })
-app.post('/api/elder/ask', async (c) => {
+app.post('/api/advisor/ask', async (c) => {
   const { text } = await c.req.json<{ text: string }>()
-  if (!text?.trim()) throw new UserError('message vide')
-  return c.json(await elder.ask(text.trim()))
+  if (!text?.trim()) throw new UserError('The message is empty.')
+  return c.json(await advisor.ask(text.trim()))
 })
-app.post('/api/elder/topics/:id/vote', async (c) => {
+app.post('/api/advisor/topics/:id/vote', async (c) => {
   const { vote } = await c.req.json<{ vote: 'up' | 'down' }>()
-  if (vote !== 'up' && vote !== 'down') throw new UserError('vote invalide')
-  return c.json(elder.voteTopic(c.req.param('id'), vote))
+  if (vote !== 'up' && vote !== 'down') throw new UserError('Invalid vote.')
+  return c.json(advisor.voteTopic(c.req.param('id'), vote))
 })
-app.post('/api/elder/topics/:id/done', (c) => c.json(elder.doneTopic(c.req.param('id'))))
+app.post('/api/advisor/topics/:id/done', (c) => c.json(advisor.doneTopic(c.req.param('id'))))
 app.post('/api/feedback', async (c) => {
   const body = await c.req.json<{ sessionId: string; eventSeq?: number; rating?: 'up' | 'down'; comment?: string }>()
-  if (!body.sessionId) throw new UserError('session manquante')
-  if (!body.rating && !body.comment?.trim()) throw new UserError('note ou commentaire requis')
-  if (!store.getSession(body.sessionId)) throw new UserError('session inconnue')
-  return c.json(elder.addFeedback(body), 201)
+  if (!body.sessionId) throw new UserError('A session is required.')
+  if (!body.rating && !body.comment?.trim()) throw new UserError('A rating or a comment is required.')
+  if (!store.getSession(body.sessionId)) throw new UserError('Unknown session.')
+  return c.json(advisor.addFeedback(body), 201)
 })
 app.get('/api/sessions/:id/feedback', (c) => c.json(store.feedbackForSession(c.req.param('id'))))
 
@@ -160,15 +160,15 @@ app.post('/api/sessions', async (c) => {
   const body = await c.req.json<CreateSession>()
   return c.json(await sessions.create(body), 201)
 })
-// Who priests commit as: nothing until you set it, and git stays closed to them until then.
+// Who sessions commit as: nothing until you set it, and git stays closed to them until then.
 app.get('/api/git-identity', (c) => c.json(gitIdentity.get()))
 app.put('/api/git-identity', async (c) => {
   const body = await c.req.json<Partial<GitIdentity>>()
-  if (!validIdentity(body)) throw new UserError('nom et email valides requis')
+  if (!validIdentity(body)) throw new UserError('A valid name and email are required.')
   gitIdentity.set(body)
   return c.json(gitIdentity.get())
 })
-// The reserve of plan quota you ask Sangha to always keep unused, and whether it currently holds every priest.
+// The reserve of plan quota you ask Sangha to always keep unused, and whether it currently holds every session.
 app.get('/api/quota-reserve', (c) => c.json(sessions.reserve))
 app.put('/api/quota-reserve', async (c) => {
   const body = await c.req.json<Partial<QuotaReserve>>()
@@ -176,7 +176,7 @@ app.put('/api/quota-reserve', async (c) => {
 })
 app.post('/api/sessions/:id/messages', async (c) => {
   const { text } = await c.req.json<{ text: string }>()
-  if (!text?.trim()) throw new UserError('message vide')
+  if (!text?.trim()) throw new UserError('The message is empty.')
   return c.json(await sessions.reply(c.req.param('id'), text.trim()), 202)
 })
 app.post('/api/sessions/:id/interrupt', async (c) => {
@@ -191,30 +191,30 @@ app.get('/api/sessions/:id/progress', async (c) => {
   if (!sessions.summaryOf(c.req.param('id'))) return c.json({ error: 'not found' }, 404)
   return c.json({ progress: await sessions.progressOf(c.req.param('id'), c.req.query('fresh') === '1') })
 })
-// A novice of an outside session: his own transcript (Sangha's novices stream with their priest).
-app.get('/api/sessions/:id/novices/:monkId/log', (c) => {
-  const file = observer.noviceFile(c.req.param('id'), c.req.param('monkId'))
+// A subagent of an outside session: its own transcript (Sangha's subagents stream with their session).
+app.get('/api/sessions/:id/subagents/:subagentId/log', (c) => {
+  const file = observer.subagentFile(c.req.param('id'), c.req.param('subagentId'))
   if (!file) return c.json({ log: [] })
-  return c.json({ log: noviceLog(readTailLines(file, 4 * 1024 * 1024).map(parseLine).filter((l) => l !== null)) })
+  return c.json({ log: subagentLog(readTailLines(file, 4 * 1024 * 1024).map(parseLine).filter((l) => l !== null)) })
 })
 app.post('/api/sessions/:id/renew', async (c) => {
   await sessions.askRenewal(c.req.param('id'))
   return c.body(null, 202)
 })
-// Buddha sees him through to a fresh session (or stops).
-app.post('/api/sessions/:id/shepherd', async (c) => {
+// The orchestrator hands the session off to a fresh one (or stops).
+app.post('/api/sessions/:id/handoff', async (c) => {
   const { on, context } = await c.req.json<{ on: boolean; context?: string }>()
-  return c.json(sessions.shepherd(c.req.param('id'), on, typeof context === 'string' ? context : undefined))
+  return c.json(sessions.handoff(c.req.param('id'), on, typeof context === 'string' ? context : undefined))
 })
 app.post('/api/sessions/:id/silence', async (c) => {
   const { silent } = await c.req.json<{ silent: boolean }>()
   sessions.silence(c.req.param('id'), !!silent)
   return c.body(null, 204)
 })
-// Set a priest aside in the courtyard's lotus pond, or take him back out.
-app.post('/api/sessions/:id/lotus', async (c) => {
-  const { lotus } = await c.req.json<{ lotus: boolean }>()
-  sessions.lotus(c.req.param('id'), !!lotus)
+// Set a session aside on the board, or bring it back.
+app.post('/api/sessions/:id/set-aside', async (c) => {
+  const { setAside } = await c.req.json<{ setAside: boolean }>()
+  sessions.setAside(c.req.param('id'), !!setAside)
   return c.body(null, 204)
 })
 app.post('/api/sessions/:id/queued/:mid', async (c) => {
@@ -240,7 +240,7 @@ app.post('/api/sessions/:id/reminder', async (c) => {
   sessions.reminder(c.req.param('id'), text)
   return c.body(null, 204)
 })
-// His autonomy, Claude Code `/goal` or `/loop` (never both): null stops whatever is active.
+// The session's autonomy, Claude Code `/goal` or `/loop` (never both): null stops whatever is active.
 app.post('/api/sessions/:id/autonomy', async (c) => {
   const patch = await c.req.json<{ mode: 'goal' | 'loop'; text: string; interval?: string | null } | null>()
   await sessions.autonomy(c.req.param('id'), patch)
@@ -251,7 +251,7 @@ app.post('/api/sessions/:id/note', async (c) => {
   sessions.note(c.req.param('id'), note)
   return c.body(null, 204)
 })
-// His own environment variables; `restart`: relaunch him now so they apply (otherwise at his next start).
+// The session's own environment variables. `restart`: relaunch it now so they apply (otherwise at its next start).
 app.put('/api/sessions/:id/env', async (c) => {
   const { env, restart } = await c.req.json<{ env: unknown; restart?: boolean }>()
   await sessions.setEnv(c.req.param('id'), env, !!restart)
@@ -276,7 +276,7 @@ app.post('/api/sessions/:id/mcp', async (c) => {
   const { name, enabled } = await c.req.json<{ name: string; enabled: boolean | null }>()
   return c.json(await sessions.toggleMcp(c.req.param('id'), name, enabled === null ? null : !!enabled))
 })
-// MCP switches for all of Sangha; each priest can override them.
+// MCP switches for all of Sangha. Each session can override them.
 app.get('/api/mcp', async (c) => c.json(await sessions.globalMcp()))
 app.post('/api/mcp', async (c) => {
   const { name, enabled } = await c.req.json<{ name: string; enabled: boolean }>()
@@ -294,31 +294,31 @@ app.post('/api/sessions/:id/seen', (c) => {
 })
 app.delete('/api/sessions/:id', async (c) => {
   const result = await sessions.archive(c.req.param('id'), c.req.query('force') === '1')
-  console.log(`☸ dismiss ${c.req.param('id').slice(0, 8)}: ${result.ok ? 'gone' : 'needs confirmation'} (${c.req.header('user-agent')?.slice(0, 60) ?? '?'})`)
+  console.log(`dismiss ${c.req.param('id').slice(0, 8)}: ${result.ok ? 'gone' : 'needs confirmation'} (${c.req.header('user-agent')?.slice(0, 60) ?? '?'})`)
   return result.ok ? c.body(null, 204) : c.json(result, 409)
 })
-app.post('/api/sessions/:id/reincarnate', async (c) => c.json(await sessions.reincarnate(c.req.param('id'))))
+app.post('/api/sessions/:id/reopen', async (c) => c.json(await sessions.reopen(c.req.param('id'))))
 
-// The moon: priests sent to nirvana, newest dismissal first.
-app.get('/api/nirvana', (c) => c.json(sessions.nirvana()))
-// A small model's best guess at which nirvana sessions answer a question, best first.
-app.post('/api/nirvana/search', async (c) => {
+// Closed sessions, most recently closed first.
+app.get('/api/closed-sessions', (c) => c.json(sessions.closedSessions()))
+// A small model's best guess at which closed sessions answer a question, best first.
+app.post('/api/closed-sessions/search', async (c) => {
   const { q } = await c.req.json<{ q?: string }>()
-  return c.json(await sessions.searchNirvana(q ?? ''))
+  return c.json(await sessions.searchClosedSessions(q ?? ''))
 })
 
-// What the monastery has cost at API prices since monitoring began.
+// What all sessions have cost at API prices since monitoring began.
 app.get('/api/costs', (c) => c.json(sessions.costReport()))
 
 // The machine Sangha runs on: CPU, memory, swap, disk, Docker, worktrees, and what to do when it stays red.
-app.get('/api/host', (c) => (host.report ? c.json(host.report) : c.json({ error: 'pas encore mesuré' }, 503)))
-// Your latest screenshot, copied where a priest can read it: the web puts its path in your message.
+app.get('/api/host', (c) => (host.report ? c.json(host.report) : c.json({ error: 'Not measured yet.' }, 503)))
+// Your latest screenshot, copied where a session can read it: the web puts its path in your message.
 app.post('/api/screenshot/latest', (c) => c.json(attachLatestScreenshot()))
 // A little chat about one suggestion: the model sees it, the machine's state and the exchange so far.
 app.post('/api/host/ask', async (c) => {
   const { suggestion, chat } = await c.req.json<{ suggestion?: HostSuggestion; chat?: HostChatTurn[] }>()
-  if (!suggestion?.title || !chat?.length || chat.at(-1)?.role !== 'user') throw new UserError('Question manquante.')
-  if (sessions.blocked()) throw new UserError('Réserve de quota atteinte : réessaie une fois qu’elle s’est libérée.')
+  if (!suggestion?.title || !chat?.length || chat.at(-1)?.role !== 'user') throw new UserError('The question is missing.')
+  if (sessions.blocked()) throw new UserError('Quota reserve reached. Try again once it frees up.')
   return c.json({ answer: await askAboutSuggestion(suggestion, host.report, chat) })
 })
 
@@ -335,7 +335,7 @@ async function drain<T>(stream: SSEStreamingApi, queue: T[], send: (item: T) => 
   }
 }
 
-// Monastery-wide stream: a snapshot of every session, then their changes.
+// App-wide stream: a snapshot of every session, then their changes.
 app.get('/api/events', (c) =>
   streamSSE(c, async (stream) => {
     const queue: GlobalEvent[] = [{ kind: 'snapshot', sessions: sessions.summaries(), quota: sessions.quota, reserve: sessions.reserve }]
@@ -349,14 +349,14 @@ app.get('/api/events', (c) =>
       queue.push({ kind: 'host', host: report })
       wake?.()
     })
-    const unsubscribeElder = elder.subscribe((ev) => {
+    const unsubscribeAdvisor = advisor.subscribe((ev) => {
       queue.push(ev)
       wake?.()
     })
     stream.onAbort(() => {
       unsubscribe()
       unsubscribeHost()
-      unsubscribeElder()
+      unsubscribeAdvisor()
       wake?.()
     })
     await drain(stream, queue, (ev) => stream.writeSSE({ data: JSON.stringify(ev) }), (w) => (wake = w))
@@ -431,15 +431,15 @@ if (!dev && existsSync(webDist)) {
 const server = serve({ fetch: app.fetch, port: config.port, hostname: process.env.HOST ?? '127.0.0.1' }, (i) =>
   console.log(
     dev
-      ? `☸ Sangha API on :${i.port} (internal) — open http://127.0.0.1:${process.env.SANGHA_PORT ?? 8787} — workspaces: ${config.workspacesDir}`
-      : `☸ Sangha on http://${i.address}:${i.port} — workspaces: ${config.workspacesDir}`,
+      ? `Sangha API on :${i.port} (internal), open http://127.0.0.1:${process.env.SANGHA_PORT ?? 8787}, workspaces: ${config.workspacesDir}`
+      : `Sangha on http://${i.address}:${i.port}, workspaces: ${config.workspacesDir}`,
   ),
 )
 
 const shutdown = () => {
   observer.stop()
   host.stop()
-  elder.stop()
+  advisor.stop()
   sessions.closeAll()
   server.close()
   process.exit(0)

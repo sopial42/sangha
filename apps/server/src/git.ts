@@ -11,7 +11,7 @@ export async function git(cwd: string, ...args: string[]): Promise<string> {
     return stdout.trim()
   } catch (err) {
     const e = err as { stderr?: string; message: string }
-    throw new Error(`git ${args[0]}: ${(e.stderr || e.message).trim()}`)
+    throw new Error(`git ${args[0]}: ${(e.stderr || e.message).trim()}`, { cause: err })
   }
 }
 
@@ -34,7 +34,7 @@ export async function branches(dir: string): Promise<string[]> {
   return out.split('\n').filter(Boolean)
 }
 
-/** Isolated checkout for one session, on its own branch, so parallel priests never collide. */
+/** Isolated checkout for one session, on its own branch, so parallel sessions never collide. */
 export async function addWorktree(repo: string, path: string, branch: string, baseRef: string): Promise<string> {
   const base = await git(repo, 'rev-parse', '--verify', `${baseRef}^{commit}`)
   await git(repo, 'worktree', 'add', '-b', branch, path, base)
@@ -58,7 +58,7 @@ export async function removeWorktree(repo: string, path: string, branch: string,
   try {
     rmdirSync(dirname(path))
   } catch {
-    // not empty: other priests of this project still work there
+    // not empty: other sessions of this project still work there
   }
   if (ahead === 0) await git(repo, 'branch', '-D', branch).catch(() => undefined)
 }
@@ -68,7 +68,7 @@ export async function clone(url: string, into: string) {
 }
 
 /** Bring back a worktree an archive removed. The branch survives when it held work: reuse it. Otherwise
- * (removeWorktree deletes branches with no commits) recreate it from the base commit the priest started on. */
+ * (removeWorktree deletes branches with no commits) recreate it from the base commit the session started on. */
 export async function restoreWorktree(repo: string, path: string, branch: string, baseSha: string) {
   if ((await branches(repo)).includes(branch)) await git(repo, 'worktree', 'add', path, branch)
   else await git(repo, 'worktree', 'add', '-b', branch, path, baseSha)

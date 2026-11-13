@@ -10,19 +10,19 @@ describe('session env', () => {
   })
 
   it('names the line that is not KEY=value', () => {
-    expect(parseEnvText('A=1\nnimporte quoi\n').errors).toEqual(['ligne 2 : « nimporte quoi » n\'est pas de la forme CLÉ=valeur'])
+    expect(parseEnvText('A=1\nnot a pair\n').errors).toEqual(['line 2: "not a pair" is not of the form KEY=value'])
   })
 
   it('writes it back so it reads the same', () => {
-    const env = { A: '1', B: 'avec espace', C: 'x#y' }
+    const env = { A: '1', B: 'with space', C: 'x#y' }
     expect(parseEnvText(envText(env)).env).toEqual(env)
   })
 
   it('keeps what Sangha needs out of reach', () => {
     expect(checkSessionEnv({ OS_CLOUD: 'x' })).toEqual({ OS_CLOUD: 'x' })
-    expect(() => checkSessionEnv({ ANTHROPIC_API_KEY: 'sk' })).toThrow('réservée')
-    expect(() => checkSessionEnv({ GIT_CONFIG_GLOBAL: '/x' })).toThrow('réservée')
-    expect(() => checkSessionEnv({ 'BAD-NAME': 'x' })).toThrow('invalide')
-    expect(() => checkSessionEnv({ A: 1 })).toThrow('texte')
+    expect(() => checkSessionEnv({ ANTHROPIC_API_KEY: 'sk' })).toThrow('reserved')
+    expect(() => checkSessionEnv({ GIT_CONFIG_GLOBAL: '/x' })).toThrow('reserved')
+    expect(() => checkSessionEnv({ 'BAD-NAME': 'x' })).toThrow('invalid')
+    expect(() => checkSessionEnv({ A: 1 })).toThrow('text')
   })
 })

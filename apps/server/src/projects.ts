@@ -8,7 +8,6 @@ import { clone, commonDir, currentBranch, git, isGitRepo } from './git'
 import { readHead } from './files'
 import { SANGHA_ROLES } from './roles'
 
-const ROBES = ['#c2703d', '#8e2f2f', '#b8860b', '#4f6d7a', '#6b8e4e', '#7a4f8e', '#a0522d', '#3f7f7a', '#9c6b98', '#5a6f3a']
 
 const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
@@ -35,7 +34,7 @@ function frontmatter(file: string): Record<string, string> {
 
 const pretty = (id: string) => id.replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase())
 
-/** Agents the project ships in .claude/agents, usable as a priest (main thread). */
+/** Agents the project ships in .claude/agents, usable as a session (main thread). */
 function agentsIn(dir: string): AgentOption[] {
   const agentsDir = join(dir, '.claude', 'agents')
   if (!existsSync(agentsDir)) return []
@@ -83,10 +82,6 @@ export class Projects {
     return e.path
   }
 
-  color(name: string): string {
-    return this.store.projectColor(name, ROBES)
-  }
-
   /** Every project that is a git repository: name and root, for worktree discovery (see `host.ts`). */
   repos(): { name: string; path: string }[] {
     return this.entries()
@@ -100,7 +95,6 @@ export class Projects {
         name: e.name,
         path: e.path,
         local: e.local,
-        color: this.color(e.name),
         isGit: isGitRepo(e.path),
         branch: await currentBranch(e.path),
         agents: [...agentsIn(e.path), ...SANGHA_ROLES],
@@ -115,8 +109,8 @@ export class Projects {
   /** Clone a repository into workspaces/<name>. */
   async add(gitUrl: string, name?: string): Promise<string> {
     const target = name || basename(gitUrl.replace(/\/+$/, '')).replace(/\.git$/, '')
-    if (!NAME.test(target)) throw new Error(`nom de projet invalide : ${target}`)
-    if (this.exists(target)) throw new Error(`le projet ${target} existe déjà`)
+    if (!NAME.test(target)) throw new Error(`invalid project name: ${target}`)
+    if (this.exists(target)) throw new Error(`project ${target} already exists`)
     await clone(gitUrl, join(config.workspacesDir, target))
     return target
   }
@@ -124,11 +118,11 @@ export class Projects {
   /** Register a folder already on this machine, where it is: nothing is copied or moved. */
   addLocal(path: string, name?: string): string {
     const abs = resolve(path.replace(/^~(?=$|\/)/, homedir()))
-    if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`dossier introuvable : ${abs}`)
+    if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`folder not found: ${abs}`)
     const entries = this.entries()
-    if (entries.some((e) => e.path === abs)) throw new Error('ce dossier est déjà un projet')
+    if (entries.some((e) => e.path === abs)) throw new Error('this folder is already a project')
     let target = name || basename(abs)
-    if (!NAME.test(target)) throw new Error(`nom de projet invalide : ${target}`)
+    if (!NAME.test(target)) throw new Error(`invalid project name: ${target}`)
     for (let i = 2; entries.some((e) => e.name === target); i++) target = `${name || basename(abs)}-${i}`
     this.store.setIgnored(abs, false)
     this.store.addLocalProject(target, abs.replace(/\/+$/, ''))
@@ -141,16 +135,16 @@ export class Projects {
   }
 
   /**
-   * Point a local project at the folder it moved to. It keeps its name, robe and priests; their
+   * Point a local project at the folder it moved to. It keeps its name and sessions; their
    * worktrees are repaired so they find the repository again.
    */
   async relocate(name: string, path: string): Promise<void> {
     const project = this.store.localProjects().find((p) => p.name === name)
-    if (!project) throw new Error(`projet local inconnu : ${name}`)
+    if (!project) throw new Error(`unknown local project: ${name}`)
     const abs = resolve(path.replace(/^~(?=$|\/)/, homedir())).replace(/\/+$/, '')
-    if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`dossier introuvable : ${abs}`)
+    if (!existsSync(abs) || !statSync(abs).isDirectory()) throw new Error(`folder not found: ${abs}`)
     const other = this.entries().find((e) => e.path === abs && e.name !== name)
-    if (other) throw new Error(`ce dossier est déjà le projet ${other.name}`)
+    if (other) throw new Error(`this folder is already project ${other.name}`)
     this.store.moveLocalProject(name, abs)
     this.store.setIgnored(abs, false)
     this.commons.delete(project.path)
@@ -163,12 +157,12 @@ export class Projects {
   /** Where a project lives, and whether Sangha owns the folder (a clone in workspaces/). */
   info(name: string): { path: string; local: boolean } {
     const e = this.entries().find((x) => x.name === name)
-    if (!e) throw new Error(`projet inconnu : ${name}`)
+    if (!e) throw new Error(`unknown project: ${name}`)
     return { path: e.path, local: e.local }
   }
 
   /**
-   * Take a project out of the monastery. A folder of this machine is only unregistered, never touched;
+   * Remove a project from the board. A folder of this machine is only unregistered, never touched;
    * a clone Sangha made in workspaces/ is deleted.
    */
   remove(name: string) {

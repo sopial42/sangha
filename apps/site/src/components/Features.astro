@@ -1,0 +1,132 @@
+---
+// "Made for running many sessions at once": each card shows the feature itself. Four are crops of the app
+// running on demo data; the terminal and worktree cards are drawn with the app's own pebbles.
+import { Image } from 'astro:assets'
+import { SPRITES } from '@pebbles'
+import StateTile from './StateTile.astro'
+import orchestrator from '../assets/shots/feat-orchestrator.png'
+import usage from '../assets/shots/feat-usage.png'
+import remote from '../assets/shots/feat-remote.png'
+import feedback from '../assets/shots/feat-feedback.png'
+
+const src = (k: keyof typeof SPRITES) => {
+  const s = SPRITES[k].src as unknown
+  return typeof s === 'string' ? s : (s as { src: string }).src
+}
+const code = '[&_code]:rounded [&_code]:bg-tile [&_code]:px-1 [&_code]:py-px [&_code]:font-mono [&_code]:text-[0.85em] [&_code]:text-fg'
+// The visual area fades into the card at the bottom, so crops can run off the edge without a hard cut.
+const fade = '[mask-image:linear-gradient(to_bottom,#000_72%,transparent)]'
+const branches = [
+  { sprite: 'icon-stone-closed', title: 'Webhook retries', branch: 'sangha/webhook-retries' },
+  { sprite: 'icon-coral-open', title: 'Invoice PDF export', branch: 'sangha/invoice-pdf-export' },
+  { sprite: 'icon-stone-closed', title: 'Rate limiter', branch: 'sangha/rate-limiter' },
+] as const
+---
+
+<ul class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-6">
+  <!-- Orchestrator -->
+  <li class="flex flex-col overflow-hidden rounded-2xl border border-line bg-card sm:col-span-2 lg:col-span-4">
+    <div class="relative h-[210px] overflow-hidden sm:h-[300px] border-b border-line bg-bg">
+      <div class:list={['absolute left-6 top-6 w-[calc(100%-1.5rem)] overflow-hidden rounded-lg border border-border sm:left-8 sm:top-8 sm:w-[700px]', fade]}>
+        <Image src={orchestrator} alt="The orchestrator starting a session on billing-api and listing the two sessions that wait for you." widths={[750, 1500]} sizes="(min-width: 640px) 700px, 100vw" class="block h-auto w-full" />
+      </div>
+    </div>
+    <div class="p-7">
+      <h3 class="text-h3">An orchestrator you can ask</h3>
+      <p class="text-body mt-2 max-w-[52ch] text-muted">Press ⌘K and ask it to start, follow or hand off sessions across your projects.</p>
+    </div>
+  </li>
+
+  <!-- Quota -->
+  <li class="flex flex-col overflow-hidden rounded-2xl border border-line bg-card lg:col-span-2">
+    <div class="relative h-[300px] overflow-hidden border-b border-line bg-bg">
+      <div class:list={['absolute left-1/2 top-8 w-[290px] -translate-x-1/2 overflow-hidden rounded-xl', fade]}>
+        <Image src={usage} alt="The usage popover: the five-hour and weekly windows, the reserve, and the spend at API prices." widths={[320, 640]} sizes="290px" class="block h-auto w-full" />
+      </div>
+    </div>
+    <div class="p-7">
+      <h3 class="text-h3">Your quota in sight</h3>
+      <p class="text-body mt-2 text-muted">The five-hour and weekly windows, a reserve that pauses sessions before you run dry, and what each session would cost at API prices.</p>
+    </div>
+  </li>
+
+  <!-- Terminal sessions -->
+  <li class="flex flex-col overflow-hidden rounded-2xl border border-line bg-card lg:col-span-3">
+    <div class="relative h-[260px] overflow-hidden border-b border-line bg-bg" aria-hidden="true">
+      <div class="absolute bottom-[-34px] right-[-30px] sm:right-[-10px]">
+        <StateTile sprite="stone-closed" ring="glow" subs={1} />
+      </div>
+      <div class="absolute left-6 top-7 w-[290px] overflow-hidden rounded-lg border border-border bg-[#0a0a0b] font-mono text-[12.5px] shadow-[0_20px_50px_-20px_rgb(0_0_0/0.9)] sm:left-8">
+        <div class="flex h-7 items-center gap-1.5 border-b border-line px-3">
+          <span class="size-2 rounded-full bg-[#2e2e31]"></span>
+          <span class="size-2 rounded-full bg-[#2e2e31]"></span>
+          <span class="size-2 rounded-full bg-[#2e2e31]"></span>
+        </div>
+        <div class="px-3.5 py-3 leading-[1.85]">
+          <div><span class="text-faint">~/code/billing-api</span> <span class="text-muted">$</span> <span class="text-fg">claude</span></div>
+          <div class="text-muted">&gt; Add idempotency keys to</div>
+          <div class="text-muted">&nbsp;&nbsp;the payment endpoints<span class="ml-0.5 inline-block h-[1.05em] w-[0.55em] translate-y-[0.18em] bg-stone/80"></span></div>
+        </div>
+      </div>
+    </div>
+    <div class="p-7">
+      <h3 class="text-h3">Your terminal sessions too</h3>
+      <p class:list={['text-body mt-2 text-muted', code]}>Anything you run with <code>claude</code> in a terminal or an IDE shows up on its project, subagents included.</p>
+    </div>
+  </li>
+
+  <!-- Worktrees -->
+  <li class="flex flex-col overflow-hidden rounded-2xl border border-line bg-card lg:col-span-3">
+    <div class="relative h-[260px] overflow-hidden border-b border-line bg-bg px-6 pt-7 sm:px-8" aria-hidden="true">
+      <div class="flex items-center gap-2 font-mono text-[12.5px]">
+        <span class="text-fg">billing-api</span>
+        <span class="text-faint">main</span>
+      </div>
+      <ul class="ml-[5px] mt-2">
+        {
+          branches.map((b, i) => (
+            <li class="relative pl-6 pt-2.5">
+              <span class:list={['absolute left-0 top-0 w-4 border-b border-l border-border', 'h-[34px] rounded-bl-lg']} />
+              {i < branches.length - 1 && <span class="absolute bottom-0 left-0 top-0 border-l border-border" />}
+              <div class="flex items-center gap-3 rounded-lg border border-line bg-card px-3 py-2.5">
+                <img src={src(b.sprite)} alt="" width="26" height="19" />
+                <span class="truncate text-[13.5px] font-medium">{b.title}</span>
+                <span class="ml-auto hidden truncate font-mono text-[12px] text-faint sm:block">{b.branch}</span>
+              </div>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+    <div class="p-7">
+      <h3 class="text-h3">One worktree per session</h3>
+      <p class:list={['text-body mt-2 text-muted', code]}>Sessions started from Sangha work on their own <code>sangha/…</code> branch, so three of them can change the same repo.</p>
+    </div>
+  </li>
+
+  <!-- Remote Control -->
+  <li class="flex flex-col overflow-hidden rounded-2xl border border-line bg-card sm:col-span-2 lg:col-span-4">
+    <div class="relative h-[190px] overflow-hidden sm:h-[260px] border-b border-line bg-bg">
+      <div class:list={['absolute inset-x-4 top-8 sm:inset-x-auto sm:left-8 sm:w-[600px]', fade]}>
+        <Image src={remote} alt="A session handed to claude.ai with Remote Control, with a QR code to continue on a phone." widths={[736, 1472]} sizes="(min-width: 640px) 600px, 100vw" class="block h-auto w-full" />
+      </div>
+    </div>
+    <div class="p-7">
+      <h3 class="text-h3">Continue from your phone</h3>
+      <p class="text-body mt-2 max-w-[52ch] text-muted">Hand a conversation to claude.ai with Remote Control and pick it up anywhere.</p>
+    </div>
+  </li>
+
+  <!-- Advisor -->
+  <li class="flex flex-col overflow-hidden rounded-2xl border border-line bg-card lg:col-span-2">
+    <div class="relative grid h-[260px] place-items-center overflow-hidden border-b border-line bg-bg">
+      <div class="overflow-hidden rounded-xl border border-line">
+        <Image src={feedback} alt="Feedback on a conversation for the advisor: a thumbs up or down, and a comment." widths={[283, 566]} sizes="270px" class="block h-auto w-[270px]" />
+      </div>
+    </div>
+    <div class="p-7">
+      <h3 class="text-h3">An advisor that learns from you</h3>
+      <p class="text-body mt-2 text-muted">Comment on a message, and it turns your feedback into concrete improvements for your agents and projects.</p>
+    </div>
+  </li>
+</ul>

@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from 'react'
 import { CopyButton } from './CopyButton'
+import { cn } from '@/lib/utils'
 
 // Minimal, safe markdown for agent messages: paragraphs, bullet/numbered lists, headings, tables,
 // **bold**, `code`, [links](https://…) and bare URLs, and fenced code blocks. Never injects raw HTML.
@@ -10,7 +11,7 @@ const LINK = /\[([^\]]+)\]\(((?:https?:\/\/|mailto:)(?:[^\s()]|\([^\s()]*\))*)\)
 const BARE_URL = /https?:\/\/(?:[^\s<>()]|\([^\s<>()]*\))*(?:[^\s<>().,;:!?'"\]]|\([^\s<>()]*\))/
 
 const Link = ({ href, children }: { href: string; children: ReactNode }) => (
-  <a href={href} target="_blank" rel="noopener noreferrer">
+  <a href={href} target="_blank" rel="noopener noreferrer" className="text-foreground underline decoration-muted-foreground/50 underline-offset-2 [overflow-wrap:anywhere] hover:decoration-foreground">
     {children}
   </a>
 )
@@ -27,9 +28,12 @@ function inline(text: string): ReactNode[] {
     const link = LINK.exec(part)
     if (part.startsWith('`') && part.length > 1)
       out.push(
-        <span key={i} className="md-code">
-          <code>{part.slice(1, -1)}</code>
-          <CopyButton text={part.slice(1, -1)} />
+        <span key={i} className="group/code relative">
+          <code className="rounded-sm bg-muted px-1 py-0.5 font-mono text-[0.88em] [overflow-wrap:anywhere]">{part.slice(1, -1)}</code>
+          <CopyButton
+            text={part.slice(1, -1)}
+            className="absolute -top-6 right-0 z-10 bg-card opacity-0 shadow-sm ring-1 ring-border transition-opacity group-hover/code:opacity-100 focus-visible:opacity-100"
+          />
         </span>,
       )
     else if (link && link[0] === part) out.push(<Link key={i} href={link[2]!}>{inline(link[1]!)}</Link>)
@@ -62,12 +66,12 @@ const alignOf = (sep: string): Align => {
 
 function Table({ head, align, rows }: { head: string[]; align: Align[]; rows: string[][] }) {
   return (
-    <div className="md-table">
-      <table>
-        <thead>
+    <div className="max-w-full overflow-x-auto rounded-lg border">
+      <table className="min-w-full border-collapse text-small">
+        <thead className="bg-muted/50">
           <tr>
             {head.map((h, i) => (
-              <th key={i} style={{ textAlign: align[i] }}>
+              <th key={i} style={{ textAlign: align[i] }} className="border-b px-3 py-2 text-left align-top font-medium whitespace-nowrap">
                 {inline(h)}
               </th>
             ))}
@@ -75,9 +79,9 @@ function Table({ head, align, rows }: { head: string[]; align: Align[]; rows: st
         </thead>
         <tbody>
           {rows.map((r, i) => (
-            <tr key={i}>
+            <tr key={i} className="border-b last:border-b-0">
               {head.map((_, j) => (
-                <td key={j} style={{ textAlign: align[j] }}>
+                <td key={j} style={{ textAlign: align[j] }} className="px-3 py-2 text-left align-top">
                   {inline(r[j] ?? '')}
                 </td>
               ))}
@@ -94,7 +98,7 @@ export function MdInline({ text }: { text: string }) {
   return <>{inline(text)}</>
 }
 
-export function Md({ text }: { text: string }) {
+export function Md({ text, className }: { text: string; className?: string }) {
   const blocks: ReactNode[] = []
   const lines = text.split('\n')
   let list: { ordered: boolean; start: number; items: string[] } | null = null
@@ -109,11 +113,13 @@ export function Md({ text }: { text: string }) {
     const items = list.items.map((it, i) => <li key={i}>{inline(it)}</li>)
     blocks.push(
       list.ordered ? (
-        <ol key={blocks.length} start={list.start}>
+        <ol key={blocks.length} start={list.start} className="flex list-decimal flex-col gap-1 pl-6 marker:text-muted-foreground">
           {items}
         </ol>
       ) : (
-        <ul key={blocks.length}>{items}</ul>
+        <ul key={blocks.length} className="flex list-disc flex-col gap-1 pl-6 marker:text-muted-foreground">
+          {items}
+        </ul>
       ),
     )
     list = null
@@ -127,9 +133,9 @@ export function Md({ text }: { text: string }) {
       const code: string[] = []
       while (++i < lines.length && !lines[i]!.trim().startsWith('```')) code.push(lines[i]!)
       blocks.push(
-        <div key={blocks.length} className="md-pre">
-          <pre>{code.join('\n')}</pre>
-          <CopyButton text={code.join('\n')} />
+        <div key={blocks.length} className="group/pre relative rounded-lg border bg-muted/40">
+          <pre className="overflow-x-auto px-3 py-2 font-mono text-small leading-relaxed">{code.join('\n')}</pre>
+          <CopyButton text={code.join('\n')} className="absolute top-1 right-1 bg-card opacity-0 transition-opacity group-hover/pre:opacity-100 focus-visible:opacity-100" />
         </div>,
       )
       continue
@@ -159,7 +165,11 @@ export function Md({ text }: { text: string }) {
     } else if (heading) {
       flushPara()
       flushList()
-      blocks.push(<h4 key={blocks.length}>{inline(heading[1]!)}</h4>)
+      blocks.push(
+        <h4 key={blocks.length} className="text-title font-semibold text-foreground">
+          {inline(heading[1]!)}
+        </h4>,
+      )
     } else if (!line.trim()) {
       flushPara()
       flushList()
@@ -170,5 +180,5 @@ export function Md({ text }: { text: string }) {
   }
   flushPara()
   flushList()
-  return <div className="md">{blocks}</div>
+  return <div className={cn('flex min-w-0 flex-col gap-3 wrap-break-word', className)}>{blocks}</div>
 }

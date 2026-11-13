@@ -1,0 +1,157 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter/opsz.css";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* The app's own palette ("riverbed at night"): one accent, coral, and it always means "needs you". */
+@theme {
+  --font-sans: "Inter Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+  --color-bg: #0d0d0e;
+  --color-surface: #121213;
+  --color-card: #161617;
+  --color-tile: #1e1e20;
+  --color-line: #232325;
+  --color-border: #2e2e31;
+  --color-fg: #edebe7;
+  --color-muted: #9c9b97;
+  --color-faint: #6e6d6a;
+  --color-coral: #f2785c;
+  --color-amber: #f2b35c;
+  --color-stone: #d9d4cb;
+  --color-danger: #f06a6e;
+
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: var(--color-bg);
+    scroll-behavior: smooth;
+    scroll-padding-top: 88px;
+  }
+  body {
+    @apply bg-bg font-sans text-fg antialiased;
+    font-feature-settings: "cv11", "ss01";
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--color-coral) 35%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-stone);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+}
+
+/* Type scale: display sizes use Inter's optical size axis, so large headlines are tight and crisp. */
+@utility text-display {
+  font-size: clamp(2.5rem, 1.4rem + 4.4vw, 4.5rem);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  font-weight: 600;
+  font-variation-settings: "opsz" 32;
+  text-wrap: balance;
+}
+@utility text-h2 {
+  font-size: clamp(2rem, 1.3rem + 2.6vw, 3.25rem);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  font-weight: 600;
+  font-variation-settings: "opsz" 32;
+  text-wrap: balance;
+}
+@utility text-h3 {
+  font-size: 1.0625rem;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+}
+@utility text-lead {
+  font-size: clamp(1.0625rem, 1rem + 0.3vw, 1.25rem);
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+  text-wrap: pretty;
+}
+@utility text-body {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+@utility container-page {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: 24px;
+}
+
+/* Buttons: press feedback, nothing more. */
+@utility motion-press {
+  transition:
+    transform 160ms var(--ease-out-strong),
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+  &:active {
+    transform: scale(0.97);
+  }
+}
+
+/* Sections fade up once as they enter the viewport (set by scripts/reveal.ts). */
+@utility reveal {
+  opacity: 0;
+  transform: translateY(12px);
+  transition:
+    opacity 700ms var(--ease-out-strong),
+    transform 700ms var(--ease-out-strong);
+  &[data-shown] {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The board's motion, the same as in the app. */
+@keyframes pebble-ping {
+  from {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+@keyframes pebble-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@utility motion-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pebble-ping 900ms var(--ease-out-strong) 1 both;
+}
+@utility motion-breathe {
+  animation: pebble-breathe 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal {
+    transform: none;
+  }
+  .motion-ping,
+  .motion-breathe {
+    animation: none;
+  }
+}

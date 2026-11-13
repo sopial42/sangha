@@ -1,25 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import type { MonasteryEvent } from '@sangha/shared'
+import type { SessionEvent } from '@sangha/shared'
 import { recentWindow } from '../src/session'
 
-const u = (text: string): MonasteryEvent => ({ t: 'user.message', text })
-const a = (text: string): MonasteryEvent => ({ t: 'buddha.text', text })
+const u = (text: string): SessionEvent => ({ t: 'user.message', text })
+const a = (text: string): SessionEvent => ({ t: 'assistant.text', text })
 
 describe('recentWindow', () => {
-  it('reaches back past a short "reprend" to the words before it', () => {
-    const events = [u('old'), a('x'), u('merge quand c’est green'), a('CI relancée, j’attends'), u('autonomie'), a('ok'), u('reprend'), a('toujours en attente de la CI')]
-    expect(recentWindow(events).map((e) => (e.t === 'user.message' || e.t === 'buddha.text' ? e.text : ''))).toEqual([
-      'merge quand c’est green',
-      'CI relancée, j’attends',
-      'autonomie',
+  it('reaches back past a short "continue" to the words before it', () => {
+    const events = [u('old'), a('x'), u('merge when it is green'), a('CI restarted, waiting'), u('autonomy'), a('ok'), u('continue'), a('still waiting on CI')]
+    expect(recentWindow(events).map((e) => (e.t === 'user.message' || e.t === 'assistant.text' ? e.text : ''))).toEqual([
+      'merge when it is green',
+      'CI restarted, waiting',
+      'autonomy',
       'ok',
-      'reprend',
-      'toujours en attente de la CI',
+      'continue',
+      'still waiting on CI',
     ])
   })
 
   it('keeps everything when there are few messages', () => {
-    const events = [u('fais X'), a('fait')]
+    const events = [u('do X'), a('done')]
     expect(recentWindow(events)).toEqual(events)
   })
 })

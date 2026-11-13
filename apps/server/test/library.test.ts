@@ -17,7 +17,7 @@ describe('the MCP library', () => {
   it('starts switched off, and asks for credentials it lacks', () => {
     const lib = new McpLibrary(envFile())
     expect(lib.list()[0]).toMatchObject({ name: 'bitbucket-stdio', active: false, missing: true })
-    expect(() => lib.set('bitbucket-stdio', { active: true })).toThrow(/il manque/)
+    expect(() => lib.set('bitbucket-stdio', { active: true })).toThrow(/missing/)
     expect(lib.catalog()).toEqual({})
   })
 

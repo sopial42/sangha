@@ -3,12 +3,12 @@ import { claudeAncestor, isClaude, launcherFromEnv, parseProcs, sessionIdOf } fr
 
 const LEAD = 'd78d57f4-01ec-4669-94ab-e41169c267e4'
 
-// A Sangha priest (SDK process), the shell of his background task, and the headless team lead it runs.
+// A Sangha session (SDK process), the shell of its background task, and the headless team lead it runs.
 const ps = `
     1     0 /sbin/launchd
 98503  9000 /Users/axel/sangha/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude --output-format stream-json --agent kiat-team-lead --resume=${LEAD} --setting-sources=user,project
 30608 98503 /bin/zsh -c source snapshot.sh && claude --agent kiat-team-lead -p hello
-30619 30608 claude --agent kiat-team-lead --permission-mode bypassPermissions -p Lis d'abord /tmp/tl-brief.md
+30619 30608 claude --agent kiat-team-lead --permission-mode bypassPermissions -p Read /tmp/tl-brief.md first
 14960   800 claude --dangerously-skip-permissions
 `
 
@@ -16,7 +16,7 @@ describe('processes', () => {
   const procs = parseProcs(ps)
 
   it('parses pid, ppid and the full command', () => {
-    expect(procs.get(30619)).toEqual({ pid: 30619, ppid: 30608, command: "claude --agent kiat-team-lead --permission-mode bypassPermissions -p Lis d'abord /tmp/tl-brief.md" })
+    expect(procs.get(30619)).toEqual({ pid: 30619, ppid: 30608, command: "claude --agent kiat-team-lead --permission-mode bypassPermissions -p Read /tmp/tl-brief.md first" })
     expect(procs.size).toBe(5)
   })
 

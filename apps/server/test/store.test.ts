@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ElderTopic } from '@sangha/shared'
+import type { AdvisorTopic } from '@sangha/shared'
 import { LOOP_STOP_MESSAGE, Store, type SessionRow } from '../src/db'
 
 const DONE = { t: 'turn.done' as const, ok: true, costUsdEquiv: 0, durationMs: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } }
@@ -19,7 +19,7 @@ const row = (id: string): SessionRow => ({
 })
 
 describe('Store', () => {
-  it('knows who else still works in a worktree, so sending one to nirvana keeps it for the other', () => {
+  it('knows who else still works in a worktree, so closing one keeps it for the other', () => {
     const s = new Store(':memory:')
     s.createSession(row('old'))
     s.createSession(row('new'))
@@ -29,21 +29,21 @@ describe('Store', () => {
     expect(s.othersInWorktree('/w/x', 'old')).toEqual([])
   })
 
-  it('keeps messages queued while he works, editable until they leave', () => {
+  it('keeps messages queued while it works, editable until they leave', () => {
     const s = new Store(':memory:')
-    s.addQueued('a', { id: 'm1', text: 'un', at: 1 })
-    s.addQueued('a', { id: 'm2', text: 'deux', at: 2 })
-    s.addQueued('b', { id: 'm3', text: 'autre', at: 3 })
-    expect(s.editQueued('a', 'm1', 'un bis')).toBe(true)
-    expect(s.editQueued('b', 'm1', 'pas à lui')).toBe(false)
-    expect(s.takeQueued('a', ['m2']).map((m) => m.text)).toEqual(['deux'])
-    expect(s.takeQueued('a').map((m) => m.text)).toEqual(['un bis'])
+    s.addQueued('a', { id: 'm1', text: 'one', at: 1 })
+    s.addQueued('a', { id: 'm2', text: 'two', at: 2 })
+    s.addQueued('b', { id: 'm3', text: 'other', at: 3 })
+    expect(s.editQueued('a', 'm1', 'one again')).toBe(true)
+    expect(s.editQueued('b', 'm1', 'not its own')).toBe(false)
+    expect(s.takeQueued('a', ['m2']).map((m) => m.text)).toEqual(['two'])
+    expect(s.takeQueued('a').map((m) => m.text)).toEqual(['one again'])
     expect(s.queued('a')).toEqual([])
-    expect(s.editQueued('a', 'm1', 'trop tard')).toBe(false)
+    expect(s.editQueued('a', 'm1', 'too late')).toBe(false)
     expect(s.queued('b')).toHaveLength(1)
   })
 
-  it('knows when a priest fell idle and whether it was seen', () => {
+  it('knows when a session fell idle and whether it was seen', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))
     s.append('a', { t: 'busy', busy: true })
@@ -53,14 +53,6 @@ describe('Store', () => {
     s.markSeen('a')
     expect(s.getSession('a')!.lastSeenSeq).toBe(2)
     expect(s.lastEvent('a', 'busy')!.ev.busy).toBe(false)
-  })
-
-  it('gives each project its own robe color, stable over time', () => {
-    const s = new Store(':memory:')
-    const palette = ['red', 'blue']
-    expect(s.projectColor('robia', palette)).toBe('red')
-    expect(s.projectColor('robin', palette)).toBe('blue')
-    expect(s.projectColor('robia', palette)).toBe('red')
   })
 
   it('keeps what a small model wrote, with the state it describes', () => {
@@ -77,28 +69,28 @@ describe('Store', () => {
   it('keeps a free-text note per session, cleared by an empty one', () => {
     const s = new Store(':memory:')
     expect(s.notes().get('a')).toBeUndefined()
-    s.setSessionNote('a', 'garde un œil sur les migrations')
-    expect(s.notes().get('a')).toBe('garde un œil sur les migrations')
+    s.setSessionNote('a', 'keep an eye on the migrations')
+    expect(s.notes().get('a')).toBe('keep an eye on the migrations')
     s.setSessionNote('a', null)
     expect(s.notes().get('a')).toBeUndefined()
   })
 
-  it('keeps who is set aside in the lotus pond, cleared by taking him out', () => {
+  it('keeps who is set aside, cleared by taking it back', () => {
     const s = new Store(':memory:')
-    expect(s.lotusIds().has('a')).toBe(false)
-    s.setLotus('a', true)
-    expect(s.lotusIds().has('a')).toBe(true)
-    s.setLotus('a', false)
-    expect(s.lotusIds().has('a')).toBe(false)
+    expect(s.setAsideIds().has('a')).toBe(false)
+    s.setSetAside('a', true)
+    expect(s.setAsideIds().has('a')).toBe(true)
+    s.setSetAside('a', false)
+    expect(s.setAsideIds().has('a')).toBe(false)
   })
 
-  it('finds novices that never reported back', () => {
+  it('finds subagents that never reported back', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))
-    s.append('a', { t: 'monk.summoned', monkId: 'n1', agentType: 'x', description: 'd', prompt: '', depth: 1 })
-    s.append('a', { t: 'monk.summoned', monkId: 'n2', agentType: 'x', description: 'd', prompt: '', depth: 1 })
-    s.append('a', { t: 'monk.done', monkId: 'n1', status: 'completed', summary: 'ok' })
-    expect(s.danglingNovices('a')).toEqual(['n2'])
+    s.append('a', { t: 'subagent.started', subagentId: 'n1', agentType: 'x', description: 'd', prompt: '', depth: 1 })
+    s.append('a', { t: 'subagent.started', subagentId: 'n2', agentType: 'x', description: 'd', prompt: '', depth: 1 })
+    s.append('a', { t: 'subagent.done', subagentId: 'n1', status: 'completed', summary: 'ok' })
+    expect(s.danglingSubagents('a')).toEqual(['n2'])
   })
 
   it('hides archived sessions', () => {
@@ -145,7 +137,7 @@ describe('Store', () => {
   })
 
   describe('lastAutonomy', () => {
-    it('is null when he never got a /goal or /loop', () => {
+    it('is null when it never had a /goal or /loop', () => {
       const s = new Store(':memory:')
       s.createSession(row('a'))
       s.append('a', { t: 'user.message', text: 'fais X' })
@@ -156,25 +148,25 @@ describe('Store', () => {
       it('is active with the text right after /goal <text>', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/goal on continue jusqu’à la prod' })
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'on continue jusqu’à la prod', active: true })
+        s.append('a', { t: 'user.message', text: '/goal keep going until production' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'keep going until production', active: true })
       })
 
       it('goes inactive on /goal clear, keeping the text of the last real goal', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/goal on continue jusqu’à la prod' })
+        s.append('a', { t: 'user.message', text: '/goal keep going until production' })
         s.append('a', { t: 'user.message', text: '/goal clear' })
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'on continue jusqu’à la prod', active: false })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'keep going until production', active: false })
       })
 
       it('accepts stop|off|cancel and a bare /goal as clearing it too, case-insensitively', () => {
         for (const clear of ['/goal stop', '/goal OFF', '/goal Cancel', '/goal']) {
           const s = new Store(':memory:')
           s.createSession(row('a'))
-          s.append('a', { t: 'user.message', text: '/goal un objectif' })
+          s.append('a', { t: 'user.message', text: '/goal a goal' })
           s.append('a', { t: 'user.message', text: clear })
-          expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'un objectif', active: false })
+          expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'a goal', active: false })
         }
       })
 
@@ -199,7 +191,7 @@ describe('Store', () => {
         s.createSession(row('a'))
         s.createSession(row('b'))
         s.append('a', { t: 'user.message', text: '/goal objectif de a' })
-        s.append('b', { t: 'user.message', text: 'rien à voir' })
+        s.append('b', { t: 'user.message', text: 'unrelated' })
         expect(s.lastAutonomy('b')).toBeNull()
         expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'objectif de a', active: true })
       })
@@ -209,88 +201,95 @@ describe('Store', () => {
       it('is active right after /loop <text>, self-paced (no interval) and no nextAt before a wake-up', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/loop surveille le déploiement' })
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille le déploiement', interval: null, nextAt: null, active: true })
+        s.append('a', { t: 'user.message', text: '/loop watch the deployment' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'watch the deployment', interval: null, nextAt: null, active: true })
       })
 
       it('parses a leading interval token, keeping the rest as the text', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/loop 5m vérifie le déploiement' })
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'vérifie le déploiement', interval: '5m', nextAt: null, active: true })
+        s.append('a', { t: 'user.message', text: '/loop 5m check the deployment' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'check the deployment', interval: '5m', nextAt: null, active: true })
       })
 
       it('ignores a token that merely looks like an interval, like 5mb, keeping it as part of the text', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/loop 5mb de logs à surveiller' })
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: '5mb de logs à surveiller', interval: null, nextAt: null, active: true })
+        s.append('a', { t: 'user.message', text: '/loop 5mb of logs to watch' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: '5mb of logs to watch', interval: null, nextAt: null, active: true })
       })
 
       it('stays active before any turn completes, even with no loop.wake yet', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/loop surveille' })
-        s.append('a', { t: 'busy', busy: true }) // still on his first turn
+        s.append('a', { t: 'user.message', text: '/loop watch' })
+        s.append('a', { t: 'busy', busy: true }) // still on its first turn
         expect(s.lastAutonomy('a')?.active).toBe(true)
       })
 
-      it('picks up nextAt from the latest loop.wake, once he reschedules himself', () => {
+      it('picks up nextAt from the latest loop.wake, once it reschedules itself', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        s.append('a', { t: 'user.message', text: '/loop watch' })
         s.append('a', { t: 'loop.wake', nextAt: 123456, stop: false })
         s.append('a', DONE)
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: 123456, active: true })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'watch', interval: null, nextAt: 123456, active: true })
       })
 
       it('ScheduleWakeup stop:true ends a self-paced loop', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        s.append('a', { t: 'user.message', text: '/loop watch' })
         s.append('a', { t: 'loop.wake', nextAt: 123456, stop: false })
         s.append('a', DONE)
         s.append('a', { t: 'loop.wake', nextAt: null, stop: true })
         s.append('a', DONE)
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: false })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'watch', interval: null, nextAt: null, active: false })
       })
 
       it('a turn ending without rescheduling silently ends a self-paced loop', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        s.append('a', { t: 'user.message', text: '/loop watch' })
         s.append('a', { t: 'loop.wake', nextAt: 123456, stop: false })
         s.append('a', DONE) // woke up, rescheduled: fine
         s.append('a', DONE) // woke up again but this time did not reschedule: the loop dies here
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: false })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'watch', interval: null, nextAt: null, active: false })
       })
 
       it('a fixed-interval loop (CronCreate) stays active across turns without rescheduling itself', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/loop 5m surveille' })
+        s.append('a', { t: 'user.message', text: '/loop 5m watch' })
         s.append('a', { t: 'loop.wake', nextAt: 999, stop: false }) // CronCreate, once
         s.append('a', DONE) // a fire of the cron, no rescheduling needed
         s.append('a', DONE) // another fire
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: '5m', nextAt: 999, active: true })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'watch', interval: '5m', nextAt: 999, active: true })
       })
 
       it('CronDelete ends a fixed-interval loop', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/loop 5m surveille' })
+        s.append('a', { t: 'user.message', text: '/loop 5m watch' })
         s.append('a', { t: 'loop.wake', nextAt: 999, stop: false })
         s.append('a', { t: 'loop.wake', nextAt: null, stop: true })
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: '5m', nextAt: null, active: false })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'watch', interval: '5m', nextAt: null, active: false })
       })
 
       it('the Sangha stop marker ends a loop even without a stop-flagged loop.wake', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        s.append('a', { t: 'user.message', text: '/loop watch' })
         s.append('a', { t: 'loop.wake', nextAt: 123456, stop: false })
         s.append('a', { t: 'user.message', text: LOOP_STOP_MESSAGE })
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: false })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'watch', interval: null, nextAt: null, active: false })
+      })
+      it('the legacy French stop marker still ends a loop (older event logs)', () => {
+        const s = new Store(':memory:')
+        s.createSession(row('a'))
+        s.append('a', { t: 'user.message', text: '/loop watch' })
+        s.append('a', { t: 'user.message', text: "Arrête la boucle /loop : ne programme plus aucun réveil (ScheduleWakeup avec stop) et supprime tes tâches CronCreate. Ne fais rien d'autre." })
+        expect(s.lastAutonomy('a')?.active).toBe(false)
       })
     })
 
@@ -298,19 +297,19 @@ describe('Store', () => {
       it('a /loop after a cleared goal replaces it: only the loop shows', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/goal un objectif' })
+        s.append('a', { t: 'user.message', text: '/goal a goal' })
         s.append('a', { t: 'user.message', text: '/goal clear' })
-        s.append('a', { t: 'user.message', text: '/loop surveille' })
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: true })
+        s.append('a', { t: 'user.message', text: '/loop watch' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'loop', text: 'watch', interval: null, nextAt: null, active: true })
       })
 
       it('a /goal after a stopped loop replaces it: only the goal shows', () => {
         const s = new Store(':memory:')
         s.createSession(row('a'))
-        s.append('a', { t: 'user.message', text: '/loop surveille' })
+        s.append('a', { t: 'user.message', text: '/loop watch' })
         s.append('a', { t: 'user.message', text: LOOP_STOP_MESSAGE })
-        s.append('a', { t: 'user.message', text: '/goal un objectif' })
-        expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'un objectif', active: true })
+        s.append('a', { t: 'user.message', text: '/goal a goal' })
+        expect(s.lastAutonomy('a')).toEqual({ mode: 'goal', text: 'a goal', active: true })
       })
     })
   })
@@ -320,7 +319,7 @@ describe('feedback', () => {
   it('keeps feedback pending until marked processed', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))
-    s.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: 3, rating: 'down', comment: 'trop verbeux', excerpt: 'Lui : ...', createdAt: 1, processedAt: null })
+    s.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: 3, rating: 'down', comment: 'too verbose', excerpt: 'Agent: ...', createdAt: 1, processedAt: null })
     expect(s.pendingFeedback().map((f) => f.id)).toEqual(['f1'])
     s.markFeedbackProcessed(['f1'], 99)
     expect(s.pendingFeedback()).toEqual([])
@@ -330,42 +329,42 @@ describe('feedback', () => {
   it('freezes an excerpt around the commented message, or the conversation tail when none is given', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))
-    s.append('a', { t: 'user.message', text: 'un' })
-    s.append('a', { t: 'buddha.text', text: 'deux' })
-    s.append('a', { t: 'user.message', text: 'trois' })
-    expect(s.excerptAround('a', 2)).toContain('deux')
-    expect(s.excerptAround('a', null)).toContain('trois')
+    s.append('a', { t: 'user.message', text: 'one' })
+    s.append('a', { t: 'assistant.text', text: 'two' })
+    s.append('a', { t: 'user.message', text: 'three' })
+    expect(s.excerptAround('a', 2)).toContain('Agent: two')
+    expect(s.excerptAround('a', null)).toContain('User: three')
   })
 })
 
-describe('elder topics, reports and chat', () => {
+describe('Advisor topics, reports and chat', () => {
   it('creates and updates a topic by id, reading it back', () => {
     const s = new Store(':memory:')
-    const t: ElderTopic = { id: 't1', scope: 'sangha', title: 'MCP instable', detail: 'd', evidence: ['e1'], status: 'proposed', createdAt: 1, updatedAt: 1 }
-    s.upsertElderTopic(t)
-    s.upsertElderTopic({ ...t, status: 'accepted', updatedAt: 2 })
-    expect(s.elderTopic('t1')!.status).toBe('accepted')
-    expect(s.elderTopics()).toHaveLength(1)
+    const t: AdvisorTopic = { id: 't1', scope: 'sangha', title: 'Flaky MCP', detail: 'd', evidence: ['e1'], status: 'proposed', createdAt: 1, updatedAt: 1 }
+    s.upsertAdvisorTopic(t)
+    s.upsertAdvisorTopic({ ...t, status: 'accepted', updatedAt: 2 })
+    expect(s.advisorTopic('t1')!.status).toBe('accepted')
+    expect(s.advisorTopics()).toHaveLength(1)
   })
 
   it('keeps reports newest first', () => {
     const s = new Store(':memory:')
-    s.addElderReport({ id: 'r1', kind: 'weekly', text: 'rien à signaler', topicIds: [], costUsd: 0.01, tokens: 500, createdAt: 1 })
-    s.addElderReport({ id: 'r2', kind: 'manual', text: 'un sujet', topicIds: ['t1'], costUsd: null, tokens: null, createdAt: 2 })
-    expect(s.elderReports().map((r) => r.id)).toEqual(['r2', 'r1'])
+    s.addAdvisorReport({ id: 'r1', kind: 'weekly', text: 'nothing to report', topicIds: [], costUsd: 0.01, tokens: 500, createdAt: 1 })
+    s.addAdvisorReport({ id: 'r2', kind: 'manual', text: 'a topic', topicIds: ['t1'], costUsd: null, tokens: null, createdAt: 2 })
+    expect(s.advisorReports().map((r) => r.id)).toEqual(['r2', 'r1'])
   })
 
   it('keeps the chat in order, oldest first, limited to the last N', () => {
     const s = new Store(':memory:')
-    s.addElderChatMessage('user', 'un', 1)
-    s.addElderChatMessage('elder', 'deux', 2)
-    expect(s.elderChat(1).map((t) => t.text)).toEqual(['deux'])
-    expect(s.elderChat().map((t) => t.text)).toEqual(['un', 'deux'])
+    s.addAdvisorChatMessage('user', 'one', 1)
+    s.addAdvisorChatMessage('advisor', 'two', 2)
+    expect(s.advisorChat(1).map((t) => t.text)).toEqual(['two'])
+    expect(s.advisorChat().map((t) => t.text)).toEqual(['one', 'two'])
   })
 })
 
-describe('elderSanghaStats', () => {
-  it('aggregates tool failures by server, session errors, cost and renewals since a date', () => {
+describe('advisorSanghaStats', () => {
+  it('aggregates tool failures by server, session errors, cost and fresh starts since a date', () => {
     const s = new Store(':memory:')
     s.createSession(row('a'))
     s.createSession(row('b'))
@@ -374,7 +373,7 @@ describe('elderSanghaStats', () => {
     s.append('a', { t: 'error', message: 'oops' })
     s.append('a', { t: 'turn.done', ok: true, costUsdEquiv: 1.5, durationMs: 1, usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } })
     s.setSuccessor('a', 'b')
-    const stats = s.elderSanghaStats(0)
+    const stats = s.advisorSanghaStats(0)
     expect(stats.toolErrorsByServer).toEqual({ bitbucket: 2 })
     expect(stats.sessionErrors).toBe(1)
     expect(stats.costUsd).toBeCloseTo(1.5)

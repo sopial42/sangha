@@ -4,24 +4,24 @@ import { bytes } from './host'
 
 const MODEL = process.env.SANGHA_HOST_MODEL ?? 'sonnet'
 
-const SYSTEM = `Tu aides un développeur à comprendre et traiter une alerte sur sa machine (un Mac ou un Linux) où tournent
-des stacks Docker, des worktrees git et des agents Claude Code (les « prêtres » de Sangha, chacun dans son worktree).
-Tu reçois l'alerte (une suggestion), l'état actuel de la machine et la conversation. Réponds à sa dernière question,
-en français, court et concret : quelques phrases ou une petite liste, des commandes en blocs \`code\` s'il en faut.
-Tu n'exécutes rien toi-même. Pour toute commande qui supprime quelque chose (rm, prune, git worktree remove, kill…),
-dis clairement ce qui sera perdu et propose d'abord de vérifier (taille, contenu, statut git). Si tu ne sais pas,
-dis quelle commande donnerait l'information.`
+const SYSTEM = `You help a developer understand and handle an alert on their machine (a Mac or a Linux box) running
+Docker stacks, git worktrees and Claude Code agents (Sangha's sessions, each in its own worktree).
+You get the alert (a suggestion), the machine's current state and the conversation. Answer their last question
+in English, short and concrete: a few sentences or a short list, with commands in \`code\` blocks when needed.
+You run nothing yourself. For any command that deletes something (rm, prune, git worktree remove, kill…),
+say clearly what will be lost and suggest checking first (size, contents, git status). If you don't know,
+say which command would tell.`
 
 /** The machine as the model reads it: metrics, heaviest processes, containers, worktrees. */
 function describe(r: HostReport): string {
-  const lines = [`Machine ${r.hostname} (${r.platform}, ${r.cores} cœurs${r.inContainer ? ', Sangha dans un conteneur' : ''})`]
-  for (const m of r.metrics) lines.push(`- ${m.label} : ${Math.round(m.value * 100)} % (${m.detail}), ${m.level}${m.redSince ? `, rouge depuis ${Math.round((r.at - m.redSince) / 60_000)} min` : ''}`)
-  lines.push('Processus les plus lourds :', ...r.processes.map((p) => `- ${p.command} (pid ${p.pid}) : ${Math.round(p.cpu)} % CPU, ${bytes(p.rssBytes)}`))
-  if (r.containers) lines.push('Conteneurs Docker :', ...(r.containers.length ? r.containers.map((c) => `- ${c.name} (${c.image}) : ${Math.round(c.cpu)} % CPU, ${bytes(c.memBytes)}`) : ['- aucun']))
-  else lines.push('Docker : indisponible')
+  const lines = [`Machine ${r.hostname} (${r.platform}, ${r.cores} cores${r.inContainer ? ', Sangha inside a container' : ''})`]
+  for (const m of r.metrics) lines.push(`- ${m.label}: ${Math.round(m.value * 100)}% (${m.detail}), ${m.level}${m.redSince ? `, red for ${Math.round((r.at - m.redSince) / 60_000)} min` : ''}`)
+  lines.push('Heaviest processes:', ...r.processes.map((p) => `- ${p.command} (pid ${p.pid}): ${Math.round(p.cpu)}% CPU, ${bytes(p.rssBytes)}`))
+  if (r.containers) lines.push('Docker containers:', ...(r.containers.length ? r.containers.map((c) => `- ${c.name} (${c.image}): ${Math.round(c.cpu)}% CPU, ${bytes(c.memBytes)}`) : ['- none']))
+  else lines.push('Docker: unavailable')
   lines.push(
-    'Worktrees (les plus lourds) :',
-    ...r.worktrees.slice(0, 10).map((w) => `- ${w.path} : ${bytes(w.bytes)}, ${w.sessionTitle ? `prêtre « ${w.sessionTitle} » (${w.status})` : 'aucun prêtre'}`),
+    'Worktrees (heaviest first):',
+    ...r.worktrees.slice(0, 10).map((w) => `- ${w.path}: ${bytes(w.bytes)}, ${w.sessionTitle ? `session "${w.sessionTitle}" (${w.status})` : 'no session'}`),
   )
   return lines.join('\n')
 }
@@ -29,10 +29,10 @@ function describe(r: HostReport): string {
 /** Answer a question about one suggestion, with the machine's current state. One-shot, tool-less, on the plan quota. */
 export async function askAboutSuggestion(suggestion: HostSuggestion, report: HostReport | null, chat: HostChatTurn[]): Promise<string> {
   const prompt = [
-    `Alerte : ${suggestion.title}\n${suggestion.detail}${suggestion.command ? `\nCommande suggérée : ${suggestion.command}` : ''}`,
-    report ? `État actuel :\n${describe(report)}` : 'État actuel : inconnu',
-    'Conversation :',
-    ...chat.slice(-12).map((t) => `${t.role === 'user' ? 'Lui' : 'Toi'} : ${t.text}`),
+    `Alert: ${suggestion.title}\n${suggestion.detail}${suggestion.command ? `\nSuggested command: ${suggestion.command}` : ''}`,
+    report ? `Current state:\n${describe(report)}` : 'Current state: unknown',
+    'Conversation:',
+    ...chat.slice(-12).map((t) => `${t.role === 'user' ? 'Them' : 'You'}: ${t.text}`),
   ].join('\n\n')
   const env = { ...process.env } as Record<string, string>
   delete env.ANTHROPIC_API_KEY
@@ -45,5 +45,5 @@ export async function askAboutSuggestion(suggestion: HostSuggestion, report: Hos
     if (m.subtype === 'success' && m.result.trim()) return m.result.trim()
     break
   }
-  throw new Error('Pas de réponse du modèle, réessaie.')
+  throw new Error('No answer from the model. Try again.')
 }

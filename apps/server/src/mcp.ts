@@ -6,7 +6,7 @@ import type { McpServerConfig, McpServerStatus } from '@anthropic-ai/claude-agen
 import type { McpServer } from '@sangha/shared'
 
 /**
- * MCP servers of your own Claude config that a priest does not load by himself: he reads only the
+ * MCP servers of your own Claude config that a session does not load by itself: it reads only the
  * project's settings, so your user-scope servers (your enabled plugins' included) and the ones you added for this project (local scope,
  * keyed by its folder, which a worktree does not share) stay out unless you switch them on.
  */
@@ -75,10 +75,10 @@ export function enabledExtras(catalog: Catalog, prefs: Record<string, boolean>):
   return Object.fromEntries(Object.entries(catalog).filter(([name]) => prefs[name]).map(([name, s]) => [name, s.config]))
 }
 
-/** The servers a priest loads himself (from his settings, not added by Sangha): on unless switched off. */
+/** The servers a session loads itself (from its settings, not added by Sangha): on unless switched off. */
 export const nativeMcp = (statuses: McpServerStatus[]): Set<string> => new Set(statuses.filter((s) => s.scope !== 'dynamic').map((s) => s.name))
 
-/** What the priest runs, plus the catalog servers he does not load, shown as off; with their switches. */
+/** What the session runs, plus the catalog servers it does not load (shown as off), with their switches. */
 export function mcpList(statuses: McpServerStatus[], catalog: Catalog, global: Record<string, boolean> = {}, own: Record<string, boolean> = {}): McpServer[] {
   const native = nativeMcp(statuses)
   const switches = (name: string) => ({ global: global[name] ?? native.has(name), ...(name in own ? { session: own[name] } : {}) })
@@ -94,7 +94,7 @@ export function mcpList(statuses: McpServerStatus[], catalog: Catalog, global: R
   return list
 }
 
-/** Resolves once no server is still connecting (or after `waitMs`, or if his status cannot be read). */
+/** Resolves once no server is still connecting (or after `waitMs`, or if their status cannot be read). */
 export async function mcpReady(status: () => Promise<McpServerStatus[]>, { waitMs = 30_000, stepMs = 500 } = {}): Promise<void> {
   for (let waited = 0; waited < waitMs; waited += stepMs) {
     const all = await status().catch(() => null)
@@ -112,7 +112,7 @@ export async function mcpSettle(
   reconnect: () => Promise<void>,
   { tries = 2, waitMs = 15_000, stepMs = 1_000 } = {},
 ): Promise<string | null> {
-  let why = 'introuvable'
+  let why = 'not found'
   for (let i = 0; i < tries; i++) {
     why = await reconnect().then(
       () => '',
@@ -122,7 +122,7 @@ export async function mcpSettle(
       const s = await status().catch(() => undefined)
       if (s?.status === 'connected') return null
       if (s?.status !== 'pending' || waited >= waitMs) {
-        why = why || s?.error || (s ? s.status : 'introuvable')
+        why = why || s?.error || (s ? s.status : 'not found')
         break
       }
       await new Promise((r) => setTimeout(r, stepMs))
@@ -156,13 +156,15 @@ export function mcpLogin(cwd: string, name: string, timeoutMs = 4 * 60_000): Pro
     child.on('close', () => {
       clearTimeout(timer)
       stop()
+      // Terminal escape codes (colours, hyperlinks, backspaces) are stripped from the login output.
+      // eslint-disable-next-line no-control-regex
       const text = out.replace(/\x1b\[[0-9;?]*[a-zA-Z]|\x1b\]8;;[^\x07\x1b]*(\x07|\x1b\\)?|\r|\^D\x08\x08/g, '')
       if (/Authenticated with/.test(text)) return resolve()
       const why = text
         .split('\n')
         .map((l) => l.trim())
         .find((l) => l && !l.startsWith('[mcp-sdk]') && !l.startsWith('Starting authentication'))
-      reject(new Error(/Waiting for authorization/.test(text) ? 'pas d’autorisation reçue à temps' : (why?.slice(0, 200) ?? 'échec de la connexion')))
+      reject(new Error(/Waiting for authorization/.test(text) ? 'no authorization received in time' : (why?.slice(0, 200) ?? 'sign-in failed')))
     })
   })
 }

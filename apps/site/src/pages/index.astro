@@ -1,0 +1,290 @@
+---
+import { Image } from 'astro:assets'
+import {
+  GithubIcon,
+  ArrowRight01Icon,
+  Copy01Icon,
+  Tick02Icon,
+  PlusSignIcon,
+} from '@hugeicons/core-free-icons'
+import { SPRITES } from '@pebbles'
+import Base from '../layouts/Base.astro'
+import Icon from '../components/Icon.astro'
+import StateTile from '../components/StateTile.astro'
+import Features from '../components/Features.astro'
+import focusShot from '../assets/shots/focus.png'
+import focusPhone from '../assets/shots/focus-phone.png'
+
+const GITHUB = 'https://github.com/sopial42/sangha'
+const README = `${GITHUB}#readme`
+const src = (k: keyof typeof SPRITES) => {
+  const s = SPRITES[k].src as unknown
+  return typeof s === 'string' ? s : (s as { src: string }).src
+}
+
+const states = [
+  { sprite: 'stone-closed', ring: 'glow', subs: 2, title: 'Working', body: 'Eyes closed, a slow glow on the floor. Its subagents sit beside it.' },
+  { sprite: 'coral-open', ring: 'needs', subs: 0, title: 'Needs you', body: 'It turns coral and rings once, with a two-line recap of what it did and what it waits for.' },
+  { sprite: 'stone-x', ring: 'error', subs: 0, title: 'Error', body: 'Crossed eyes and a red ring, with the message one click away.' },
+  { sprite: 'stone-open-cairn5', ring: null, subs: 0, title: 'Ready to start fresh', body: 'It sits on a cairn that grows with its context. Past 400K tokens, Sangha offers a fresh session that keeps the branch, the worktree and the agent.' },
+] as const
+
+const session = [
+  { title: 'Done and next, in two lines', body: 'A small model writes what it did and what it waits for, every time it stops.' },
+  { title: 'Answer in one key', body: 'Approve with Enter, hold off with Escape, or reply in your own words.' },
+  { title: 'Context, branch and subagents on the side', body: 'The size of the context, the pull request, the model, its MCP servers and the subagents it started.' },
+  { title: 'Hand it off when it gets heavy', body: 'One click starts a fresh session with a hand-off note, on the same branch.' },
+]
+
+const faq = [
+  { q: 'Does it cost anything on top of my subscription?', a: 'No. Sangha drives Claude Code through the Agent SDK on your Pro or Max quota, and refuses to start if an API key is set, so nothing is billed to the API.' },
+  { q: 'Does my code leave my machine?', a: 'Sangha itself listens on 127.0.0.1 only and stores its data in a local SQLite file. Your sessions talk to Anthropic exactly as Claude Code already does.' },
+  { q: 'Do I have to start my sessions from Sangha?', a: 'No. Sessions you start in a terminal or an IDE appear on their project on their own. Sessions started from Sangha add a worktree, a recap and replies from the board.' },
+  { q: 'Which systems does it run on?', a: 'Linux and macOS. A Docker image exists for a remote host, without the detection of local sessions.' },
+  { q: 'Can several people use it?', a: "It is built for one person on their own machine. Anthropic's terms do not allow sharing subscription access." },
+]
+
+const install = `git clone ${GITHUB} && cd sangha\nmake setup\nmake dev`
+---
+
+<Base
+  title="Sangha: every Claude Code session on one board"
+  description="Run ten Claude Code sessions and know which one needs you. A local board for all your sessions, on your Claude subscription."
+>
+  <!-- Nav -->
+  <header class="sticky top-0 z-50 border-b border-transparent transition-colors duration-200 data-[scrolled]:border-line data-[scrolled]:bg-bg/80 data-[scrolled]:backdrop-blur-xl" data-nav>
+    <nav class="container-page flex h-16 items-center gap-10" aria-label="Main">
+      <a href="#top" class="flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.01em]">
+        <img src={src('icon-coral-open')} alt="" width="30" height="22" />
+        Sangha
+      </a>
+      <!-- Links sit with the logo, on the same left edge as the page. -->
+      <div class="hidden items-center gap-7 text-[14px] text-muted md:flex">
+        <a href="#board" class="transition-colors hover:text-fg">How it works</a>
+        <a href="#features" class="transition-colors hover:text-fg">Features</a>
+        <a href="#install" class="transition-colors hover:text-fg">Install</a>
+        <a href="#faq" class="transition-colors hover:text-fg">FAQ</a>
+      </div>
+      <!-- The page's main action, as in the hero, only smaller. -->
+      <a href={GITHUB} class="motion-press ml-auto inline-flex h-[34px] items-center gap-2 rounded-full bg-fg px-3.5 text-[14px] font-medium text-bg hover:bg-white">
+        <Icon icon={GithubIcon} size={16} />
+        <span class="sm:hidden">GitHub</span>
+        <span class="hidden sm:inline">Get it on GitHub</span>
+      </a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="relative overflow-hidden pb-8 pt-12 md:pt-20">
+      <div class="container-page relative z-10 grid gap-8 lg:grid-cols-[1.25fr_1fr] lg:items-end lg:gap-16">
+        <h1 class="text-display max-w-[16ch]">
+          Run ten Claude Code sessions and know which one<img src={src('icon-coral-open')} alt="" class="mx-[0.14em] inline-block h-[0.6em] w-auto align-[-0.02em]" />needs you.
+        </h1>
+        <div class="lg:pb-2">
+          <p class="text-lead max-w-[48ch] text-muted">
+            Sangha puts every session on your machine on one board. Working sessions breathe, finished ones turn coral, and the ones that grew too big tell you to start fresh. It runs locally, on your Claude subscription.
+          </p>
+          <div class="mt-8 flex flex-wrap items-center gap-3">
+            <a href={GITHUB} class="motion-press inline-flex h-11 items-center gap-2 rounded-full bg-fg px-5 text-[15px] font-medium text-bg hover:bg-white">
+              <Icon icon={GithubIcon} size={18} />
+              Get it on GitHub
+            </a>
+            <a href="#board" class="motion-press inline-flex h-11 items-center gap-1.5 rounded-full px-4 text-[15px] font-medium text-muted hover:text-fg">
+              See how it works
+              <Icon icon={ArrowRight01Icon} size={16} />
+            </a>
+          </div>
+        </div>
+      </div>
+
+      <div class="relative mt-4 md:mt-0">
+        <div class="pointer-events-none absolute inset-x-0 -top-10 bottom-0 [mask-image:radial-gradient(closest-side_at_50%_60%,#000_35%,transparent)] [mask-size:100%_100%]" data-riverbed></div>
+        <div class="pointer-events-none absolute inset-0 opacity-70 [mask-image:radial-gradient(55%_65%_at_50%_55%,#000_20%,transparent_100%)]" style={`background-image:url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="60" height="30"><path d="M0 15 L30 0 L60 15 L30 30 Z" fill="none" stroke="#1c1c1e" stroke-width="1"/></svg>')}");background-position:center`}></div>
+        <div class="container-page relative">
+          <div class="relative mx-auto max-w-[1200px]" data-board role="img" aria-label="The Sangha board: three projects with their sessions. One session turns coral when it needs you, another shows an error, and a third grows a cairn as its context fills up."></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- The board -->
+    <section id="board" class="py-24 md:py-32">
+      <div class="container-page">
+        <div class="reveal max-w-[44rem]">
+          <h2 class="text-h2">Read the whole board in a second.</h2>
+          <p class="text-lead mt-5 text-muted">Every project is a zone and every session is a pebble. You never read a status: its face and the ring on the floor tell you.</p>
+        </div>
+        <ul class="reveal mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
+          {
+            states.map((s) => (
+              <li class="flex flex-col bg-bg px-6 pb-8 pt-6">
+                <div class="-mx-2 flex justify-center">
+                  <StateTile sprite={s.sprite} ring={s.ring} subs={s.subs} scale={s.sprite.includes('cairn') ? 0.9 : 1.05} />
+                </div>
+                <h3 class:list={['text-h3 mt-5', s.title === 'Needs you' && 'text-coral']}>{s.title}</h3>
+                <p class="text-body mt-2 text-muted">{s.body}</p>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </section>
+
+    <!-- The session -->
+    <section class="relative overflow-hidden pb-24 md:pb-32">
+      <div class="container-page">
+        <div class="reveal max-w-[44rem]">
+          <h2 class="text-h2">Open a session and you are in the conversation.</h2>
+          <p class="text-lead mt-5 text-muted">The full thread, its tool calls and its subagents, with a recap pinned on top and everything about the session on the side.</p>
+        </div>
+        <figure class="reveal relative mt-14">
+          <div class="pointer-events-none absolute -inset-x-24 -bottom-24 top-1/3 [mask-image:radial-gradient(50%_60%_at_50%_50%,#000,transparent)]" data-riverbed data-riverbed-warm></div>
+          <div class="relative hidden overflow-hidden rounded-xl border border-border bg-card shadow-[0_40px_120px_-30px_rgb(0_0_0/0.9)] sm:block">
+            <div class="flex h-9 items-center gap-2 border-b border-line px-4">
+              <span class="size-2.5 rounded-full bg-[#2e2e31]"></span>
+              <span class="size-2.5 rounded-full bg-[#2e2e31]"></span>
+              <span class="size-2.5 rounded-full bg-[#2e2e31]"></span>
+              <span class="mx-auto rounded-md bg-tile px-3 py-0.5 font-mono text-[11px] text-faint">127.0.0.1:8787</span>
+              <span class="w-[42px]"></span>
+            </div>
+            <Image src={focusShot} alt="A session open in Sangha: the recap pinned on top, the conversation, and the details panel with context, branch and model." widths={[800, 1440, 2880]} sizes="(min-width: 1200px) 1152px, 100vw" class="block h-auto w-full" />
+          </div>
+          <div class="relative mx-auto w-[300px] rounded-[44px] bg-[#1a1a1c] p-2.5 shadow-[0_0_0_1px_rgb(255_255_255/0.08),0_30px_80px_-10px_rgb(0_0_0/0.8)] sm:hidden">
+            <Image src={focusPhone} alt="A session open in Sangha on a phone: the recap on top and the conversation below." widths={[560, 840]} sizes="280px" class="block h-auto w-full rounded-[34px]" />
+          </div>
+        </figure>
+        <ul class="reveal mt-14 grid grid-cols-1 gap-x-10 gap-y-8 sm:grid-cols-2 lg:grid-cols-4">
+          {
+            session.map((p) => (
+              <li class="border-t border-line pt-5">
+                <h3 class="text-h3">{p.title}</h3>
+                <p class="text-body mt-2 text-muted">{p.body}</p>
+              </li>
+            ))
+          }
+        </ul>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="border-t border-line bg-surface py-24 md:py-32">
+      <div class="container-page">
+        <h2 class="reveal text-h2 max-w-[44rem]">Made for running many sessions at once.</h2>
+        <div class="reveal mt-16">
+          <Features />
+        </div>
+      </div>
+    </section>
+
+    <!-- Install -->
+    <section id="install" class="py-24 md:py-32">
+      <div class="container-page grid items-center gap-12 lg:grid-cols-[1fr_1.15fr] lg:gap-20">
+        <div class="reveal">
+          <h2 class="text-h2">Running in two commands.</h2>
+          <p class="text-lead mt-5 text-muted">You need Node 24, pnpm, git, and Claude Code signed in on this machine.</p>
+          <p class="text-body mt-6 text-muted">
+            Then open <a href="http://127.0.0.1:8787" class="font-mono text-[0.9em] text-fg underline decoration-border underline-offset-4 hover:decoration-muted">127.0.0.1:8787</a> and add a project: a folder on your machine or a git URL.
+          </p>
+        </div>
+        <div class="reveal overflow-hidden rounded-xl border border-border bg-card">
+          <div class="flex h-11 items-center justify-between border-b border-line pl-4 pr-1.5">
+            <span class="text-[13px] text-faint">Terminal</span>
+            <button type="button" class="motion-press inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] text-muted hover:bg-tile hover:text-fg" data-copy={install} aria-label="Copy the commands">
+              <span class="relative size-4">
+                <Icon icon={Copy01Icon} size={16} class="absolute inset-0 transition-[opacity,scale,filter] duration-200 [[data-copied]_&]:scale-50 [[data-copied]_&]:opacity-0 [[data-copied]_&]:blur-[2px]" />
+                <Icon icon={Tick02Icon} size={16} class="absolute inset-0 scale-50 text-stone opacity-0 blur-[2px] transition-[opacity,scale,filter] duration-200 [[data-copied]_&]:scale-100 [[data-copied]_&]:opacity-100 [[data-copied]_&]:blur-none" />
+              </span>
+              <span data-copy-label>Copy</span>
+            </button>
+          </div>
+          <pre class="overflow-x-auto p-5 font-mono text-[13.5px] leading-[1.9] text-fg"><code>{install.split('\n').map((line) => (<span class="block"><span class="select-none text-faint">$ </span>{line}</span>))}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section id="faq" class="border-t border-line py-24 md:py-32">
+      <div class="container-page grid gap-12 lg:grid-cols-[1fr_1.4fr] lg:gap-20">
+        <h2 class="reveal text-h2">Questions before you clone it.</h2>
+        <div class="reveal divide-y divide-line border-y border-line">
+          {
+            faq.map((f) => (
+              <details class="group" name="faq">
+                <summary class="flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-[16px] font-medium tracking-[-0.01em] [&::-webkit-details-marker]:hidden">
+                  {f.q}
+                  <Icon icon={PlusSignIcon} size={18} class="text-faint transition-transform duration-200 ease-[var(--ease-out-strong)] group-open:rotate-45" />
+                </summary>
+                <p class="text-body -mt-1 max-w-[60ch] pb-6 text-muted">{f.a}</p>
+              </details>
+            ))
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- Close -->
+    <section class="relative overflow-hidden border-t border-line pb-28 pt-24 md:pb-36 md:pt-32">
+      <div class="pointer-events-none absolute inset-0 [mask-image:radial-gradient(45%_60%_at_50%_45%,#000,transparent)]" data-riverbed data-riverbed-warm></div>
+      <div class="container-page reveal relative flex flex-col items-center text-center">
+        <StateTile sprite="coral-open" ring="needs" />
+        <h2 class="text-h2 mt-8">Put every session on one board.</h2>
+        <p class="text-lead mt-5 max-w-[40ch] text-muted">Clone it, run two commands, and see which session needs you.</p>
+        <a href={GITHUB} class="motion-press mt-9 inline-flex h-11 items-center gap-2 rounded-full bg-fg px-5 text-[15px] font-medium text-bg hover:bg-white">
+          <Icon icon={GithubIcon} size={18} />
+          Get it on GitHub
+        </a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="border-t border-line">
+    <div class="container-page flex flex-col gap-4 py-10 text-[13px] text-faint sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex items-center gap-2.5">
+        <img src={src('icon-stone-open')} alt="" width="24" height="18" />
+        <span class="text-muted">Sangha</span>
+        <span>is not affiliated with Anthropic.</span>
+      </div>
+      <div class="flex gap-6">
+        <a href={GITHUB} class="hover:text-fg">GitHub</a>
+        <a href={README} class="hover:text-fg">README</a>
+      </div>
+    </div>
+  </footer>
+</Base>
+
+<script>
+  import { mountBoard } from '../scripts/board'
+  import { mountRiverbed } from '../scripts/riverbed'
+
+  const board = document.querySelector<HTMLElement>('[data-board]')
+  if (board) mountBoard(board)
+  document.querySelectorAll<HTMLElement>('[data-riverbed]').forEach((el) =>
+    mountRiverbed(el, el.hasAttribute('data-riverbed-warm') ? { highlight: '#5a3328', size: 0.3, strength: 0.4 } : {}),
+  )
+
+  // The nav gets a surface once the page scrolls under it.
+  const nav = document.querySelector<HTMLElement>('[data-nav]')!
+  const onScroll = () => nav.toggleAttribute('data-scrolled', scrollY > 8)
+  addEventListener('scroll', onScroll, { passive: true })
+  onScroll()
+
+  // Copy the install commands; the icon swaps to a check for a moment.
+  document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((btn) => {
+    let t = 0
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(btn.dataset.copy!)
+      } catch {
+        return
+      }
+      btn.setAttribute('data-copied', '')
+      btn.querySelector('[data-copy-label]')!.textContent = 'Copied'
+      clearTimeout(t)
+      t = window.setTimeout(() => {
+        btn.removeAttribute('data-copied')
+        btn.querySelector('[data-copy-label]')!.textContent = 'Copy'
+      }, 1600)
+    })
+  })
+</script>

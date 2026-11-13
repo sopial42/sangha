@@ -1,7 +1,7 @@
 /**
- * Whether a priest works, as told to the monastery. He is said to work at once, but to have stopped
- * only once he stayed still for `settleMs`: a background task that reports back wakes him a few
- * seconds after his turn ended, and that short pause must not ring the bowl as if he waited for you.
+ * Whether a session works, as told to the board. It is said to work at once, but to have stopped
+ * only once it stayed still for `settleMs`: a background task that reports back wakes it a few
+ * seconds after its turn ended, and that short pause must not notify you as if it were waiting for you.
  */
 export class BusySettle {
   /** What was last told: he works (or has not been still long enough to say otherwise). */

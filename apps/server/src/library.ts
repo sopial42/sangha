@@ -25,11 +25,11 @@ function bitbucket(v: Record<string, string>): McpServerConfig {
 export const LIBRARY: Entry[] = [
   {
     name: 'bitbucket-stdio',
-    description: 'Bitbucket Data Center avec ton PAT : pull requests de bout en bout (lire, créer, modifier titre et description, relecteurs, commentaires et tâches, approuver, fusionner, rouvrir), et parcours des dépôts (branches, tags, fichiers, commits, comparaisons, builds). Aucune suppression.',
+    description: 'Bitbucket Data Center with your PAT: pull requests end to end (read, create, edit title and description, reviewers, comments and tasks, approve, merge, reopen), and repository browsing (branches, tags, files, commits, comparisons, builds). Never deletes anything.',
     fields: [
-      { key: 'BITBUCKET_MCP_API_BASE_URL', label: 'URL de Bitbucket', placeholder: 'https://stash.ovhcloud.tools' },
-      { key: 'BITBUCKET_MCP_TOKEN', label: 'Token (PAT Bitbucket)', secret: true },
-      { key: 'BITBUCKET_MCP_USER_SLUG', label: 'Slug utilisateur (pour approuver / demander des changements)', optional: true, placeholder: 'prenom.nom' },
+      { key: 'BITBUCKET_MCP_API_BASE_URL', label: 'Bitbucket URL', placeholder: 'https://stash.ovhcloud.tools' },
+      { key: 'BITBUCKET_MCP_TOKEN', label: 'Token (Bitbucket PAT)', secret: true },
+      { key: 'BITBUCKET_MCP_USER_SLUG', label: 'User slug (to approve or request changes)', optional: true, placeholder: 'first.last' },
     ],
     config: bitbucket,
   },
@@ -72,7 +72,7 @@ export class McpLibrary {
 
   private entry(name: string): Entry {
     const entry = this.entries.find((e) => e.name === name)
-    if (!entry) throw new Error(`${name} n’est pas dans la bibliothèque`)
+    if (!entry) throw new Error(`${name} is not in the library`)
     return entry
   }
 
@@ -113,14 +113,14 @@ export class McpLibrary {
     if (active) {
       const saved = this.saved()
       const missing = entry.fields.filter((f) => !f.optional && !saved[f.key])
-      if (missing.length) throw new Error(`il manque : ${missing.map((f) => f.label).join(', ')}`)
+      if (missing.length) throw new Error(`missing: ${missing.map((f) => f.label).join(', ')}`)
       this.active.add(name)
     }
   }
 
   /**
-   * After a restart: switch back on each server Sangha's common switch (`prefs`) still has on — activating
-   * one turns that switch on, which outlives the process; otherwise its priests would find it gone while
+   * After a restart: switch back on each server Sangha's common switch (`prefs`) still has on. Activating
+   * one turns that switch on, which outlives the process; otherwise its sessions would find it gone while
    * Sangha still shows it on. One whose credentials went missing stays off, silently.
    */
   restore(prefs: Record<string, boolean>): void {
@@ -134,7 +134,7 @@ export class McpLibrary {
     }
   }
 
-  /** The active entries, as catalog servers a priest can switch on like any other. */
+  /** The active entries, as catalog servers a session can switch on like any other. */
   catalog(): Catalog {
     const saved = this.saved()
     return Object.fromEntries(this.entries.filter((e) => this.active.has(e.name)).map((e) => [e.name, { scope: 'library' as const, config: e.config(saved) }]))

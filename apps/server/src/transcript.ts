@@ -1,4 +1,4 @@
-import type { MonasteryEvent } from '@sangha/shared'
+import type { SessionEvent } from '@sangha/shared'
 import { summarizeInput } from './normalize'
 
 // Claude Code transcripts (~/.claude/projects/<dir>/<session>.jsonl): one JSON object per line.
@@ -44,19 +44,19 @@ export function parseLine(raw: string): Line | null {
 }
 
 /**
- * Translates a transcript into MonasteryEvents so an outside session reads like a Sangha one.
- * Stateful: remembers which tool_use ids summoned novices.
+ * Translates a transcript into SessionEvents so an outside session reads like a Sangha one.
+ * Stateful: remembers which tool_use ids summoned subagents.
  */
 export class TranscriptReader {
   private summons = new Set<string>()
 
-  push(line: Line): MonasteryEvent[] {
+  push(line: Line): SessionEvent[] {
     if (line.isSidechain) return []
-    // A background novice reports through a <task-notification>, wherever the harness queued it.
+    // A background subagent reports through a <task-notification>, wherever the harness queued it.
     const note = notification(typeof line.message?.content === 'string' ? line.message.content : typeof line.content === 'string' ? line.content : '')
     if (note && this.summons.has(note.toolUseId)) {
       this.summons.delete(note.toolUseId)
-      return [{ t: 'monk.done', monkId: note.toolUseId, status: note.status, summary: note.summary }]
+      return [{ t: 'subagent.done', subagentId: note.toolUseId, status: note.status, summary: note.summary }]
     }
     // A message queued while the agent was busy (typed in the terminal, or relayed from Sangha).
     if (line.attachment?.type === 'queued_command' && typeof line.attachment.prompt === 'string') {
@@ -72,36 +72,36 @@ export class TranscriptReader {
     if (line.type === 'user') {
       if (typeof content === 'string') return isChatter(content) ? [] : [{ t: 'user.message', text: content }]
       if (!Array.isArray(content)) return []
-      const out: MonasteryEvent[] = []
+      const out: SessionEvent[] = []
       for (const b of content) {
         if (b.type === 'text' && b.text && !isChatter(b.text)) out.push({ t: 'user.message', text: b.text })
         if (b.type === 'tool_result' && b.tool_use_id && this.summons.has(b.tool_use_id)) {
           const text = textOf(b.content)
-          // A background novice answers "launched" at once; his real report comes later.
+          // A background subagent answers "launched" at once; its real report comes later.
           if (!/running in the background|launched successfully|async agent/i.test(text)) {
             this.summons.delete(b.tool_use_id)
-            out.push({ t: 'monk.done', monkId: b.tool_use_id, status: 'completed', summary: text.slice(0, 4000) })
+            out.push({ t: 'subagent.done', subagentId: b.tool_use_id, status: 'completed', summary: text.slice(0, 4000) })
           }
         }
       }
       return out
     }
     if (line.type === 'assistant' && Array.isArray(content)) {
-      const out: MonasteryEvent[] = []
+      const out: SessionEvent[] = []
       for (const b of content) {
-        if (b.type === 'text' && b.text?.trim()) out.push({ t: 'buddha.text', text: b.text })
+        if (b.type === 'text' && b.text?.trim()) out.push({ t: 'assistant.text', text: b.text })
         if (b.type !== 'tool_use' || !b.name) continue
         if (SUMMON_TOOLS.has(b.name) && b.id) {
           this.summons.add(b.id)
           out.push({
-            t: 'monk.summoned',
-            monkId: b.id,
+            t: 'subagent.started',
+            subagentId: b.id,
             agentType: String(b.input?.subagent_type ?? 'general-purpose'),
             description: String(b.input?.description ?? ''),
             prompt: String(b.input?.prompt ?? ''),
             depth: 1,
           })
-        } else out.push({ t: 'buddha.tool', tool: b.name, summary: summarizeInput(b.input) })
+        } else out.push({ t: 'assistant.tool', tool: b.name, summary: summarizeInput(b.input) })
       }
       return out
     }
@@ -114,7 +114,11 @@ export class TranscriptReader {
  * Sangha stays invisible in the conversation. peerMessage() strips it back off for display.
  */
 export const RELAY_NOTE =
-  '— Transmis tel quel depuis l’interface de l’utilisateur : c’est lui qui l’a écrit. Réponds-lui directement, comme s’il l’avait tapé ici, sans mentionner ce relais, l’interface ni l’autre session.'
+  '(Relayed as is from the user’s interface: the user wrote this. Reply to them directly, as if they had typed it here, without mentioning this relay, the interface or the other session.)'
+
+// Opening words of the relay note, current and legacy (older Sangha versions relayed in French, and those
+// notes stay in existing transcripts). Matched by opening words only: the relay may alter punctuation (’ → ').
+const RELAY_OPENERS = ['\n\n(Relayed as is', '\n\n— Transmis tel quel']
 
 /**
  * A message another session sent through Claude Code's cross-session messaging. Your replies from Sangha
@@ -125,16 +129,16 @@ export function peerMessage(text: string): string | null {
   if (!m) return null
   const body = m[2]!.trim()
   // Your reply relayed by Sangha: your text, then the relay note (or, from older versions, a prefix).
-  // Found by its opening words: the relay may alter punctuation (’ → ') on the way.
-  const note = body.lastIndexOf('\n\n— Transmis tel quel')
+  const note = Math.max(...RELAY_OPENERS.map((o) => body.lastIndexOf(o)))
   if (note >= 0) return body.slice(0, note).trim()
+  // Legacy French prefix from the oldest versions, still found in old transcripts.
   const legacy = /^Message de .*?, envoyé depuis Sangha[^:]*:\s*/.exec(body)
-  return legacy ? body.slice(legacy[0].length).trim() : `↪ ${m[1]} : ${body}`
+  return legacy ? body.slice(legacy[0].length).trim() : `↪ ${m[1]}: ${body}`
 }
 
 const unescape = (s: string) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&')
 
-/** Parse a `<task-notification>` block: which summoning finished, how, and his report. */
+/** Parse a `<task-notification>` block: which summoning finished, how, and its report. */
 export function notification(text: string): { toolUseId: string; status: 'completed' | 'failed' | 'stopped'; summary: string } | null {
   if (!text.includes('<task-notification>')) return null
   const tag = (name: string) => new RegExp(`<${name}>([\\s\\S]*?)</${name}>`).exec(text)?.[1]?.trim()
@@ -212,11 +216,11 @@ export function aiTitle(lines: Line[]): string | null {
   return [...lines].reverse().find((x) => x.type === 'ai-title' && x.aiTitle)?.aiTitle ?? null
 }
 
-export type NoviceLogItem = { at: number } & ({ kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string })
+export type SubagentLogItem = { at: number } & ({ kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string })
 
-/** A novice's own transcript (subagents/agent-*.jsonl, all sidechain lines): his words and tools. */
-export function noviceLog(lines: Line[]): NoviceLogItem[] {
-  const out: NoviceLogItem[] = []
+/** A subagent's own transcript (subagents/agent-*.jsonl, all sidechain lines): its words and tools. */
+export function subagentLog(lines: Line[]): SubagentLogItem[] {
+  const out: SubagentLogItem[] = []
   for (const l of lines) {
     const c = l.message?.content
     if (l.type !== 'assistant' || !Array.isArray(c)) continue

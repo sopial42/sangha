@@ -1,6 +1,6 @@
 import type { Store } from './db'
 
-/** The session still at work on what `id` started, following his fresh sessions; null if they all left too. */
+/** The session still at work on what `id` started, following its fresh sessions; null if they all left too. */
 export function carriedOnIn(store: Store, id: string): string | null {
   const seen = new Set([id])
   for (let next = store.successor(id); next && !seen.has(next); next = store.successor(next)) {

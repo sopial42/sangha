@@ -56,7 +56,7 @@ MESSAGE>>>
     }
     if (m.type === 'result') break
   }
-  if (!to) return { ok: false, error: 'session introuvable parmi les sessions locales' }
+  if (!to) return { ok: false, error: 'session not found among the local sessions' }
   if (sendError) return { ok: false, error: sendError }
   return { ok: true, to }
 }

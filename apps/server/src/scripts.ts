@@ -3,13 +3,13 @@ import type { BackgroundScript } from '@sangha/shared'
 /** A raw background task as the SDK reports it (see normalize.ts). */
 export type BackgroundTask = { id: string; type: string; description: string }
 
-// Subagents run in the background too, but are already shown as novices.
+// Subagents run in the background too, but are already shown as subagents.
 const AGENT_TYPE = 'local_agent'
 
 /**
- * Pure tracking of the scripts a priest has running in the background, from one `background` event to
+ * Pure tracking of the scripts a session has running in the background, from one `background` event to
  * the next: `since` is kept for an id already seen, a summary already written is carried over, agents are
- * excluded (novices show them already), and anything missing from the latest set has finished. Oldest first.
+ * excluded (already shown as subagents), and anything missing from the latest set has finished. Oldest first.
  */
 export function trackScripts(prev: BackgroundScript[], tasks: BackgroundTask[], now: number): BackgroundScript[] {
   const prevById = new Map(prev.map((s) => [s.id, s]))
@@ -34,7 +34,7 @@ export function cleanScriptSummary(raw: string): string {
 
 /** What is given to the small model: the command it is asked about, in the session it runs in. */
 export function scriptPrompt(command: string, title: string): string {
-  return `SESSION : ${title}\nCOMMANDE : ${command}`
+  return `SESSION: ${title}\nCOMMAND: ${command}`
 }
 
 type SummarizeFn = (command: string, title: string) => Promise<string | null>
@@ -42,7 +42,7 @@ type SummarizeFn = (command: string, title: string) => Promise<string | null>
 /**
  * Per-session, per-task cache of Haiku's one-sentence summary of a background script, read synchronously
  * by summaries. Written in the background, one call at a time; a failure is kept as "no summary" and is
- * never retried on its own — mirrors PullRequests in pulls.ts.
+ * never retried on its own (mirrors PullRequests in pulls.ts).
  */
 export class ScriptSummaries {
   private cache = new Map<string, string>()

@@ -2,11 +2,11 @@ import { execFileSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { extname, join } from 'node:path'
-import { HANDOFF_DIR } from './shepherd'
+import { HANDOFF_DIR } from './handoff'
 import { UserError } from './session'
 
 const IMAGE = /\.(png|jpe?g|heic|tiff?)$/i
-// macOS names them "Capture d’écran 2026-11-03 à 14.30.12.png" (in French) or "Screenshot …" / "Screen Shot …".
+// macOS names them "Screenshot …" / "Screen Shot …" in English, and e.g. "Capture d’écran 2026-11-03 à 14.30.12.png" in French: keep matching both.
 const SCREENSHOT = /^(capture d.écran|screenshot|screen shot|bildschirmfoto|captura de pantalla)/i
 
 /** Where macOS saves screenshots: the folder set in the screenshot tool, else the Desktop. */
@@ -28,8 +28,8 @@ export function latestScreenshot(dir: string): { file: string; at: number } | nu
     names = readdirSync(dir)
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'EPERM' || (e as NodeJS.ErrnoException).code === 'EACCES')
-      throw new UserError(`Sangha n'a pas le droit de lire ${dir} : autorise ton terminal dans Réglages Système › Confidentialité et sécurité › Fichiers et dossiers (Bureau), puis relance make dev.`)
-    throw new UserError(`Dossier des captures introuvable : ${dir}`)
+      throw new UserError(`Sangha is not allowed to read ${dir}. Allow your terminal in System Settings › Privacy & Security › Files and Folders (Desktop), then restart make dev.`)
+    throw new UserError(`Screenshot folder not found: ${dir}`)
   }
   const images = names
     .filter((n) => IMAGE.test(n) && !n.startsWith('.'))
@@ -40,15 +40,15 @@ export function latestScreenshot(dir: string): { file: string; at: number } | nu
 }
 
 /**
- * The latest screenshot, copied under /tmp/sangha with a plain name: the priest reads it there even when he
+ * The latest screenshot, copied under /tmp/sangha with a plain name: the session reads it there even when it
  * may not open your Desktop, and its odd characters (macOS puts a narrow space in the time) stay out of the way.
  */
 export function attachLatestScreenshot(dir = screenshotDir(), out = join(HANDOFF_DIR, 'captures')): { path: string; at: number } {
   const shot = latestScreenshot(dir)
-  if (!shot) throw new UserError(`Aucune capture d'écran dans ${dir}.`)
+  if (!shot) throw new UserError(`No screenshot in ${dir}.`)
   mkdirSync(out, { recursive: true })
   const stamp = new Date(shot.at).toISOString().slice(0, 19).replace(/[:T]/g, '-')
-  const path = join(out, `capture-${stamp}${extname(shot.file).toLowerCase()}`)
+  const path = join(out, `screenshot-${stamp}${extname(shot.file).toLowerCase()}`)
   copyFileSync(shot.file, path)
   return { path, at: shot.at }
 }

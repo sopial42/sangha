@@ -52,11 +52,11 @@ type FileTally = { offset: number; usd: number; seen: Set<string> }
 export class CostMeter {
   private files = new Map<string, FileTally>()
 
-  /** Cost of a session: its transcript plus its novices' (subagents/*.jsonl next to it). */
+  /** Cost of a session: its transcript plus its subagents' (subagents/*.jsonl next to it). */
   session(transcript: string): number {
     const dir = join(transcript.replace(/\.jsonl$/, ''), 'subagents')
-    const novices = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')).map((f) => join(dir, f)) : []
-    return [transcript, ...novices].reduce((sum, f) => sum + this.file(f), 0)
+    const subagents = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.jsonl')).map((f) => join(dir, f)) : []
+    return [transcript, ...subagents].reduce((sum, f) => sum + this.file(f), 0)
   }
 
   private file(path: string): number {
@@ -94,7 +94,7 @@ const monthOf = (ts: number): string => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 }
 
-/** What the monastery has cost at API prices since monitoring began, bucketed by month. */
+/** What all sessions have cost at API prices since monitoring began, bucketed by month. */
 export function buildCostReport(sessions: CostSession[]): CostReport {
   const byMonth = new Map<string, CostSession[]>()
   for (const s of sessions) {

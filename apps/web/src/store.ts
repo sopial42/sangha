@@ -1,15 +1,15 @@
 import { create } from 'zustand'
-import type { Envelope, HostReport, ModelChoice, MonkProfile, MonkStatus, ProjectInfo, Quota, QuotaReserveState, SessionSummary, Usage, GitIdentity } from '@sangha/shared'
+import type { Envelope, HostReport, ModelChoice, SubagentProfile, SubagentStatus, ProjectInfo, Quota, QuotaReserveState, SessionSummary, Usage, GitIdentity } from '@sangha/shared'
 
 export type LogItem = { at: number } & ({ kind: 'tool'; tool: string; summary: string } | { kind: 'text'; text: string })
 
-export type MonkInstance = {
-  monkId: string
+export type SubagentRun = {
+  subagentId: string
   agentType: string
   description: string
   prompt: string
   depth: number
-  status: MonkStatus
+  status: SubagentStatus
   lastTool: { tool: string; summary: string } | null
   log: LogItem[]
   summary: string
@@ -21,10 +21,10 @@ export type MonkInstance = {
 
 export type ChatItem =
   | { kind: 'user'; text: string; at: number; seq: number }
-  | { kind: 'buddha'; text: string; at: number; seq: number }
+  | { kind: 'assistant'; text: string; at: number; seq: number }
   | { kind: 'tool'; tool: string; summary: string; at: number }
-  | { kind: 'summon'; monkId: string; at: number }
-  | { kind: 'done'; monkId: string; at: number }
+  | { kind: 'summon'; subagentId: string; at: number }
+  | { kind: 'done'; subagentId: string; at: number }
   | { kind: 'turn'; ok: boolean; costUsdEquiv: number; durationMs: number; at: number }
   | { kind: 'error'; text: string; at: number }
 
@@ -32,8 +32,8 @@ export type SessionView = {
   lastSeq: number
   chat: ChatItem[]
   draft: string
-  monks: Record<string, MonkInstance>
-  monkOrder: string[]
+  subagents: Record<string, SubagentRun>
+  subagentOrder: string[]
   busy: boolean
   quota: Quota | null
   model: string | null
@@ -47,8 +47,8 @@ export const emptyView = (): SessionView => ({
   lastSeq: 0,
   chat: [],
   draft: '',
-  monks: {},
-  monkOrder: [],
+  subagents: {},
+  subagentOrder: [],
   busy: false,
   quota: null,
   model: null,
@@ -58,30 +58,30 @@ export const emptyView = (): SessionView => ({
   usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
 })
 
-/** Pure reducer: MonasteryEvent envelope -> view. */
+/** Pure reducer: event envelope -> view. */
 export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
   if (seq <= v.lastSeq) return v
   const s: SessionView = { ...v, lastSeq: seq }
-  const patchMonk = (id: string, f: (m: MonkInstance) => Partial<MonkInstance>) => {
-    const m = s.monks[id]
-    if (m) s.monks = { ...s.monks, [id]: { ...m, ...f(m) } }
+  const patchSubagent = (id: string, f: (m: SubagentRun) => Partial<SubagentRun>) => {
+    const m = s.subagents[id]
+    if (m) s.subagents = { ...s.subagents, [id]: { ...m, ...f(m) } }
   }
   switch (ev.t) {
     case 'session.started':
       return { ...s, model: ev.model, skills: ev.skills ?? [], plugins: ev.plugins ?? [] }
     case 'user.message':
       return { ...s, chat: [...s.chat, { kind: 'user', text: ev.text, at, seq }] }
-    case 'buddha.delta':
+    case 'assistant.delta':
       return { ...s, draft: s.draft + ev.text }
-    case 'buddha.text':
-      return { ...s, draft: '', chat: [...s.chat, { kind: 'buddha', text: ev.text, at, seq }] }
-    case 'buddha.tool':
+    case 'assistant.text':
+      return { ...s, draft: '', chat: [...s.chat, { kind: 'assistant', text: ev.text, at, seq }] }
+    case 'assistant.tool':
       return { ...s, chat: [...s.chat, { kind: 'tool', tool: ev.tool, summary: ev.summary, at }] }
-    case 'monk.summoned':
-      s.monks = {
-        ...s.monks,
-        [ev.monkId]: {
-          monkId: ev.monkId,
+    case 'subagent.started':
+      s.subagents = {
+        ...s.subagents,
+        [ev.subagentId]: {
+          subagentId: ev.subagentId,
           agentType: ev.agentType,
           description: ev.description,
           prompt: ev.prompt,
@@ -96,24 +96,24 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
           endedAt: null,
         },
       }
-      // The same novice can be announced twice (a replayed transcript): one entry, or the list repeats keys.
+      // The same subagent can be announced twice (a replayed transcript): one entry, or the list repeats keys.
       return {
         ...s,
-        monkOrder: s.monkOrder.includes(ev.monkId) ? s.monkOrder : [...s.monkOrder, ev.monkId],
-        chat: [...s.chat, { kind: 'summon', monkId: ev.monkId, at }],
+        subagentOrder: s.subagentOrder.includes(ev.subagentId) ? s.subagentOrder : [...s.subagentOrder, ev.subagentId],
+        chat: [...s.chat, { kind: 'summon', subagentId: ev.subagentId, at }],
       }
-    case 'monk.tool':
-      patchMonk(ev.monkId, (m) => ({ lastTool: { tool: ev.tool, summary: ev.summary }, log: [...m.log, { kind: 'tool', tool: ev.tool, summary: ev.summary, at }] }))
+    case 'subagent.tool':
+      patchSubagent(ev.subagentId, (m) => ({ lastTool: { tool: ev.tool, summary: ev.summary }, log: [...m.log, { kind: 'tool', tool: ev.tool, summary: ev.summary, at }] }))
       return s
-    case 'monk.text':
-      patchMonk(ev.monkId, (m) => ({ log: [...m.log, { kind: 'text', text: ev.text, at }] }))
+    case 'subagent.text':
+      patchSubagent(ev.subagentId, (m) => ({ log: [...m.log, { kind: 'text', text: ev.text, at }] }))
       return s
-    case 'monk.progress':
-      patchMonk(ev.monkId, () => ({ tokens: ev.tokens, toolUses: ev.toolUses }))
+    case 'subagent.progress':
+      patchSubagent(ev.subagentId, () => ({ tokens: ev.tokens, toolUses: ev.toolUses }))
       return s
-    case 'monk.done':
-      patchMonk(ev.monkId, () => ({ status: ev.status, summary: ev.summary, endedAt: at }))
-      return { ...s, chat: [...s.chat, { kind: 'done', monkId: ev.monkId, at }] }
+    case 'subagent.done':
+      patchSubagent(ev.subagentId, () => ({ status: ev.status, summary: ev.summary, endedAt: at }))
+      return { ...s, chat: [...s.chat, { kind: 'done', subagentId: ev.subagentId, at }] }
     case 'turn.done':
       return {
         ...s,
@@ -131,12 +131,12 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
       return { ...s, quota: ev.quota }
     case 'busy':
       return { ...s, busy: ev.busy }
+    // Not shown in this per-session chat view: `loop.wake` feeds the session's autonomy (derived
+    // server-side, shown in the sessions list) and `tool.error` is aggregated for the Advisor
+    // (see `advisorSanghaStats`).
     case 'recap':
     case 'background':
-    // His autonomy (`SessionSummary.autonomy`) is derived server-side from this and reflected in the
-    // sessions list, not in this per-session chat view: nothing to patch here.
     case 'loop.wake':
-    // Aggregated server-side into Ananda's Sangha block (see `elderSanghaStats`), not shown per-session.
     case 'tool.error':
       return s
     case 'error':
@@ -144,69 +144,51 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
   }
 }
 
-export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-project' } | { kind: 'dismiss'; id: string; working?: boolean }
+export type Dialog = { kind: 'new-session'; project?: string } | { kind: 'add-project' } | { kind: 'dismiss'; id: string }
   | { kind: 'remove-project'; name: string }
-  | { kind: 'incense'; id: string }
-  // `lotus`: asked on his way to the lotus pond, where his note is all you'll see of him on hover.
-  | { kind: 'note'; id: string; lotus?: boolean }
-  | { kind: 'nirvana' }
+  // `setAside`: asked on the way to setting it aside, where its name is all you'll see of it.
+  | { kind: 'note'; id: string; setAside?: boolean }
+  | { kind: 'closed-sessions' }
   | { kind: 'costs' }
   | { kind: 'providers' }
   | { kind: 'git' }
-  | { kind: 'shepherd'; id: string }
+  | { kind: 'handoff'; id: string }
   | { kind: 'env'; id: string }
   | { kind: 'autonomy'; id: string }
   | { kind: 'host' }
   | { kind: 'mcp' }
   | { kind: 'mcp-library' }
-  | { kind: 'elder' } | null
+  | { kind: 'advisor' } | null
 
 type AppState = {
-  profiles: MonkProfile[]
-  /** What rang lately (newest first), for the bell's list; kept across reloads. */
-  notifications: Notice[]
-  notify: (n: Omit<Notice, 'id' | 'at' | 'read'>) => void
-  readNotifications: () => void
-  clearNotifications: () => void
+  profiles: SubagentProfile[]
   /** The models a session can run on, as the server offers them. */
   models: ModelChoice[]
   /** The model new sessions start with ('' : the agent's own), remembered across reloads. */
   defaultModel: string
   setDefaultModel: (id: string) => void
   projects: ProjectInfo[]
-  /** Every priest (and Buddha), kept live by the monastery-wide stream. */
+  /** Every session (and the orchestrator), kept live by the global event stream. */
   sessions: Record<string, SessionSummary>
   quota: Quota | null
   /** The share of the plan quota kept untouched, fed by the snapshot and every `reserve` event; null until the first lands. */
   reserve: QuotaReserveState | null
   /** The machine Sangha runs on, sampled every few seconds; null until the first sample lands. */
   host: HostReport | null
-  /** The number of Ananda's `proposed` topics and whether he's meditating right now, fed by the global `elder` event. */
-  elderBadge: { proposed: number; running: boolean } | null
-  /** Bumped on every `{kind:'nirvana'}` global event: its open dialog refetches (arrivals, summaries, reincarnations). */
-  nirvanaTick: number
-  /** Bumped only when a non-external priest actually leaves the courtyard (flies into the moon): what the moon's glow watches. */
-  moonArrivals: number
-  /** Bumped on every `{kind:'session'}` global event: what the cost chip watches, throttled, to refresh its total. */
-  sessionsVersion: number
-  /** The bowl stays silent when a priest finishes (notifications still show), remembered across reloads. */
+  /** The Advisor's `proposed` topics count and whether it is running a pass, fed by the global `advisor` event. */
+  advisorBadge: { proposed: number; running: boolean } | null
+  /** Bumped on every `{kind:'closed'}` global event: the closed sessions dialog refetches (arrivals, summaries, reopenings). */
+  closedTick: number
+  /** No chime when a session finishes, remembered across reloads. */
   muted: boolean
-  /** Session shown in the panel: a priest id, 'buddha', or null. */
+  /** Session shown in the panel: a session id, the orchestrator id, or null. */
   selectedId: string | null
   view: SessionView
-  selectedMonk: string | null
-  /**
-   * Set while the panel plays its closing animation (selectedId stays put so it keeps rendering).
-   * `target`: his on-screen position to shrink toward, or null if he can't be found (off screen, gone).
-   */
-  closing: { id: string; target: { x: number; y: number } | null } | null
-  /** His brief acknowledgement glow, right after the panel has landed on him. `token` retriggers the
-   *  animation even when the same priest is closed twice in a row. */
-  closingAck: { id: string; token: number } | null
+  selectedSubagent: string | null
   dialog: Dialog
-  /** Who priests commit as: undefined while loading, null when not set (git is closed to them). */
+  /** Who sessions commit as: undefined while loading, null when not set (git is closed to them). */
   gitIdentity: GitIdentity | null | undefined
-  /** Sessions the user just interrupted: their next status change must not ring the bell or notify. */
+  /** Sessions the user just interrupted: their next status change must not chime. */
   interruptedIds: Set<string>
   markInterrupted: (id: string) => void
   clearInterrupted: (id: string) => void
@@ -215,27 +197,6 @@ type AppState = {
   applyMany: (envs: Envelope[]) => void
   set: (p: Partial<AppState>) => void
   toggleMuted: () => void
-}
-
-/** One ring of the bowl: who, why, and what he waits for. `note`: his, as it was when he rang —
- *  kept here too so the bell's list still shows it once he's long gone from the courtyard. */
-export type Notice = { id: string; sessionId: string; who: string; what: string; body: string; note: string | null; at: number; read: boolean }
-
-const NOTICES_KEY = 'sangha.notifications'
-const MAX_NOTICES = 50
-const initialNotices = (() => {
-  try {
-    return JSON.parse(localStorage.getItem(NOTICES_KEY) ?? '[]') as Notice[]
-  } catch {
-    return []
-  }
-})()
-function saveNotices(list: Notice[]) {
-  try {
-    localStorage.setItem(NOTICES_KEY, JSON.stringify(list))
-  } catch {
-    // localStorage unavailable: the list just won't survive a reload.
-  }
 }
 
 const DEFAULT_MODEL_KEY = 'sangha.defaultModel'
@@ -258,24 +219,6 @@ const initialMuted = (() => {
 
 export const useApp = create<AppState>((set) => ({
   profiles: [],
-  notifications: initialNotices,
-  notify: (n) =>
-    set((st) => {
-      const notifications = [{ ...n, id: crypto.randomUUID(), at: Date.now(), read: false }, ...st.notifications].slice(0, MAX_NOTICES)
-      saveNotices(notifications)
-      return { notifications }
-    }),
-  readNotifications: () =>
-    set((st) => {
-      if (!st.notifications.some((n) => !n.read)) return {}
-      const notifications = st.notifications.map((n) => ({ ...n, read: true }))
-      saveNotices(notifications)
-      return { notifications }
-    }),
-  clearNotifications: () => {
-    saveNotices([])
-    set({ notifications: [] })
-  },
   models: [],
   defaultModel: initialDefaultModel,
   setDefaultModel: (id) => {
@@ -291,16 +234,12 @@ export const useApp = create<AppState>((set) => ({
   quota: null,
   reserve: null,
   host: null,
-  elderBadge: null,
-  nirvanaTick: 0,
-  moonArrivals: 0,
-  sessionsVersion: 0,
+  advisorBadge: null,
+  closedTick: 0,
   muted: initialMuted,
   selectedId: null,
   view: emptyView(),
-  selectedMonk: null,
-  closing: null,
-  closingAck: null,
+  selectedSubagent: null,
   dialog: null,
   gitIdentity: undefined,
   interruptedIds: new Set(),

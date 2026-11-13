@@ -1,0 +1,30 @@
+---
+// Hugeicons, rendered to inline SVG at build time: no runtime, no icon font.
+type IconNode = readonly [string, { readonly [k: string]: string | number }]
+
+interface Props {
+  icon: readonly IconNode[]
+  size?: number
+  class?: string
+  strokeWidth?: number
+}
+const { icon, size = 20, class: className, strokeWidth = 1.5 } = Astro.props
+const kebab = (k: string) => k.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)
+const attrs = (a: { readonly [k: string]: string | number }) =>
+  Object.entries(a)
+    .filter(([k]) => k !== 'key')
+    .map(([k, v]) => `${kebab(k)}="${k === 'strokeWidth' ? strokeWidth : v}"`)
+    .join(' ')
+const inner = icon.map(([tag, a]) => `<${tag} ${attrs(a)} />`).join('')
+---
+
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width={size}
+  height={size}
+  viewBox="0 0 24 24"
+  fill="none"
+  aria-hidden="true"
+  class:list={['shrink-0', className]}
+  set:html={inner}
+/>

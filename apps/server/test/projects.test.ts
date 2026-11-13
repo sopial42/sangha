@@ -42,7 +42,7 @@ describe('a local project whose folder was renamed', () => {
 
     expect(projects.missing()).toEqual([])
     expect(projects.dir('Robia')).toBe(moved)
-    // The priests' worktrees follow the repository.
+    // The sessions' worktrees follow the repository.
     expect(await currentBranch(wt)).toBe('sangha/lead-1')
     expect(await projects.resolve(wt, false)).toEqual({ name: 'Robia', added: false })
   })
@@ -51,7 +51,7 @@ describe('a local project whose folder was renamed', () => {
     const { Projects } = await import('../src/projects')
     const projects = new Projects(new Store(':memory:'))
     projects.addLocal(repo)
-    await expect(projects.relocate('Robia', join(root, 'nowhere'))).rejects.toThrow(/introuvable/)
+    await expect(projects.relocate('Robia', join(root, 'nowhere'))).rejects.toThrow(/not found/)
   })
 
   it('lists only the projects that are git repositories, for worktree discovery', async () => {
