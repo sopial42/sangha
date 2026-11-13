@@ -4,7 +4,7 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', 'vendor/**', 'workspaces/**', 'data/**', 'apps/web/scripts/**'] },
+  { ignores: ['**/dist/**', '**/node_modules/**', '**/.astro/**', 'vendor/**', 'workspaces/**', 'data/**', 'apps/web/scripts/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -14,6 +14,10 @@ export default tseslint.config(
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrors: 'none', ignoreRestSiblings: true }],
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
+  },
+  {
+    files: ['apps/site/**/*.ts'],
+    languageOptions: { globals: { ...globals.browser } },
   },
   {
     files: ['apps/web/**/*.{ts,tsx}'],

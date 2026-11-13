@@ -1,0 +1,43 @@
+---
+import '../styles/global.css'
+
+interface Props {
+  title: string
+  description: string
+}
+const { title, description } = Astro.props
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#0d0d0e" />
+    <link rel="icon" href="/favicon.webp" type="image/webp" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    {Astro.site && <meta property="og:image" content={new URL('/og.png', Astro.site).href} />}
+  </head>
+  <body>
+    <slot />
+    <script>
+      // Sections fade up once when they first come into view.
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue
+            ;(e.target as HTMLElement).dataset.shown = ''
+            io.unobserve(e.target)
+          }
+        },
+        { rootMargin: '0px 0px -10% 0px' },
+      )
+      document.querySelectorAll('.reveal').forEach((el) => io.observe(el))
+    </script>
+  </body>
+</html>

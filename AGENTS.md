@@ -9,6 +9,7 @@ Local web app that runs and follows Claude Code sessions across projects: a boar
 - `apps/web`: React 19, Vite, Zustand, Tailwind v4, shadcn/ui on **Base UI** (not Radix), Hugeicons.
   - `src/app`: top bar, sidebar, board, focus view and its session cards. `src/dialogs`: every dialog, lazy-loaded. `src/chat`: the conversation.
   - `src/lib/sessions.ts`: how a session maps to a pebble, a group and a status line.
+- `apps/site`: the marketing landing page (Astro, Tailwind v4, static). It reuses the app's pebble sprites through the `@pebbles` alias; product shots come from demo data only. `pnpm site:dev`, `pnpm site:build`, `pnpm site:check`. Design decisions in `apps/site/DESIGN.md`.
 
 ## Commands
 

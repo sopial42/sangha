@@ -1,0 +1,63 @@
+---
+// One pebble on a small piece of floor, with its ring: the legend for the board's states.
+import { SPRITES } from '@pebbles'
+
+type Key = keyof typeof SPRITES
+interface Props {
+  sprite: Key
+  ring?: 'glow' | 'needs' | 'error' | null
+  subs?: number
+  scale?: number
+}
+const { sprite, ring = null, subs = 0, scale = 1.05 } = Astro.props
+const src = (k: Key) => {
+  const s = SPRITES[k].src as unknown
+  return typeof s === 'string' ? s : (s as { src: string }).src
+}
+
+const W = 280
+const H = 196
+const cx = W / 2
+const cy = 132
+const hw = 120
+const hh = 60
+const box = (k: Key, x: number, y: number, sc: number) => {
+  const s = SPRITES[k]
+  const f = (100 * sc) / s.bodyW
+  return { left: x - s.ax * f, top: y - s.ay * f, width: s.w * f, height: s.h * f }
+}
+const b = box(sprite, cx, cy, scale)
+const rx = 54 * scale
+const ry = 19 * scale
+const top = `${cx - hw},${cy} ${cx},${cy - hh} ${cx + hw},${cy} ${cx},${cy + hh}`
+const side = `${cx - hw},${cy} ${cx},${cy + hh} ${cx + hw},${cy} ${cx + hw},${cy + 8} ${cx},${cy + hh + 8} ${cx - hw},${cy + 8}`
+const stones = Array.from({ length: subs }, (_, i) => box('stone-closed', cx + (62 + i * 15) * scale, cy - (18 - i * 10) * scale, scale * 0.36))
+---
+
+<div class="relative mx-auto" style={`width:${W}px;height:${H}px`} aria-hidden="true">
+  <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} class="absolute inset-0 overflow-visible">
+    <g stroke-linejoin="round" stroke-width="12">
+      <polygon points={side} fill="#141415" stroke="#141415"></polygon>
+      <polygon points={top} fill="#1b1b1d" stroke="#1b1b1d"></polygon>
+    </g>
+    <polygon points={top} fill="none" stroke="#262628" stroke-width="1" stroke-linejoin="round"></polygon>
+    {ring === 'glow' && <ellipse cx={cx} cy={cy} rx={rx + 10} ry={ry + 5} fill="rgb(217 212 203 / 0.22)" style="filter:blur(10px)" class="motion-breathe" />}
+    {
+      ring === 'needs' && (
+        <>
+          <ellipse cx={cx} cy={cy} rx={rx + 14} ry={ry + 7} fill="rgb(242 120 92 / 0.3)" style="filter:blur(14px)" />
+          <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill="none" stroke="#f2785c" stroke-width="2.5" />
+        </>
+      )
+    }
+    {ring === 'error' && <ellipse cx={cx} cy={cy} rx={rx} ry={ry} fill="none" stroke="#f06a6e" stroke-width="2" />}
+  </svg>
+  <!-- The cairn renders' shadow stops at the image edge: fade it out instead of a hard cut. -->
+  <img
+    src={src(sprite)}
+    alt=""
+    class:list={['absolute select-none', sprite.includes('cairn') && '[mask-image:linear-gradient(to_right,#000_70%,transparent)]']}
+    style={`left:${b.left}px;top:${b.top}px;width:${b.width}px;height:${b.height}px`}
+  />
+  {stones.map((s) => <img src={src('stone-closed')} alt="" class="absolute select-none" style={`left:${s.left}px;top:${s.top}px;width:${s.width}px;height:${s.height}px`} />)}
+</div>
