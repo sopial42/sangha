@@ -1,9 +1,19 @@
 import { useEffect } from 'react'
 import { openSession } from './api'
-import { neighbourOf } from './priests'
+import { neighbourOf } from './lib/sessions'
 import { useApp } from './store'
 
-/** Opens the priest to the left (-1) or right (1) of the one shown, silenced ones skipped. */
+/**
+ * A menu, listbox, popover or dialog is open, or focus sits inside one: Escape and arrow keys belong to it,
+ * not to the page behind.
+ */
+export function popupOpen() {
+  if (document.querySelector('[data-open]:is([role="menu"],[role="listbox"],[role="dialog"],[role="alertdialog"])')) return true
+  const active = document.activeElement
+  return !!active?.closest('[data-open], [role="menu"], [role="listbox"], [aria-expanded="true"]')
+}
+
+/** Opens the previous (-1) or next (1) session in board order, muted ones skipped. */
 export function goToNeighbour(dir: 1 | -1) {
   const { sessions, projects, selectedId } = useApp.getState()
   const id = neighbourOf(sessions, projects, selectedId, dir)
@@ -11,14 +21,14 @@ export function goToNeighbour(dir: 1 | -1) {
 }
 
 /**
- * ← / → walk the courtyard from priest to priest, conversation open or not. Never while you write:
+ * ← / → walk from session to session, conversation open or not. Never while you write:
  * in a field only when it is empty (the caret has nowhere to go anyway), and never under a dialog.
  */
-export function usePriestNav() {
+export function useSessionNav() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.defaultPrevented) return
-      if (useApp.getState().dialog || document.querySelector('dialog[open]')) return
+      if (useApp.getState().dialog || popupOpen()) return
       const t = e.target
       if (t instanceof HTMLElement && (t.isContentEditable || t.tagName === 'INPUT' || t.tagName === 'SELECT')) return
       if (t instanceof HTMLTextAreaElement && t.value !== '') return

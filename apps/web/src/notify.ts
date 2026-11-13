@@ -1,9 +1,9 @@
-import { BUDDHA_SESSION_ID, type RecapState, type SessionStatus, type SessionSummary } from '@sangha/shared'
-import { agentTitle, priestLabel } from './priests'
+import { BUDDHA_SESSION_ID, type SessionStatus, type SessionSummary } from '@sangha/shared'
+import { nameOf } from './lib/sessions'
 import { useApp } from './store'
 
 const ATTENTION: SessionStatus[] = ['waiting', 'error']
-/** How long a stop waits for its recap (which says why he stopped) before ringing the plain bowl anyway. */
+/** How long a stop waits for its recap (which says why it stopped) before chiming anyway. */
 const RECAP_WAIT_MS = 15_000
 
 // Browsers only allow sound after a user gesture: the audio context is created (or resumed) on the
@@ -20,8 +20,8 @@ function unlockAudio() {
 }
 
 /**
- * A Tibetan singing bowl, synthesized (no audio file): a low fundamental with the bowl's inharmonic
- * partials, each doubled slightly off-pitch so they beat, a soft strike and a long fade.
+ * A soft chime, synthesized (no audio file): a low fundamental with a bowl's inharmonic partials,
+ * each doubled slightly off-pitch so they beat, a soft strike and a long fade.
  */
 export function bowl() {
   strike(196, 0.9, 0) // G3
@@ -56,51 +56,6 @@ function strike(fundamental: number, level: number, delay: number, length = 1) {
   }
 }
 
-/** How long a priest's flight to the moon lasts (see Priest's exitToNirvana): the yeet's pop lands with him. */
-const FLIGHT_S = 3
-
-/**
- * A priest sent to nirvana: a cartoon slide whistle spiralling up (its vibrato speeding up like his
- * spin), then a pop as he vanishes into the moon. Synthesized, timed so the pop ends his flight.
- */
-export function yeet() {
-  if (!audio || audio.state !== 'running' || useApp.getState().muted) return
-  const length = 1.1
-  const t = audio.currentTime + FLIGHT_S - length
-
-  const whistle = audio.createOscillator()
-  whistle.type = 'sine'
-  whistle.frequency.setValueAtTime(350, t)
-  whistle.frequency.exponentialRampToValueAtTime(2600, t + length)
-  const vibrato = audio.createOscillator()
-  const depth = audio.createGain()
-  vibrato.frequency.setValueAtTime(5, t)
-  vibrato.frequency.linearRampToValueAtTime(14, t + length)
-  depth.gain.value = 40
-  vibrato.connect(depth).connect(whistle.frequency)
-  const g = audio.createGain()
-  g.gain.setValueAtTime(0.0001, t)
-  g.gain.exponentialRampToValueAtTime(0.25, t + 0.06)
-  g.gain.setValueAtTime(0.25, t + length - 0.05)
-  g.gain.exponentialRampToValueAtTime(0.0001, t + length)
-  whistle.connect(g).connect(audio.destination)
-  for (const osc of [whistle, vibrato]) {
-    osc.start(t)
-    osc.stop(t + length + 0.05)
-  }
-
-  const pop = audio.createOscillator()
-  const pg = audio.createGain()
-  const end = t + length
-  pop.frequency.setValueAtTime(900, end)
-  pop.frequency.exponentialRampToValueAtTime(120, end + 0.08)
-  pg.gain.setValueAtTime(0.5, end)
-  pg.gain.exponentialRampToValueAtTime(0.0001, end + 0.12)
-  pop.connect(pg).connect(audio.destination)
-  pop.start(end)
-  pop.stop(end + 0.15)
-}
-
 /** Every gesture keeps the audio unlocked (browsers allow sound only after one; Safari may suspend it again). */
 export function keepAudioUnlocked() {
   window.addEventListener('pointerdown', unlockAudio)
@@ -110,30 +65,20 @@ export function keepAudioUnlocked() {
 /** A session's recap as a comparable key: a new one means the small model has read this stop. */
 const recapKey = (s: SessionSummary) => (s.recap ? `${s.recap.done}\u0000${s.recap.next}` : '')
 
-const NOTIFY_TITLE: Record<RecapState, string> = { fini: 'a fini', question: 'a une question', attente: 'attend un résultat' }
-
 /**
- * When a priest opens his eyes (or gets in trouble): ring the bowl, add him to the bell's list, and count
- * him in the tab title.
+ * When a session stops (or hits an error): chime, and count it in the tab title.
  *
- * A plain stop does not ring at once: it waits for his recap, where a small model says why he stopped
- * (done, a question for you, or waiting on CI…), written in the bell's list. Back to work meanwhile: it
+ * A plain stop does not ring at once: it waits for its recap, where a small model says why it stopped
+ * (done, a question for you, or waiting on CI). Back to work meanwhile: it
  * was no real stop, nothing rings. No recap within RECAP_WAIT_MS: it rings anyway.
  */
-export function watchPriests() {
+export function watchSessions() {
   let previous: Record<string, SessionStatus> | null = null
   /** Stops waiting for their recap: the recap they had when they stopped, and the fallback timer. */
   const pending = new Map<string, { recap: string; timer: ReturnType<typeof setTimeout> }>()
 
-  const announce = (s: SessionSummary, state: RecapState | undefined) => {
-    const { projects, muted, notify } = useApp.getState()
-    if (!muted) bowl()
-    const who = agentTitle(s, projects)
-    const what = s.status === 'error' ? 'est en difficulté' : NOTIFY_TITLE[state ?? 'fini']
-    const body = s.recap && s.status !== 'error' ? s.recap.next : s.project ? `${s.project} · ${s.title}` : s.title
-    // Every ring lands in the bell's list, so you can tell afterwards who called — his note travels
-    // with it, as it stood right then, so it still reads true even if he's since left the courtyard.
-    notify({ sessionId: s.id, who, what, body, note: s.note })
+  const announce = () => {
+    if (!useApp.getState().muted) bowl()
   }
 
   const settle = (id: string) => {
@@ -143,12 +88,11 @@ export function watchPriests() {
 
   const unsubscribe = useApp.subscribe((state) => {
     const { sessions, selectedId, interruptedIds, clearInterrupted } = state
-    // Silenced priests (incense out) never call for you; neither do headless children (`parent` set)
-    // — their parent answers to you, even once their own `claude -p` exits and they sit waiting.
+    // Muted sessions never call for you; neither do headless children (`parent` set): their parent
+    // answers to you, even once their own `claude -p` exits.
     const waiting = Object.values(sessions).filter((s) => ATTENTION.includes(s.status) && !s.silenced && !s.parent)
-    // The tab itself says who you're looking at — his note first — so a pile of tabs, one per
-    // priest, still reads apart from the outside, exactly like everywhere else he's named.
-    const openLabel = selectedId === BUDDHA_SESSION_ID ? 'Bouddha' : selectedId && sessions[selectedId] ? priestLabel(sessions[selectedId]!) : null
+    // The tab says which session you're looking at, so a pile of tabs still reads apart.
+    const openLabel = selectedId === BUDDHA_SESSION_ID ? 'Orchestrator' : selectedId && sessions[selectedId] ? nameOf(sessions[selectedId]!) : null
     const base = openLabel ? `${openLabel} · Sangha` : 'Sangha'
     document.title = waiting.length ? `(${waiting.length}) ${base}` : base
 
@@ -159,13 +103,13 @@ export function watchPriests() {
       const finished = waiting.filter((s) => previous![s.id] && !ATTENTION.includes(previous![s.id]!) && !interruptedIds.has(s.id))
       for (const s of changed) if (interruptedIds.has(s.id)) clearInterrupted(s.id)
 
-      // Waiting stops: dropped if he went back to work (or was silenced), rung once their new recap is in.
+      // Waiting stops: dropped if it went back to work (or was muted), rung once the new recap is in.
       for (const [id, p] of pending) {
         const s = sessions[id]
         if (!s || s.status !== 'waiting' || s.silenced) settle(id)
         else if (s.recap && recapKey(s) !== p.recap) {
           settle(id)
-          announce(s, s.recap.state)
+          announce()
         }
       }
 
@@ -173,13 +117,13 @@ export function watchPriests() {
         settle(s.id)
         // An error needs no reading: it rings at once.
         if (s.status === 'error') {
-          announce(s, undefined)
+          announce()
           continue
         }
         const timer = setTimeout(() => {
           pending.delete(s.id)
           const now = useApp.getState().sessions[s.id]
-          if (now?.status === 'waiting' && !now.silenced) announce(now, undefined)
+          if (now?.status === 'waiting' && !now.silenced) announce()
         }, RECAP_WAIT_MS)
         pending.set(s.id, { recap: recapKey(s), timer })
       }
@@ -199,8 +143,7 @@ const HOST_RING_GAP_MS = 15 * 60_000
 /**
  * The machine just became strained (from no suggestion to some): one soft strike of the bowl. Not on
  * every new suggestion id: ids name the top process (`cpu:process:claude`…), which flips each time a
- * priest starts answering, and rang the bowl with nearly every reply. It isn't tied to a session the way
- * a priest's stop is, so it rings without landing in the bell's list — the home banner says what it's about.
+ * session starts answering, and rang with nearly every reply. The machine chip in the top bar says what it's about.
  */
 export function watchHostSuggestions() {
   let strained: boolean | null = null
