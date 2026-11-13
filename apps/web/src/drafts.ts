@@ -1,8 +1,8 @@
 // What you were typing, kept until sent: closing the window or reloading loses nothing.
-// One draft per priest (keyed by session id, Buddha included) and one for the next priest you start.
+// One draft per session (keyed by session id, the Orchestrator included) and one for the next session you start.
 const DRAFTS_KEY = 'sangha.drafts'
 
-/** The draft of the "new priest" form, whichever temple you open it from. */
+/** The draft of the "new session" form, whichever project you open it from. */
 export const NEW_PRIEST_DRAFT = 'new-priest'
 
 const drafts = (): Record<string, string> => {

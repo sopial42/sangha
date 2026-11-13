@@ -4,7 +4,7 @@ import qrcode from 'qrcode-generator'
 /**
  * A URL as a scannable code, inline SVG (no network round-trip, no image to fail loading). Dark
  * modules on a light quiet zone regardless of theme: that contrast is what a phone camera needs,
- * not Sangha's own palette.
+ * not the app palette.
  */
 export function QrCode({ value, size = 112, title }: { value: string; size?: number; title?: string }) {
   const { count, margin, path } = useMemo(() => {
@@ -24,7 +24,7 @@ export function QrCode({ value, size = 112, title }: { value: string; size?: num
 
   const side = count + margin * 2
   return (
-    <svg viewBox={`0 0 ${side} ${side}`} width={size} height={size} role="img" aria-label={title ?? 'Code QR'} shapeRendering="crispEdges">
+    <svg viewBox={`0 0 ${side} ${side}`} width={size} height={size} role="img" aria-label={title ?? 'QR code'} shapeRendering="crispEdges">
       <rect width={side} height={side} fill="#f3e9d8" />
       <path d={path} fill="#1a1421" />
     </svg>

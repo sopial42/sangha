@@ -1,82 +1,130 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { HugeiconsIcon } from '@hugeicons/react'
+import {
+  AlertCircleIcon,
+  Archive02Icon,
+  ArrowDown02Icon,
+  ArrowTurnBackwardIcon,
+  ArrowUp02Icon,
+  Camera01Icon,
+  Cancel01Icon,
+  CheckmarkCircle02Icon,
+  Clock01Icon,
+  Comment01Icon,
+  Delete02Icon,
+  StopIcon,
+  ThumbsDownIcon,
+  ThumbsUpIcon,
+  UserGroupIcon,
+} from '@hugeicons/core-free-icons'
 import { splitQuote, withQuote, type Quote, type QueuedMessage } from '@sangha/shared'
-import { api, openSession } from '../api'
-import { Md } from '../Md'
-import { formatTime } from '../priests'
-import { profileFor, toolIcon } from '../profiles'
-import { useApp, type ChatItem } from '../store'
-import { draftOf, saveDraft } from '../drafts'
-import { addToStash, removeFromStash, stashOf, type StashItem } from '../stash'
+import { api, openSession } from '@/api'
+import { Md } from '@/Md'
+import { CopyButton } from '@/CopyButton'
+import { profileFor, toolIconOf } from '@/profiles'
+import { useApp, type ChatItem } from '@/store'
+import { draftOf, saveDraft } from '@/drafts'
+import { addToStash, removeFromStash, stashOf, type StashItem } from '@/stash'
+import { formatCost } from '@/lib/sessions'
+import { cn } from '@/lib/utils'
+import { PebbleIcon } from '@/components/pebble/Pebble'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
+import { Bubble, BubbleContent } from '@/components/ui/bubble'
+import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { Input } from '@/components/ui/input'
+import { Kbd } from '@/components/ui/kbd'
+import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
+import { Message, MessageAvatar, MessageContent, MessageHeader } from '@/components/ui/message'
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+  useMessageScroller,
+} from '@/components/ui/message-scroller'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceIcon, TraceLine, TraceTitle } from '@/components/ui/trace'
+import { clock } from '@/lib/time'
 
 const NO_QUEUED: QueuedMessage[] = []
 
-/** Appears on a message you point at: quote it in your reply (only the part you selected, if any). */
-const ReplyButton = ({ onReply }: { onReply: (msg: HTMLElement | null) => void }) => (
-  <button
-    type="button"
-    className="msg-reply"
-    // Keeps your text selection alive until the click reads it.
-    onMouseDown={(e) => e.preventDefault()}
-    onClick={(e) => onReply(e.currentTarget.parentElement)}
-    aria-label="Répondre à ce message"
-    title="Répondre (cite ce message, ou ce que tu y as sélectionné)"
-  >
-    ↩
-  </button>
-)
-
-/** Ananda in a glyph: an old sage, bushy brows over a long pointed beard. Takes the button's colour. */
-const AnandaIcon = () => (
-  <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-    <circle cx="8" cy="5.4" r="3.6" />
-    <path d="M5.7 4.8q.8-.6 1.6 0M8.7 4.8q.8-.6 1.6 0" />
-    <path d="M4.5 6.6Q3.5 8.8 4.6 10.8Q5.8 13.4 8 15.2Q10.2 13.4 11.4 10.8Q12.5 8.8 11.5 6.6Q10.8 8.2 9.5 7.8Q8.6 7.5 8 8Q7.4 7.5 6.5 7.8Q5.2 8.2 4.5 6.6Z" fill="currentColor" strokeWidth="0.9" />
-  </svg>
-)
+/** Hidden until you point at the message (always shown on touch screens, where nothing hovers). */
+const ON_HOVER = 'opacity-0 transition-opacity group-hover/message:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100'
 
 const Time = ({ at }: { at: number }) =>
   at ? (
-    <time className="msg-time" dateTime={new Date(at).toISOString()}>
-      {formatTime(at)}
+    <time className="text-meta font-normal text-muted-foreground tabular-nums" dateTime={new Date(at).toISOString()}>
+      {clock(at)}
     </time>
   ) : null
 
-/**
- * A message of yours he has not read yet (he is mid-turn): dimmed, and yours to change, take back or
- * push into his current turn until it leaves on its own when the turn ends.
- */
+/** An icon button with a tooltip. */
+function Tip({ label, children }: { label: ReactNode; children: ReactElement }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={children} />
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** Appears on a message you point at: quote it in your reply (only the part you selected, if any). */
+const ReplyButton = ({ onReply }: { onReply: (msg: HTMLElement | null) => void }) => (
+  <Tip label="Reply (quotes this message, or the part you selected)">
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      className={cn('text-muted-foreground', ON_HOVER)}
+      // Keeps your text selection alive until the click reads it.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => onReply(e.currentTarget.closest<HTMLElement>('[data-slot=message]'))}
+      aria-label="Reply to this message"
+    >
+      <HugeiconsIcon icon={ArrowTurnBackwardIcon} strokeWidth={1.8} />
+    </Button>
+  </Tip>
+)
+
 /** The message a reply quotes: who said it and the start of it; a click brings you back to it. */
 function QuoteBlock({ quote, onClick, onClear }: { quote: Quote; onClick?: () => void; onClear?: () => void }) {
   const inner = (
     <>
-      <span className="quote-author">{quote.author}</span>
-      <span className="quote-text">{quote.text}</span>
+      <span className="text-meta font-medium text-foreground">{quote.author}</span>
+      <span className="line-clamp-2 text-small text-muted-foreground">{quote.text}</span>
     </>
   )
   return (
-    <div className={`quote ${onClear ? 'quote-draft' : ''}`}>
+    <div className="flex min-w-0 items-start gap-2 border-l-2 border-muted-foreground/40 pl-2">
       {onClick ? (
-        <button type="button" className="quote-body" onClick={onClick} title="Revoir le message cité">
+        <button type="button" className="flex min-w-0 flex-1 flex-col text-left outline-none hover:opacity-80 focus-visible:ring-3 focus-visible:ring-ring/50" onClick={onClick} title="Show the quoted message">
           {inner}
         </button>
       ) : (
-        <div className="quote-body">{inner}</div>
+        <div className="flex min-w-0 flex-1 flex-col">{inner}</div>
       )}
       {onClear && (
-        <button type="button" className="icon-btn quote-clear" onClick={onClear} aria-label="Ne plus citer" title="Ne plus citer (Échap)">
-          ✕
-        </button>
+        <Tip label="Stop quoting (Esc)">
+          <Button type="button" variant="ghost" size="icon-xs" onClick={onClear} aria-label="Stop quoting">
+            <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.8} />
+          </Button>
+        </Tip>
       )}
     </div>
   )
 }
 
 /**
- * Appears on a message you point at, next to « répondre » : a quiet note for Ananda — a 👍/👎, a
- * comment, or both — about this exact message. Already commented, it stays lit so you can tell at a
- * glance which ones you've already flagged for him. The corner button only ever toggles a small form
- * that opens inline, above the message's own words (never a floating popover: the panel clips those
- * past its edge, and a short message leaves too little room beside it to anchor one safely).
+ * Appears on a message you point at, next to "reply": a quiet note for the Advisor (a thumbs up or
+ * down, a comment, or both) about this exact message. Once commented, the button stays lit so you can
+ * tell at a glance which messages you already flagged. It only toggles a small form that opens inline,
+ * in the flow of the message (never a floating popover: the panel would clip it at its edge).
  */
 export function FeedbackControl({ sessionId, eventSeq, commented, onDone }: { sessionId: string; eventSeq?: number; commented: boolean; onDone: () => void }) {
   const [open, setOpen] = useState(false)
@@ -104,68 +152,107 @@ export function FeedbackControl({ sessionId, eventSeq, commented, onDone }: { se
 
   return (
     <>
-      <button
-        type="button"
-        className={`msg-feedback${commented ? ' commented' : ''}`}
-        // Keeps your text selection alive until the click reads it, same as « répondre ».
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-label={commented ? 'Déjà commenté pour Ananda : ajouter un mot de plus' : 'Commenter pour Ananda'}
-        title={commented ? 'Déjà commenté pour Ananda' : 'Commenter ce message pour Ananda'}
-      >
-        <AnandaIcon />
-      </button>
+      <Tip label={commented ? 'Already noted for the Advisor: add another note' : 'Leave a note on this message for the Advisor'}>
+        <Button
+          type="button"
+          variant={open ? 'secondary' : 'ghost'}
+          size="icon-xs"
+          className={cn(commented ? 'text-foreground' : 'text-muted-foreground', !commented && !open && ON_HOVER)}
+          // Keeps your text selection alive until the click reads it, same as "reply".
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label={commented ? 'Already noted for the Advisor: add another note' : 'Note for the Advisor'}
+        >
+          <HugeiconsIcon icon={Comment01Icon} strokeWidth={1.8} />
+        </Button>
+      </Tip>
       {open && (
         <form
-          className="msg-feedback-form"
-          aria-label="Commenter pour Ananda"
+          className="flex basis-full flex-wrap items-center gap-1 pt-1"
+          aria-label="Note for the Advisor"
           onSubmit={(e) => {
             e.preventDefault()
             void submit()
           }}
         >
-          <button type="button" className={`icon-btn${rating === 'up' ? ' active-up' : ''}`} onClick={() => setRating((r) => (r === 'up' ? null : 'up'))} aria-pressed={rating === 'up'} aria-label="Pouce levé" title="👍 pour Ananda">
-            👍
-          </button>
-          <button type="button" className={`icon-btn${rating === 'down' ? ' active-down' : ''}`} onClick={() => setRating((r) => (r === 'down' ? null : 'down'))} aria-pressed={rating === 'down'} aria-label="Pouce baissé" title="👎 pour Ananda">
-            👎
-          </button>
-          <input autoFocus value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Un mot pour Ananda…" disabled={busy} />
-          <button type="submit" className="text-link" disabled={busy || (!rating && !comment.trim())}>
-            Envoyer
-          </button>
-          <button type="button" className="text-link" onClick={() => setOpen(false)} disabled={busy}>
-            Annuler
-          </button>
-          {error && <p className="form-error">{error}</p>}
+          <Button
+            type="button"
+            variant={rating === 'up' ? 'secondary' : 'ghost'}
+            size="icon-sm"
+            onClick={() => setRating((r) => (r === 'up' ? null : 'up'))}
+            aria-pressed={rating === 'up'}
+            aria-label="Thumbs up"
+            title="Thumbs up for the Advisor"
+          >
+            <HugeiconsIcon icon={ThumbsUpIcon} strokeWidth={1.8} />
+          </Button>
+          <Button
+            type="button"
+            variant={rating === 'down' ? 'secondary' : 'ghost'}
+            size="icon-sm"
+            onClick={() => setRating((r) => (r === 'down' ? null : 'down'))}
+            aria-pressed={rating === 'down'}
+            aria-label="Thumbs down"
+            title="Thumbs down for the Advisor"
+          >
+            <HugeiconsIcon icon={ThumbsDownIcon} strokeWidth={1.8} />
+          </Button>
+          <Input
+            autoFocus
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="A note for the Advisor…"
+            aria-label="Note for the Advisor"
+            disabled={busy}
+            className="h-7 min-w-40 flex-1"
+          />
+          <Button type="submit" size="sm" disabled={busy || (!rating && !comment.trim())}>
+            Send
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)} disabled={busy}>
+            Cancel
+          </Button>
+          {error && (
+            <p role="alert" className="basis-full text-small text-danger">
+              {error}
+            </p>
+          )}
         </form>
       )}
     </>
   )
 }
 
-function Queued({ sessionId, m }: { sessionId: string; m: QueuedMessage }) {
+/**
+ * A message of yours Claude has not read yet (mid-turn): shown above the composer, and yours to change,
+ * take back or push into the current turn until it goes out on its own when the turn ends.
+ */
+function Queued({ sessionId, author, m }: { sessionId: string; author: string; m: QueuedMessage }) {
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(m.text)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => setText(m.text), [m.text])
   const run = (p: Promise<void>) => p.then(() => setError(null), (e: Error) => setError(e.message))
   return (
-    <div className="msg msg-user queued">
-      <span className="msg-queued-label">En attente · il le lira à la fin de son tour</span>
+    <div className="flex flex-col gap-2 rounded-lg border border-dashed bg-card px-3 py-2">
+      <span className="flex items-center gap-1 text-meta text-muted-foreground">
+        <HugeiconsIcon icon={Clock01Icon} strokeWidth={1.8} className="size-3.5" aria-hidden />
+        Queued: {author} reads it when this turn ends
+      </span>
       {editing ? (
         <form
-          className="msg-queued-edit"
+          className="flex flex-col gap-2"
           onSubmit={(e) => {
             e.preventDefault()
             void run(api.editQueued(sessionId, m.id, text)).then(() => setEditing(false))
           }}
         >
-          <textarea
+          <Textarea
             value={text}
             autoFocus
-            rows={Math.min(8, text.split('\n').length + 1)}
+            aria-label="Edit queued message"
+            className="max-h-48 min-h-0 text-small md:text-small"
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -179,32 +266,38 @@ function Queued({ sessionId, m }: { sessionId: string; m: QueuedMessage }) {
               }
             }}
           />
-          <div className="msg-queued-actions">
-            <button type="submit" className="text-link" disabled={!text.trim()}>
-              Enregistrer
-            </button>
-            <button type="button" className="text-link" onClick={() => (setText(m.text), setEditing(false))}>
-              Annuler
-            </button>
+          <div className="flex items-center gap-1">
+            <Button type="submit" size="xs" disabled={!text.trim()}>
+              Save
+            </Button>
+            <Button type="button" variant="ghost" size="xs" onClick={() => (setText(m.text), setEditing(false))}>
+              Cancel
+            </Button>
           </div>
         </form>
       ) : (
         <>
-          <Said text={m.text} />
-          <div className="msg-queued-actions">
-            <button type="button" className="text-link" onClick={() => setEditing(true)}>
-              Modifier
-            </button>
-            <button type="button" className="text-link" onClick={() => void run(api.sendQueuedNow(sessionId, m.id))} title="Il le lit tout de suite, au milieu de son tour">
-              Envoyer maintenant
-            </button>
-            <button type="button" className="text-link" onClick={() => void run(api.withdrawQueued(sessionId, m.id))}>
-              Retirer
-            </button>
+          <div className="line-clamp-4 flex flex-col gap-1 text-small whitespace-pre-wrap">
+            <Said text={m.text} />
+          </div>
+          <div className="flex items-center gap-1">
+            <Button type="button" variant="ghost" size="xs" onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+            <Button type="button" variant="ghost" size="xs" onClick={() => void run(api.sendQueuedNow(sessionId, m.id))} title={`${author} reads it right away, in the middle of the turn`}>
+              Send now
+            </Button>
+            <Button type="button" variant="ghost" size="xs" onClick={() => void run(api.withdrawQueued(sessionId, m.id))}>
+              Withdraw
+            </Button>
           </div>
         </>
       )}
-      {error && <p className="form-error">{error}</p>}
+      {error && (
+        <p role="alert" className="text-small text-danger">
+          {error}
+        </p>
+      )}
     </div>
   )
 }
@@ -216,24 +309,42 @@ function Said({ text, onQuote }: { text: string; onQuote?: (q: Quote) => void })
   return (
     <>
       <QuoteBlock quote={quote} onClick={onQuote && (() => onQuote(quote))} />
-      {body}
+      <span>{body}</span>
     </>
   )
 }
 
+/** The agent's side of a row: its pebble, its name and the time, then whatever it said or did. */
+function AgentMessage({ author, at, children, actions }: { author: string; at?: number; children: ReactNode; actions?: ReactNode }) {
+  return (
+    <Message>
+      <MessageAvatar className="mt-0.5 size-7 min-w-7 self-start bg-transparent">
+        <PebbleIcon sprite="icon-stone-open" size={24} />
+      </MessageAvatar>
+      <MessageContent className="gap-1">
+        <MessageHeader className="h-7 gap-2 px-0 text-meta font-medium text-muted-foreground">
+          <span>{author}</span>
+          {at ? <Time at={at} /> : null}
+        </MessageHeader>
+        {children}
+        {actions && <div className="-ml-1 flex flex-wrap items-center gap-1">{actions}</div>}
+      </MessageContent>
+    </Message>
+  )
+}
+
 /**
- * He is on it, with nothing to show yet: reading your message (the one he just got, or the next one once
- * you interrupted the first), or thinking between two steps. Three dots, like someone typing.
+ * Claude is on it, with nothing to show yet: reading your message (the one it just got, or the next one
+ * once you interrupted the first), or thinking between two steps.
  */
 const Typing = ({ author, reading }: { author: string; reading: boolean }) => (
-  <div className="msg-typing" role="status">
-    <span className="typing-dots" aria-hidden>
-      <i />
-      <i />
-      <i />
-    </span>
-    {author} {reading ? 'lit ton message…' : 'travaille…'}
-  </div>
+  <AgentMessage author={author}>
+    <div role="status">
+      <TraceLine status="running" className="text-small">
+        <TraceTitle>{reading ? 'Reading your message' : 'Working'}</TraceTitle>
+      </TraceLine>
+    </div>
+  </AgentMessage>
 )
 
 // Plumbing that says nothing to the user.
@@ -249,86 +360,122 @@ function startFor(chat: ChatItem[], end: number, count: number): number {
   while (i > 0 && count > 0) if (visible(chat[--i]!)) count--
   return i
 }
-// Buddha's own tools, in words.
+
+// The Orchestrator's own tools, in words.
 const SANGHA_TOOLS: Record<string, string> = {
-  list_projects: 'Consulte les projets',
-  list_sessions: 'Regarde les prêtres',
-  start_session: 'Lance un prêtre',
-  send_to_session: 'Parle à un prêtre',
-  read_session: 'Écoute un prêtre',
+  list_projects: 'Looks at the projects',
+  list_sessions: 'Looks at the sessions',
+  start_session: 'Starts a session',
+  send_to_session: 'Messages a session',
+  read_session: 'Reads a session',
 }
 
-/** Conversation with one priest (or Buddha). `author` is how his words are signed. */
-/**
- * Conversation with one priest (or Buddha). `external`: a session running in a terminal; replies are
- * relayed to it (alive) or resume it in Sangha (ended).
- */
-/** What goes with your message when « Dernière capture » is on: the image you talk about is that screenshot. */
-const screenshotContext = (path: string) =>
-  `\n\n[Capture d'écran jointe : l'image, la capture ou ce que « je vois » dont je parle dans ce message, c'est ma dernière capture d'écran, copiée ici : ${path}. Lis-la (outil Read) avant de répondre.]`
+type ToolItem = Extract<ChatItem, { kind: 'tool' }>
 
-export function Chat({ author, external = null }: { author: string; external?: { alive: boolean } | null }) {
-  const { view, selectedId: sessionId, profiles, dialog, set } = useApp()
+/** One tool call: its name and what it worked on, unfolding to the full detail when it does not fit. */
+function ToolLine({ item }: { item: ToolItem }) {
+  const name = item.tool.replace(/^mcp__sangha__/, '')
+  const label = SANGHA_TOOLS[name] ?? name
+  const icon = (
+    <TraceIcon>
+      <HugeiconsIcon icon={toolIconOf(item.tool)} strokeWidth={1.8} />
+    </TraceIcon>
+  )
+  if (!item.summary)
+    return (
+      <TraceLine className="text-small">
+        {icon}
+        <TraceTitle className="font-medium">{label}</TraceTitle>
+      </TraceLine>
+    )
+  return (
+    <TraceCollapsible>
+      <TraceCollapsibleTrigger className="text-small">
+        <TraceLine className="text-small">
+          {icon}
+          <TraceTitle className="shrink-0 font-medium">{label}</TraceTitle>
+          <span className="min-w-0 truncate font-mono text-meta">{item.summary}</span>
+        </TraceLine>
+      </TraceCollapsibleTrigger>
+      <TraceCollapsibleContent>
+        <pre className="font-mono text-meta whitespace-pre-wrap [overflow-wrap:anywhere]">{item.summary}</pre>
+      </TraceCollapsibleContent>
+    </TraceCollapsible>
+  )
+}
+
+/** What goes with your message when "Screenshot" is on: the image you talk about is that screenshot. */
+const screenshotContext = (path: string) =>
+  `\n\n[Screenshot attached: the image, screenshot or "what I see" that I mention in this message is my latest screenshot, copied here: ${path}. Read it (Read tool) before replying.]`
+
+type ChatProps = { author: string; external?: { alive: boolean } | null }
+
+/**
+ * Conversation with one session (or the Orchestrator). `author` is how its words are signed.
+ * `external`: a session started in a terminal; replies are relayed to it (alive) or resume it here (ended).
+ * Everything is keyed to the session, so switching sessions starts from a clean slate scrolled to the end.
+ */
+export function Chat(props: ChatProps) {
+  const sessionId = useApp((s) => s.selectedId)
+  return (
+    <MessageScrollerProvider key={sessionId ?? ''} autoScroll>
+      <Conversation {...props} />
+    </MessageScrollerProvider>
+  )
+}
+
+function Conversation({ author, external = null }: ChatProps) {
+  const view = useApp((s) => s.view)
+  const sessionId = useApp((s) => s.selectedId)
+  const profiles = useApp((s) => s.profiles)
+  const dialog = useApp((s) => s.dialog)
+  const set = useApp((s) => s.set)
   const queued = useApp((s) => (sessionId ? s.sessions[sessionId]?.queued : undefined)) ?? NO_QUEUED
-  // Which messages already carry a word for Ananda, so their Ananda button stays lit: his eventSeqs, fetched once per session.
+  const scroller = useMessageScroller()
+  // The history arrives in bulk with its own (older) timestamps: only what happens after opening settles in.
+  const openedAt = useRef(Date.now()).current
+  const live = (at: number) => at > openedAt && 'motion-enter'
+  // Which messages already carry a note for the Advisor, so their button stays lit: event seqs, fetched once per session.
   const [commented, setCommented] = useState<Set<number>>(new Set())
   useEffect(() => {
-    if (!sessionId) return void setCommented(new Set())
+    if (!sessionId) return
     api.sessionFeedback(sessionId).then(
       (list) => setCommented(new Set(list.map((f) => f.eventSeq).filter((seq): seq is number => seq != null))),
       () => setCommented(new Set()),
     )
   }, [sessionId])
   const [text, setText] = useState(() => (sessionId ? draftOf(sessionId) : ''))
-  useEffect(() => setText(sessionId ? draftOf(sessionId) : ''), [sessionId])
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
-  const logRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
-  // « Dernière capture » switched on: your latest screenshot goes with the next message (then it switches off).
+  // "Screenshot" switched on: your latest screenshot goes with the next message (then it switches off).
   const [withShot, setWithShot] = useState(false)
-  useEffect(() => setWithShot(false), [sessionId])
 
-  // What you set aside instead of sending right away: his own pile, popover closed until you open it.
+  // What you set aside instead of sending right away: one pile per session, in a popover.
   const [stash, setStash] = useState<StashItem[]>(() => (sessionId ? stashOf(sessionId) : []))
-  useEffect(() => setStash(sessionId ? stashOf(sessionId) : []), [sessionId])
   const [stashOpen, setStashOpen] = useState(false)
-  useEffect(() => setStashOpen(false), [sessionId])
   const [stashBusyId, setStashBusyId] = useState<string | null>(null)
   const [stashError, setStashError] = useState<string | null>(null)
-  const stashRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!stashOpen) return
-    const onDown = (e: PointerEvent) => {
-      if (stashRef.current && !stashRef.current.contains(e.target as Node)) setStashOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setStashOpen(false)
-    window.addEventListener('pointerdown', onDown)
-    window.addEventListener('keydown', onKey)
-    return () => {
-      window.removeEventListener('pointerdown', onDown)
-      window.removeEventListener('keydown', onKey)
-    }
-  }, [stashOpen])
 
-  /** Puts the text you are writing on his pile and clears the composer. */
+  /** Puts the text you are writing on the pile and clears the composer. */
   const stashCurrent = () => {
     if (!sessionId || !text.trim()) return
     setStash(addToStash(sessionId, text))
     setText('')
     saveDraft(sessionId, '')
   }
-  /** Brings a stashed message back into the composer (appended, if you were already writing something). */
+  /** Brings a set-aside message back into the composer (appended, if you were already writing something). */
   const resumeStashed = (item: StashItem) => {
     if (!sessionId) return
     const next = text.trim() ? `${text}\n${item.text}` : item.text
     setText(next)
     saveDraft(sessionId, next)
     setStash(removeFromStash(sessionId, item.id))
+    setStashOpen(false)
     inputRef.current?.focus()
   }
-  /** Sends a stashed message straight through the same path as the composer: queued if he still works. */
+  /** Sends a set-aside message through the same path as the composer: queued if Claude still works. */
   const sendStashed = async (item: StashItem) => {
     if (!sessionId) return
     setStashBusyId(item.id)
@@ -347,10 +494,9 @@ export function Chat({ author, external = null }: { author: string; external?: {
     setStash(removeFromStash(sessionId, item.id))
   }
 
-  // Opening him (or switching to him while the panel stays open) puts the caret straight in the
-  // textarea, at the end of any restored draft — never while a dialog sits on top, and never on a
-  // touch device (that would pop the virtual keyboard unasked). Waits a frame for the draft, just
-  // restored above, to actually reach the textarea's value.
+  // Opening a session (or switching to it while the panel stays open) puts the caret straight in the
+  // textarea, at the end of any restored draft. Never while a dialog sits on top, and never on a touch
+  // device (that would pop the virtual keyboard unasked). Waits a frame for the draft to reach the textarea.
   useEffect(() => {
     if (!sessionId || dialog) return
     if (window.matchMedia('(pointer: coarse)').matches) return
@@ -364,62 +510,16 @@ export function Chat({ author, external = null }: { author: string; external?: {
     return () => cancelAnimationFrame(raf)
   }, [sessionId, dialog])
 
-  // The log follows new words only while you are at its bottom. Reading further up, you stay where you
-  // are: a blinking bell tells you new words came. Your own message always brings you down.
-  // Any move up lets go at once, even a pixel: a streaming reply re-renders on every word, often before
-  // the scroll event of your gesture arrives, and would otherwise pull you back down each time.
-  const atBottom = useRef(true)
-  const lastTop = useRef(0)
-  const [fresh, setFresh] = useState(false)
-  const toBottom = () => {
-    const el = logRef.current
-    if (el) {
-      el.scrollTop = el.scrollHeight
-      lastTop.current = el.scrollTop
-    }
-    atBottom.current = true
-    setFresh(false)
-  }
-  const letGo = () => {
-    atBottom.current = false
-  }
-  // Moved up since we last looked, and not merely clamped by content that shrank under us.
-  const wentUp = (el: HTMLElement) => el.scrollTop < lastTop.current - 1 && el.scrollHeight - el.scrollTop - el.clientHeight > 1
-  useEffect(() => {
-    atBottom.current = true
-    setFresh(false)
-  }, [sessionId])
+  // The scroller follows new words while you are at the bottom and lets go as soon as you scroll up.
+  // Your own message always brings you down.
+  const lastKind = view.chat.at(-1)?.kind
   useLayoutEffect(() => {
-    const el = logRef.current
-    if (el && wentUp(el)) letGo()
-    if (atBottom.current || view.chat.at(-1)?.kind === 'user') toBottom()
-    else setFresh(true)
-  }, [view.chat.length, view.draft, view.busy])
-  // A message you just queued brings you down too.
-  const queuedBefore = useRef(queued.length)
-  useLayoutEffect(() => {
-    if (queued.length > queuedBefore.current) toBottom()
-    queuedBefore.current = queued.length
-  }, [queued.length])
-  const onScroll = () => {
-    const el = logRef.current
-    if (!el) return
-    if (wentUp(el)) letGo()
-    else if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) atBottom.current = true
-    lastTop.current = el.scrollTop
-    if (atBottom.current) setFresh(false)
-  }
-  const onWheel = (e: React.WheelEvent) => {
-    if (e.deltaY < 0) letGo()
-  }
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    if (['ArrowUp', 'PageUp', 'Home'].includes(e.key)) letGo()
-  }
+    if (lastKind === 'user') scroller.scrollToEnd()
+  }, [view.chat.length, lastKind, scroller])
 
   // Recall past messages with ArrowUp/ArrowDown, like a shell history: -1 means "not browsing".
   const [histIndex, setHistIndex] = useState(-1)
   const sentMessages = useMemo(() => view.chat.filter((i): i is Extract<ChatItem, { kind: 'user' }> => i.kind === 'user').map((i) => splitQuote(i.text).body), [view.chat])
-  useEffect(() => setHistIndex(-1), [sessionId])
   // Only after we move the caret ourselves (browsing history), not on every keystroke.
   useEffect(() => {
     if (histIndex < 0) return
@@ -427,9 +527,8 @@ export function Chat({ author, external = null }: { author: string; external?: {
     el?.setSelectionRange(el.value.length, el.value.length)
   }, [histIndex])
 
-  // Replying to a message, WhatsApp-like: it shows above the field, then leaves ahead of your words.
+  // Replying to a message: it shows above the field, then goes out ahead of your words.
   const [quote, setQuote] = useState<Quote | null>(null)
-  useEffect(() => setQuote(null), [sessionId])
   const replyTo = (who: string, full: string, el: HTMLElement | null) => {
     // Text selected inside that message: only that part is quoted.
     const sel = window.getSelection()
@@ -440,8 +539,19 @@ export function Chat({ author, external = null }: { author: string; external?: {
   const replyRef = useRef(replyTo)
   replyRef.current = replyTo
 
-  // Back to the quoted message: loaded first if it sits among the older ones, then centered and lit up.
+  // Only the last PAGE messages at first: thousands of them in the page made every keystroke slow.
+  // `from` stays null (follow the end) until you load older ones, then holds where the log starts, so
+  // new words arriving do not push what you are reading out of the log.
+  const [from, setFrom] = useState<number | null>(null)
+  const start = from ?? startFor(view.chat, view.chat.length, PAGE)
+  const startRef = useRef(start)
+  startRef.current = start
+  // The scroller keeps what you were reading in place when older messages appear above it.
+  const loadOlder = () => setFrom(startFor(view.chat, start, PAGE))
+
+  // Back to the quoted message: loaded first if it sits among the older ones, then centred and lit up.
   const [jump, setJump] = useState<number | null>(null)
+  const [found, setFound] = useState<number | null>(null)
   const goToQuote = (q: Quote) => {
     const head = q.text.replace(/…$/, '').slice(0, 200)
     const chat = useApp.getState().view.chat
@@ -451,17 +561,26 @@ export function Chat({ author, external = null }: { author: string; external?: {
       if ((it.kind === 'buddha' || it.kind === 'user') && splitQuote(it.text).body.includes(head)) idx = i
     }
     if (idx < 0) return
-    letGo()
-    setFresh(false)
     setFrom((f) => Math.min(f ?? startRef.current, Math.max(0, idx - 2)))
     setJump(idx)
   }
   const goRef = useRef(goToQuote)
   goRef.current = goToQuote
+  useLayoutEffect(() => {
+    if (jump === null) return
+    scroller.scrollToMessage(String(jump), { align: 'center', behavior: 'smooth' })
+    setFound(jump)
+    setJump(null)
+  }, [jump, start, scroller])
+  useEffect(() => {
+    if (found === null) return
+    const t = setTimeout(() => setFound(null), 1600)
+    return () => clearTimeout(t)
+  }, [found])
 
   const monkName = (id: string) => {
     const m = view.monks[id]
-    return m ? profileFor(m.agentType, profiles).name : 'un moine'
+    return m ? profileFor(m.agentType, profiles).name : 'a subagent'
   }
 
   const submit = async (e: React.FormEvent) => {
@@ -469,7 +588,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
     if (!sessionId || !text.trim() || sending) return
     setSending(true)
     setError(null)
-    setNote(external?.alive ? 'Transmission à la session du terminal…' : null)
+    setNote(external?.alive ? 'Relaying to the terminal session…' : null)
     const to = sessionId
     try {
       let body = quote ? withQuote(quote, text) : text
@@ -480,7 +599,7 @@ export function Chat({ author, external = null }: { author: string; external?: {
       setText('')
       setQuote(null)
       setWithShot(false)
-      if (r?.via === 'peer') setNote(`Transmis à ${r.to} ; sa réponse apparaîtra ici.`)
+      if (r?.via === 'peer') setNote(`Relayed to ${r.to}. The reply will show up here.`)
       else if (r?.via === 'adopted') {
         setNote(null)
         openSession(r.id)
@@ -493,278 +612,348 @@ export function Chat({ author, external = null }: { author: string; external?: {
     }
   }
 
-  const render = (item: ChatItem, i: number) => {
+  const feedback = (seq: number) =>
+    sessionId && <FeedbackControl sessionId={sessionId} eventSeq={seq} commented={commented.has(seq)} onDone={() => setCommented((s) => new Set(s).add(seq))} />
+
+  const render = (item: Exclude<ChatItem, ToolItem>, i: number): ReactNode => {
     switch (item.kind) {
       case 'user':
         return (
-          <div key={i} data-i={i} className="msg msg-user">
-            <ReplyButton onReply={(el) => replyRef.current('toi', item.text, el)} />
-            {sessionId && <FeedbackControl sessionId={sessionId} eventSeq={item.seq} commented={commented.has(item.seq)} onDone={() => setCommented((s) => new Set(s).add(item.seq))} />}
-            <Time at={item.at} />
-            <Said text={item.text} onQuote={(q) => goRef.current(q)} />
-          </div>
+          <Message align="end">
+            <MessageContent className="items-end gap-1">
+              <Bubble variant="secondary" align="end">
+                <BubbleContent className="flex flex-col gap-2 px-4 text-chat whitespace-pre-wrap">
+                  <Said text={item.text} onQuote={(q) => goRef.current(q)} />
+                </BubbleContent>
+              </Bubble>
+              <div className="-mr-1 flex flex-wrap items-center justify-end gap-1">
+                <span className={ON_HOVER}>
+                  <Time at={item.at} />
+                </span>
+                <ReplyButton onReply={(el) => replyRef.current('You', item.text, el)} />
+                {feedback(item.seq)}
+              </div>
+            </MessageContent>
+          </Message>
         )
       case 'buddha':
         return (
-          <div key={i} data-i={i} className="msg msg-buddha">
-            <ReplyButton onReply={(el) => replyRef.current(author, item.text, el)} />
-            {sessionId && <FeedbackControl sessionId={sessionId} eventSeq={item.seq} commented={commented.has(item.seq)} onDone={() => setCommented((s) => new Set(s).add(item.seq))} />}
-            <span className="msg-author">
-              {author} <Time at={item.at} />
-            </span>
-            <Md text={item.text} />
-          </div>
+          <AgentMessage
+            author={author}
+            at={item.at}
+            actions={
+              <>
+                <CopyButton text={item.text} className={ON_HOVER} />
+                <ReplyButton onReply={(el) => replyRef.current(author, item.text, el)} />
+                {feedback(item.seq)}
+              </>
+            }
+          >
+            <Md text={item.text} className="text-chat text-foreground" />
+          </AgentMessage>
         )
-      case 'tool': {
-        if (HIDDEN_TOOLS.has(item.tool)) return null
-        const name = item.tool.replace(/^mcp__sangha__/, '')
-        return (
-          <div key={i} className="chip">
-            {toolIcon(item.tool)} <b>{SANGHA_TOOLS[name] ?? name}</b> {item.summary}
-          </div>
-        )
-      }
       case 'summon':
         return (
-          <button key={i} className="scroll-card" onClick={() => set({ selectedMonk: item.monkId })}>
-            🔔 {author} convoque <b>{monkName(item.monkId)}</b> : {view.monks[item.monkId]?.description} <Time at={item.at} />
-          </button>
+          <Marker render={<button type="button" onClick={() => set({ selectedMonk: item.monkId })} />} className="ml-9 w-auto text-small hover:text-foreground">
+            <MarkerIcon>
+              <HugeiconsIcon icon={UserGroupIcon} strokeWidth={1.8} />
+            </MarkerIcon>
+            <MarkerContent className="flex-1">
+              {author} started <span className="font-medium text-foreground">{monkName(item.monkId)}</span>
+              {view.monks[item.monkId]?.description ? `: ${view.monks[item.monkId]!.description}` : ''}
+            </MarkerContent>
+            <Time at={item.at} />
+          </Marker>
         )
       case 'done': {
         const m = view.monks[item.monkId]
+        const ok = m?.status === 'completed'
         return (
-          <button key={i} className={`scroll-card ${m?.status === 'completed' ? 'ok' : 'ko'}`} onClick={() => set({ selectedMonk: item.monkId })}>
-            {m?.status === 'completed' ? '🙏' : '🏮'} <b>{monkName(item.monkId)}</b> {m?.status === 'completed' ? 'a terminé' : `: ${m?.status}`} <Time at={item.at} />
-          </button>
+          <Marker render={<button type="button" onClick={() => set({ selectedMonk: item.monkId })} />} className="ml-9 w-auto text-small hover:text-foreground">
+            <MarkerIcon className={ok ? undefined : 'text-danger'}>
+              <HugeiconsIcon icon={ok ? CheckmarkCircle02Icon : AlertCircleIcon} strokeWidth={1.8} />
+            </MarkerIcon>
+            <MarkerContent className="flex-1">
+              <span className="font-medium text-foreground">{monkName(item.monkId)}</span> {ok ? 'finished' : `stopped: ${m?.status ?? 'unknown'}`}
+            </MarkerContent>
+            <Time at={item.at} />
+          </Marker>
         )
       }
       case 'turn':
         return (
-          <div key={i} className="turn-sep">
-            {(item.durationMs / 1000).toFixed(1)} s · ≈ {item.costUsdEquiv.toFixed(3)} $ équivalent quota
-          </div>
+          <Marker variant="separator" className="text-meta tabular-nums">
+            <MarkerContent>
+              {(item.durationMs / 1000).toFixed(1)} s · about {formatCost(item.costUsdEquiv)} of quota
+            </MarkerContent>
+          </Marker>
         )
       case 'error':
         return (
-          <div key={i} className="msg msg-error" role="alert">
-            {item.text}
-          </div>
+          <Alert variant="destructive" className="ml-9 w-auto">
+            <HugeiconsIcon icon={AlertCircleIcon} strokeWidth={1.8} />
+            <AlertDescription className="text-small whitespace-pre-wrap text-danger">{item.text}</AlertDescription>
+          </Alert>
         )
     }
   }
 
-  // Only the last PAGE messages at first: thousands of them in the page made every keystroke slow.
-  // `from` stays null (follow the end) until you load older ones, then holds where the log starts, so
-  // new words arriving do not push what you are reading out of the log.
-  const [from, setFrom] = useState<number | null>(null)
-  useEffect(() => setFrom(null), [sessionId])
-  const start = from ?? startFor(view.chat, view.chat.length, PAGE)
-  const startRef = useRef(start)
-  startRef.current = start
-  useLayoutEffect(() => {
-    if (jump === null) return
-    const el = logRef.current?.querySelector<HTMLElement>(`[data-i="${jump}"]`)
-    setJump(null)
-    if (!el) return
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    el.classList.remove('msg-found')
-    void el.offsetWidth // restart the glow when the same message is found twice
-    el.classList.add('msg-found')
-  }, [jump, start])
-  const older = useRef<number | null>(null) // scroll height before loading older messages
-  const loadOlder = () => {
-    older.current = logRef.current?.scrollHeight ?? null
-    setFrom(startFor(view.chat, start, PAGE))
-  }
-  // Keep what you were reading in place once older messages appear above it.
-  useLayoutEffect(() => {
-    const el = logRef.current
-    if (!el || older.current === null) return
-    el.scrollTop += el.scrollHeight - older.current
-    lastTop.current = el.scrollTop
-    older.current = null
-  }, [start])
-
   // Rendered once per change of the log, not on every keystroke in the textarea: a long session's
-  // markdown would otherwise be parsed again for each letter typed.
-  const log = useMemo(
-    () => view.chat.slice(start).map((item, i) => render(item, start + i)),
-    [view.chat, start, view.monks, author, profiles, sessionId, commented],
-  )
+  // markdown would otherwise be parsed again for each letter typed. Consecutive tool calls share one trace.
+  const log = useMemo(() => {
+    const rows: ReactNode[] = []
+    const items = view.chat
+    for (let i = start; i < items.length; i++) {
+      const item = items[i]!
+      if (item.kind === 'tool') {
+        if (HIDDEN_TOOLS.has(item.tool)) continue
+        const first = i
+        const tools: ToolItem[] = [item]
+        while (i + 1 < items.length && items[i + 1]!.kind === 'tool') {
+          const next = items[++i] as ToolItem
+          if (!HIDDEN_TOOLS.has(next.tool)) tools.push(next)
+        }
+        rows.push(
+          <MessageScrollerItem key={`t${first}`} messageId={`t${first}`} className={cn(live(item.at))}>
+            <Trace className="gap-1 pl-9">
+              {tools.map((t, j) => (
+                <ToolLine key={j} item={t} />
+              ))}
+            </Trace>
+          </MessageScrollerItem>,
+        )
+        continue
+      }
+      rows.push(
+        <MessageScrollerItem
+          key={i}
+          messageId={String(i)}
+          className={cn('rounded-xl transition-[background-color,box-shadow] duration-700', found === i && 'bg-muted/60 ring-8 ring-muted/60', live(item.at))}
+        >
+          {render(item, i)}
+        </MessageScrollerItem>,
+      )
+    }
+    return rows
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view.chat, start, view.monks, author, profiles, sessionId, commented, found])
   const hiddenOlder = useMemo(() => view.chat.slice(0, start).filter(visible).length, [view.chat, start])
 
   const empty = view.chat.length === 0 && !view.draft
-  // What he last had in front of him: your message (he is reading it) or his own work.
+  // What Claude last had in front of it: your message (it is reading it) or its own work.
   const lastSaid = view.chat.findLast(visible)
+  const placeholder = external
+    ? external.alive
+      ? `Reply to ${author} (relayed to its terminal session)`
+      : `Reply to ${author} (its terminal closed: replying resumes the session here)`
+    : `Reply to ${author}, or type / for commands`
+
   return (
-    <section className="chat" aria-label={`Conversation avec ${author}`}>
-      {fresh && (
-        <button type="button" className="chat-fresh" onClick={toBottom} aria-label="Nouveaux messages : descendre">
-          🔔 Nouveaux messages
-        </button>
-      )}
-      <div className="chat-log" aria-live="polite" ref={logRef} onScroll={onScroll} onWheel={onWheel} onKeyDown={onKeyDown}>
-        {empty && (
-          <div className="chat-empty">
-            <p className="chat-empty-title">Silence.</p>
-            <p>{`Écris à ${author}.`}</p>
-          </div>
+    <section className="flex min-h-0 flex-1 flex-col" aria-label={`Conversation with ${author}`}>
+      <MessageScroller className="min-h-0 flex-1">
+        <MessageScrollerViewport aria-label={`Messages with ${author}`}>
+          {hiddenOlder > 0 && (
+            <div className="mx-auto w-full max-w-3xl px-8 pt-6">
+              <Marker variant="separator" render={<button type="button" onClick={loadOlder} />} className="text-small hover:text-foreground">
+                <MarkerContent>
+                  Show {Math.min(PAGE, hiddenOlder)} earlier messages ({hiddenOlder} hidden)
+                </MarkerContent>
+              </Marker>
+            </div>
+          )}
+          <MessageScrollerContent className="mx-auto w-full max-w-3xl px-8 py-6">
+            {empty && (
+              <MessageScrollerItem>
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia>
+                      <PebbleIcon sprite="icon-stone-flat" size={40} />
+                    </EmptyMedia>
+                    <EmptyTitle>No messages yet</EmptyTitle>
+                    <EmptyDescription>Write to {author} below.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </MessageScrollerItem>
+            )}
+            {log}
+            {view.draft && (
+              <MessageScrollerItem>
+                <AgentMessage author={author}>
+                  <Md text={view.draft} className="text-chat text-foreground" />
+                </AgentMessage>
+              </MessageScrollerItem>
+            )}
+            {view.busy && !view.draft && (
+              <MessageScrollerItem>
+                <Typing author={author} reading={lastSaid?.kind === 'user'} />
+              </MessageScrollerItem>
+            )}
+          </MessageScrollerContent>
+        </MessageScrollerViewport>
+        <MessageScrollerButton aria-label="Jump to latest" className="rounded-full shadow-sm">
+          <HugeiconsIcon icon={ArrowDown02Icon} strokeWidth={2} />
+        </MessageScrollerButton>
+      </MessageScroller>
+
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-8 pb-6">
+        {sessionId && queued.map((m) => <Queued key={m.id} sessionId={sessionId} author={author} m={m} />)}
+        {external && (
+          <p className="text-meta text-muted-foreground">
+            {external.alive
+              ? 'Started in a terminal. Your replies are relayed to that terminal session.'
+              : 'Started in a terminal that has since closed. Replying here resumes the session in Sangha.'}
+          </p>
         )}
-        {hiddenOlder > 0 && (
-          <button type="button" className="chat-older" onClick={loadOlder}>
-            {Math.min(PAGE, hiddenOlder)} messages plus anciens · {hiddenOlder} masqués
-          </button>
-        )}
-        {log}
-        {view.draft && (
-          <div className="msg msg-buddha streaming">
-            <span className="msg-author">{author}</span>
-            {view.draft}
-          </div>
-        )}
-        {view.busy && !view.draft && <Typing author={author} reading={lastSaid?.kind === 'user'} />}
-        {sessionId && queued.map((m) => <Queued key={m.id} sessionId={sessionId} m={m} />)}
-      </div>
-      <form className="chat-input" onSubmit={submit}>
-        {quote && <QuoteBlock quote={quote} onClear={() => (setQuote(null), inputRef.current?.focus())} />}
-        <textarea
-          ref={inputRef}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value)
-            if (sessionId) saveDraft(sessionId, e.target.value)
-            setHistIndex(-1) // typing by hand always leaves history browsing
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape' && quote) {
-              // Drops the quote, not the conversation.
-              e.stopPropagation()
-              setQuote(null)
-            } else if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              void submit(e)
-            } else if (e.key === 'ArrowUp') {
-              // Only recall history from an empty field, or while already browsing it.
-              if ((histIndex >= 0 || text === '') && sentMessages.length > 0) {
+        <form className="flex flex-col gap-2 rounded-xl border bg-surface p-3 transition-colors focus-within:border-ring/60" onSubmit={submit}>
+          {quote && <QuoteBlock quote={quote} onClear={() => (setQuote(null), inputRef.current?.focus())} />}
+          <Textarea
+            ref={inputRef}
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value)
+              if (sessionId) saveDraft(sessionId, e.target.value)
+              setHistIndex(-1) // typing by hand always leaves history browsing
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && quote) {
+                // Drops the quote, not the conversation.
+                e.stopPropagation()
+                setQuote(null)
+              } else if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault()
-                const next = Math.min(histIndex + 1, sentMessages.length - 1)
+                void submit(e)
+              } else if (e.key === 'ArrowUp') {
+                // Only recall history from an empty field, or while already browsing it.
+                if ((histIndex >= 0 || text === '') && sentMessages.length > 0) {
+                  e.preventDefault()
+                  const next = Math.min(histIndex + 1, sentMessages.length - 1)
+                  setHistIndex(next)
+                  setText(sentMessages[sentMessages.length - 1 - next] ?? '')
+                }
+              } else if (e.key === 'ArrowDown' && histIndex >= 0) {
+                e.preventDefault()
+                const next = histIndex - 1
                 setHistIndex(next)
-                setText(sentMessages[sentMessages.length - 1 - next] ?? '')
+                setText(next === -1 ? '' : (sentMessages[sentMessages.length - 1 - next] ?? ''))
+              } else if (e.key.toLowerCase() === 's' && (e.ctrlKey || e.metaKey)) {
+                // Sets aside what you are writing, without letting the browser open its "Save" dialog.
+                e.preventDefault()
+                stashCurrent()
               }
-            } else if (e.key === 'ArrowDown' && histIndex >= 0) {
-              e.preventDefault()
-              const next = histIndex - 1
-              setHistIndex(next)
-              setText(next === -1 ? '' : (sentMessages[sentMessages.length - 1 - next] ?? ''))
-            } else if (e.key.toLowerCase() === 's' && (e.ctrlKey || e.metaKey)) {
-              // Mets de côté ce que j'écris, sans laisser le navigateur ouvrir sa boîte "Enregistrer".
-              e.preventDefault()
-              stashCurrent()
-            }
-          }}
-          placeholder={
-            external
-              ? external.alive
-                ? `Réponds à ${author} (transmis à sa session du terminal)…`
-                : `Réponds à ${author} (son terminal est fermé : Sangha reprend la session)…`
-              : `Parle à ${author}…`
-          }
-          disabled={!sessionId}
-          readOnly={sending}
-          rows={2}
-          aria-label={`Message à ${author}`}
-        />
-        <div className="chat-actions">
-          {view.busy && sessionId && !external && (
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => {
-                // Mark before calling: the bell must not ring when the priest stops because we asked him to.
-                useApp.getState().markInterrupted(sessionId)
-                void api.interrupt(sessionId)
+            }}
+            placeholder={placeholder}
+            disabled={!sessionId}
+            readOnly={sending}
+            rows={1}
+            aria-label={`Message to ${author}`}
+            className="max-h-60 min-h-6 resize-none rounded-none border-0 bg-transparent px-1 py-0 text-chat shadow-none focus-visible:border-0 focus-visible:ring-0 disabled:bg-transparent md:text-chat dark:bg-transparent dark:disabled:bg-transparent"
+          />
+          <div className="flex items-center gap-1">
+            <Tip
+              label={
+                withShot
+                  ? 'Your latest screenshot goes with this message (taken when you send). Click to cancel.'
+                  : `Attach your latest screenshot to the next message, so ${author} knows which image you mean`
+              }
+            >
+              <Button type="button" variant={withShot ? 'secondary' : 'ghost'} size="sm" disabled={!sessionId || sending} onClick={() => setWithShot((on) => !on)} aria-pressed={withShot}>
+                <HugeiconsIcon icon={Camera01Icon} strokeWidth={1.8} data-icon="inline-start" />
+                {withShot ? 'Screenshot attached' : 'Screenshot'}
+              </Button>
+            </Tip>
+            <Popover
+              open={stashOpen}
+              onOpenChange={(open) => {
+                setStashOpen(open)
+                if (open) setStashError(null)
               }}
             >
-              Interrompre
-            </button>
-          )}
-          <button
-            type="button"
-            className={`btn btn-ghost${withShot ? ' active' : ''}`}
-            disabled={!sessionId || sending}
-            onClick={() => setWithShot((on) => !on)}
-            aria-pressed={withShot}
-            title={
-              withShot
-                ? 'Ta dernière capture d\'écran partira avec ce message (prise au moment d\'envoyer). Clique pour annuler.'
-                : 'Joindre ta dernière capture d\'écran au prochain message : il comprendra que l\'image dont tu parles, c\'est elle'
-            }
-          >
-            {withShot ? '📷 Capture jointe ✓' : '📷 Dernière capture'}
-          </button>
-          <div className="stash-wrap" ref={stashRef}>
-            <button
-              type="button"
-              className={`btn btn-ghost${stashOpen ? ' active' : ''}`}
-              disabled={!sessionId}
-              aria-haspopup="true"
-              aria-expanded={stashOpen}
-              onClick={() => setStashOpen((o) => !o)}
-              title="Les messages que tu as mis de côté pour plus tard"
-            >
-              📥 De côté{stash.length > 0 ? ` · ${stash.length}` : ''}
-            </button>
-            {stashOpen && (
-              <div className="stash-popover" role="menu" aria-label="Messages de côté">
-                <button type="button" className="stash-current" disabled={!text.trim()} onClick={stashCurrent}>
-                  Mettre de côté ce que j’écris
-                </button>
+              <PopoverTrigger
+                render={
+                  <Button type="button" variant={stashOpen ? 'secondary' : 'ghost'} size="sm" disabled={!sessionId} title="Messages you set aside for later">
+                    <HugeiconsIcon icon={Archive02Icon} strokeWidth={1.8} data-icon="inline-start" />
+                    Set aside
+                    {stash.length > 0 && (
+                      <Badge variant="secondary" className="tabular-nums">
+                        {stash.length}
+                      </Badge>
+                    )}
+                  </Button>
+                }
+              />
+              <PopoverContent side="top" align="start" className="w-80 gap-2" aria-label="Messages set aside">
+                <Button type="button" variant="outline" size="sm" disabled={!text.trim()} onClick={stashCurrent} className="w-full justify-between">
+                  Set aside what I'm writing
+                  <Kbd>Ctrl S</Kbd>
+                </Button>
                 {stashError && (
-                  <p className="form-error" role="alert">
+                  <p role="alert" className="text-small text-danger">
                     {stashError}
                   </p>
                 )}
                 {stash.length === 0 ? (
-                  <p className="muted small">Rien de côté pour l’instant.</p>
+                  <p className="px-1 py-2 text-small text-muted-foreground">Nothing set aside yet.</p>
                 ) : (
-                  <ul className="stash-list">
+                  <ul className="flex max-h-80 flex-col gap-1 overflow-y-auto">
                     {stash.map((it) => (
-                      <li key={it.id} className="stash-item">
-                        <time className="stash-time">{formatTime(it.at)}</time>
-                        <p className="stash-preview">{it.text}</p>
-                        <div className="stash-item-actions">
-                          <button type="button" className="text-link" onClick={() => resumeStashed(it)}>
-                            Reprendre
-                          </button>
-                          <button type="button" className="text-link" disabled={stashBusyId === it.id} onClick={() => void sendStashed(it)}>
-                            {stashBusyId === it.id ? 'Envoi…' : 'Envoyer'}
-                          </button>
-                          <button type="button" className="icon-btn" aria-label="Supprimer ce message de côté" title="Supprimer" onClick={() => deleteStashed(it)}>
-                            🗑
-                          </button>
+                      <li key={it.id} className="flex flex-col gap-1 rounded-lg px-2 py-2 hover:bg-muted/50">
+                        <time className="text-meta text-muted-foreground">{clock(it.at)}</time>
+                        <p className="line-clamp-3 text-small whitespace-pre-wrap">{it.text}</p>
+                        <div className="-ml-2 flex items-center gap-1">
+                          <Button type="button" variant="ghost" size="xs" onClick={() => resumeStashed(it)}>
+                            Resume
+                          </Button>
+                          <Button type="button" variant="ghost" size="xs" disabled={stashBusyId === it.id} onClick={() => void sendStashed(it)}>
+                            {stashBusyId === it.id ? 'Sending…' : 'Send'}
+                          </Button>
+                          <Button type="button" variant="ghost" size="icon-xs" className="ml-auto" aria-label="Delete this set-aside message" title="Delete" onClick={() => deleteStashed(it)}>
+                            <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} />
+                          </Button>
                         </div>
                       </li>
                     ))}
                   </ul>
                 )}
-              </div>
-            )}
+              </PopoverContent>
+            </Popover>
+            <div className="ml-auto flex items-center gap-2">
+              {view.busy && sessionId && !external && (
+                <Tip label="Interrupt">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon"
+                    className="rounded-full"
+                    aria-label="Interrupt"
+                    onClick={() => {
+                      // Mark before calling: no attention signal when the session stops because we asked it to.
+                      useApp.getState().markInterrupted(sessionId)
+                      void api.interrupt(sessionId)
+                    }}
+                  >
+                    <HugeiconsIcon icon={StopIcon} strokeWidth={2} />
+                  </Button>
+                </Tip>
+              )}
+              <Tip label={view.busy ? 'Send (queued until this turn ends)' : 'Send'}>
+                <Button type="submit" size="icon" className="rounded-full disabled:bg-muted disabled:text-muted-foreground disabled:opacity-100" disabled={!sessionId || sending || !text.trim()} aria-label="Send">
+                  <HugeiconsIcon icon={ArrowUp02Icon} strokeWidth={2} />
+                </Button>
+              </Tip>
+            </div>
           </div>
-          <button type="submit" className="btn btn-primary" disabled={!sessionId || sending || !text.trim()}>
-            Envoyer
-          </button>
-        </div>
+        </form>
         {note && (
-          <p className="hint" role="status">
+          <p role="status" className="text-small text-muted-foreground">
             {note}
           </p>
         )}
         {error && (
-          <p className="form-error" role="alert">
+          <p role="alert" className="text-small text-danger">
             {error}
           </p>
         )}
-      </form>
+      </div>
     </section>
   )
 }
