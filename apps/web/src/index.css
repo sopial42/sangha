@@ -1,0 +1,323 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-heading: var(--font-sans);
+    --font-sans: 'Inter Variable', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    /* Radius system: 6 kbd hints, 8 controls, 12 cards. */
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 8px;
+    --radius-xl: 12px;
+    --radius-2xl: 12px;
+    --radius-3xl: 16px;
+    --radius-4xl: 20px;
+    /* Pebble palette: colour means attention. */
+    --color-coral: var(--coral);
+    --color-amber: var(--amber);
+    --color-stone: var(--stone);
+    --color-danger: var(--danger);
+    --color-tile: var(--tile);
+    --color-surface: var(--surface);
+    /* Type scale: 12 meta, 13 small, 14 UI, 15 chat, 16 titles. */
+    --text-meta: 12px;
+    --text-meta--line-height: 16px;
+    --text-small: 13px;
+    --text-small--line-height: 18px;
+    --text-ui: 14px;
+    --text-ui--line-height: 20px;
+    --text-chat: 15px;
+    --text-chat--line-height: 23px;
+    --text-title: 16px;
+    --text-title--line-height: 22px;
+}
+
+:root {
+    /* Sangha is dark only: "riverbed at night". */
+    color-scheme: dark;
+    --background: #0d0d0e;
+    --foreground: #edebe7;
+    --card: #161617;
+    --card-foreground: #edebe7;
+    --popover: #161617;
+    --popover-foreground: #edebe7;
+    --primary: #edebe7;
+    --primary-foreground: #141414;
+    --secondary: #1e1e20;
+    --secondary-foreground: #edebe7;
+    --muted: #1b1b1d;
+    --muted-foreground: #9c9b97;
+    --accent: #1e1e20;
+    --accent-foreground: #edebe7;
+    --destructive: #e5484d;
+    --border: #2e2e31;
+    --input: #2e2e31;
+    --ring: #6e6d6a;
+    --chart-1: #edebe7;
+    --chart-2: #9c9b97;
+    --chart-3: #6e6d6a;
+    --chart-4: #3a3a3e;
+    --chart-5: #2e2e31;
+    --radius: 0.5rem;
+    --sidebar: #111112;
+    --sidebar-foreground: #edebe7;
+    --sidebar-primary: #edebe7;
+    --sidebar-primary-foreground: #141414;
+    --sidebar-accent: #1e1e20;
+    --sidebar-accent-foreground: #edebe7;
+    --sidebar-border: #2e2e31;
+    --sidebar-ring: #6e6d6a;
+    --coral: #f2785c;
+    --amber: #f2b35c;
+    --stone: #d9d4cb;
+    --danger: #f06a6e;
+    --tile: #1e1e20;
+    --surface: #1b1b1d;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/*
+ * Motion. One vocabulary for the whole app: strong ease-out for anything entering or answering a gesture,
+ * exits faster than entrances, transforms and opacity only. Keyboard-driven changes (Esc, ←/→, ⌘B, ⌘K)
+ * never animate: they happen too often to wait for.
+ */
+@theme {
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
+}
+
+/* Menus, popovers, selects, hover cards: grow out of their trigger. */
+@utility motion-popup {
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity 160ms var(--ease-out-strong),
+    transform 160ms var(--ease-out-strong);
+  &[data-starting-style] {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  &[data-ending-style] {
+    opacity: 0;
+    transform: scale(0.98);
+    transition-duration: 110ms;
+  }
+}
+
+/* Tooltips: quick, and instant once one is already showing (moving along a toolbar). */
+@utility motion-tooltip {
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity 125ms var(--ease-out-strong),
+    transform 125ms var(--ease-out-strong);
+  &[data-starting-style],
+  &[data-ending-style] {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  &[data-instant] {
+    transition-duration: 0ms;
+  }
+}
+
+/* Dialogs: not anchored to anything, so they stay centred. */
+@utility motion-dialog {
+  transition:
+    opacity 200ms var(--ease-out-strong),
+    transform 200ms var(--ease-out-strong);
+  &[data-starting-style] {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  &[data-ending-style] {
+    opacity: 0;
+    transform: scale(0.98);
+    transition-duration: 140ms;
+  }
+}
+
+@utility motion-backdrop {
+  transition: opacity 200ms var(--ease-out-strong);
+  &[data-starting-style],
+  &[data-ending-style] {
+    opacity: 0;
+  }
+  &[data-ending-style] {
+    transition-duration: 140ms;
+  }
+}
+
+/* Collapsible panels: the content below slides instead of jumping. */
+@utility motion-collapse {
+  height: var(--collapsible-panel-height);
+  overflow: hidden;
+  transition: height 200ms var(--ease-out-strong);
+  &[data-starting-style],
+  &[data-ending-style] {
+    height: 0;
+  }
+  &[hidden] {
+    display: none;
+  }
+}
+
+/* Anything pressable answers the press. */
+@utility motion-press {
+  transition-property: color, background-color, border-color, box-shadow, transform;
+  transition-duration: 150ms;
+  transition-timing-function: var(--ease-out-strong);
+  &:active:not(:disabled):not([aria-haspopup]) {
+    transform: scale(0.97);
+  }
+}
+
+/* Something that just arrived while you were looking: a short settle, never on what was already there. */
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@utility motion-enter {
+  /* An animation, not a transition: it leaves the element's own transitions (highlights, hovers) alone. */
+  animation: enter 240ms var(--ease-out-strong) both;
+}
+
+/* A pebble (or its new state) appearing on the board: lands from just above, edges softened. */
+@utility motion-land {
+  transition:
+    opacity 280ms var(--ease-out-strong),
+    transform 280ms var(--ease-out-strong),
+    filter 280ms var(--ease-out-strong);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(-6px);
+    filter: blur(2px);
+  }
+}
+@utility motion-swap {
+  transition:
+    opacity 200ms ease,
+    filter 200ms ease;
+  @starting-style {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+/* Needs you: one ripple when it starts asking, then a still glow. Working: the glow breathes, slowly. */
+@keyframes pebble-ping {
+  from {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+@keyframes pebble-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@utility motion-ping {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pebble-ping 900ms var(--ease-out-strong) 1 both;
+}
+@utility motion-breathe {
+  animation: pebble-breathe 2.8s ease-in-out infinite;
+}
+
+/* Reduced motion: keep fades (they help reading), drop movement and loops. */
+@media (prefers-reduced-motion: reduce) {
+  .motion-popup,
+  .motion-tooltip,
+  .motion-dialog,
+  .motion-land {
+    &,
+    &[data-starting-style],
+    &[data-ending-style] {
+      transform: none;
+    }
+  }
+  .motion-land {
+    @starting-style {
+      transform: none;
+    }
+  }
+  .motion-collapse {
+    transition: none;
+  }
+  .motion-press:active {
+    transform: none;
+  }
+  .motion-ping,
+  .motion-breathe {
+    animation: none;
+  }
+  .motion-enter {
+    animation-name: fade;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
