@@ -82,7 +82,7 @@ export function AdvisorDialog({ onClose }: { onClose: () => void }) {
   const [running, setRunning] = useState(false)
 
   const load = () => api.advisor().then(setState, (e: unknown) => setError(message(e)))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   useEffect(() => void load(), [])
   // Its badge changed (a pass started, ended, or a topic count moved): the open panel follows along.
   // eslint-disable-next-line react-hooks/exhaustive-deps

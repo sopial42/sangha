@@ -27,6 +27,7 @@ while True:
 `
 
 const URL_RE = /https:\/\/claude\.ai\/code\/session_[A-Za-z0-9]+/
+// eslint-disable-next-line no-control-regex -- ANSI escape codes, stripped from the CLI's output
 const ANSI = /\x1b\[[0-9;?<>=]*[a-zA-Z]|\x1b\][^\x07]*\x07/g
 // Inherited from a Claude process above Sangha, these would turn the session's transcript saving off.
 const CHILD_MARKERS = ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_ENTRYPOINT']

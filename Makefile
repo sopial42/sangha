@@ -3,7 +3,7 @@ SHELL := /bin/sh
 # docker-compose.yml mounts workspaces at this same absolute path (keeps git worktrees valid).
 export PWD := $(CURDIR)
 
-.PHONY: help setup token plugins install dev test typecheck build up down logs ps serve stop status clean
+.PHONY: help setup token plugins install dev test typecheck lint build up down logs ps serve stop status clean
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[33m%-10s\033[0m %s\n", $$1, $$2}'
@@ -29,6 +29,9 @@ dev: plugins ## Run locally with hot reload on http://127.0.0.1:8787 (same addre
 
 test: ## Run tests
 	npm test
+
+lint: ## Lint server and web (ESLint)
+	npm run lint
 
 typecheck: ## Typecheck server and web
 	npm run typecheck

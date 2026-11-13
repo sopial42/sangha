@@ -175,7 +175,7 @@ export function McpLibraryDialog({ onClose }: { onClose: () => void }) {
   const [editing, setEditing] = useState<{ mcp: LibraryMcp; activateOnSave: boolean } | null>(null)
 
   const reload = () => api.mcpLibrary().then(setList, (e) => setError(message(e)))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   useEffect(() => void reload(), [])
 
   const activate = (m: LibraryMcp) => {

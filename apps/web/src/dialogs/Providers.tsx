@@ -48,7 +48,7 @@ export function Providers({ onClose }: { onClose: () => void }) {
     // The model choices (top bar, new session, each session) follow.
     api.models().then((models) => set({ models }), () => undefined)
   }
-  useEffect(reload, [])
+  useEffect(reload, [set])
 
   const open = (p: Partial<Provider>) => {
     setEdit({ ...p })

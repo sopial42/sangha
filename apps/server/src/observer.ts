@@ -31,7 +31,7 @@ type Live = { pid: number; cwd: string; file: string | null; parent: string | nu
  * the `claude` process above it, if any: the session that launched it.
  */
 async function liveClaudes(): Promise<Live[]> {
-  let out = ''
+  let out: string
   try {
     out = (await exec('ps', ['-axo', 'pid=,ppid=,command='], { maxBuffer: 8 * 1024 * 1024 })).stdout
   } catch {

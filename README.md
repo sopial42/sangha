@@ -77,6 +77,7 @@ The web follows two server-sent event streams: `/api/events` for the whole board
 ```sh
 make test         # server tests
 make typecheck    # server and web
+make lint         # ESLint, with the project's own rules
 ```
 
 ## Security

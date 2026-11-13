@@ -16,7 +16,7 @@ export function Costs({ onClose }: { onClose: () => void }) {
   const [report, setReport] = useState<CostReport | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   useEffect(() => void api.costs().then(setReport, (err) => setError(message(err))), [])
 
   const since = report?.since ? new Date(report.since).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' }) : null

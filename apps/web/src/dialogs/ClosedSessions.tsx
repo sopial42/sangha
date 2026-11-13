@@ -85,7 +85,7 @@ export function ClosedSessions({ onClose }: { onClose: () => void }) {
   const [aiError, setAiError] = useState<string | null>(null)
 
   const load = () => api.closedSessions().then(setEntries, (err) => setError(message(err)))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   useEffect(() => void load(), [])
   // The history changed (a session closed, a summary written, one reopened elsewhere): reload it live.
   useEffect(() => {

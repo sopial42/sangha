@@ -156,6 +156,8 @@ export function mcpLogin(cwd: string, name: string, timeoutMs = 4 * 60_000): Pro
     child.on('close', () => {
       clearTimeout(timer)
       stop()
+      // Terminal escape codes (colours, hyperlinks, backspaces) are stripped from the login output.
+      // eslint-disable-next-line no-control-regex
       const text = out.replace(/\x1b\[[0-9;?]*[a-zA-Z]|\x1b\]8;;[^\x07\x1b]*(\x07|\x1b\\)?|\r|\^D\x08\x08/g, '')
       if (/Authenticated with/.test(text)) return resolve()
       const why = text

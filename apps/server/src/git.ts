@@ -11,7 +11,7 @@ export async function git(cwd: string, ...args: string[]): Promise<string> {
     return stdout.trim()
   } catch (err) {
     const e = err as { stderr?: string; message: string }
-    throw new Error(`git ${args[0]}: ${(e.stderr || e.message).trim()}`)
+    throw new Error(`git ${args[0]}: ${(e.stderr || e.message).trim()}`, { cause: err })
   }
 }
 

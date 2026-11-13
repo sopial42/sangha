@@ -129,14 +129,13 @@ export function openEvents(onError: () => void) {
   const es = new EventSource('/api/events')
   es.onmessage = (e) => {
     const ev = JSON.parse(e.data) as GlobalEvent
-    const { set, sessions, closedTick, sessionsVersion } = useApp.getState()
+    const { set, sessions, closedTick } = useApp.getState()
     switch (ev.kind) {
       case 'snapshot':
         set({ sessions: Object.fromEntries(ev.sessions.map((s) => [s.id, s])), ...(ev.quota ? { quota: ev.quota } : {}), reserve: ev.reserve })
         break
       case 'session':
-        // Also what the cost chip watches (throttled) to keep its total roughly current.
-        set({ sessions: { ...sessions, [ev.session.id]: ev.session }, sessionsVersion: sessionsVersion + 1 })
+        set({ sessions: { ...sessions, [ev.session.id]: ev.session } })
         break
       case 'removed': {
         const { [ev.id]: _gone, ...rest } = sessions

@@ -131,12 +131,12 @@ export function reduce(v: SessionView, { seq, at, ev }: Envelope): SessionView {
       return { ...s, quota: ev.quota }
     case 'busy':
       return { ...s, busy: ev.busy }
+    // Not shown in this per-session chat view: `loop.wake` feeds the session's autonomy (derived
+    // server-side, shown in the sessions list) and `tool.error` is aggregated for the Advisor
+    // (see `advisorSanghaStats`).
     case 'recap':
     case 'background':
-    // Its autonomy (`SessionSummary.autonomy`) is derived server-side from this and reflected in the
-    // sessions list, not in this per-session chat view: nothing to patch here.
     case 'loop.wake':
-    // Aggregated server-side for the Advisor (see `advisorSanghaStats`), not shown per session.
     case 'tool.error':
       return s
     case 'error':
@@ -179,8 +179,6 @@ type AppState = {
   advisorBadge: { proposed: number; running: boolean } | null
   /** Bumped on every `{kind:'closed'}` global event: the closed sessions dialog refetches (arrivals, summaries, reopenings). */
   closedTick: number
-  /** Bumped on every `{kind:'session'}` global event: what the cost chip watches, throttled, to refresh its total. */
-  sessionsVersion: number
   /** No chime when a session finishes, remembered across reloads. */
   muted: boolean
   /** Session shown in the panel: a session id, the orchestrator id, or null. */
@@ -238,7 +236,6 @@ export const useApp = create<AppState>((set) => ({
   host: null,
   advisorBadge: null,
   closedTick: 0,
-  sessionsVersion: 0,
   muted: initialMuted,
   selectedId: null,
   view: emptyView(),

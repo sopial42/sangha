@@ -238,6 +238,7 @@ describe('Advisor.ask', () => {
   it('records nothing and throws a readable error when the query itself throws', async () => {
     const store = new Store(':memory:')
     vi.mocked(query).mockReturnValue({
+      // eslint-disable-next-line require-yield -- a stream that fails before its first message
       [Symbol.asyncIterator]: async function* () {
         throw new Error('network down')
       },
