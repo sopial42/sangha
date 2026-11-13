@@ -12,31 +12,31 @@ const STATES: RecapState[] = ['fini', 'question', 'attente']
 const SCHEMA = {
   type: 'object',
   properties: {
-    done: { type: 'string', description: 'Ce qui a été obtenu, en une phrase complète de 70 caractères maximum.' },
-    next: { type: 'string', description: 'Ce qu’il attend maintenant (une décision de l’utilisateur, ou quelque chose qui tourne seul : CI, déploiement, revue…) ou ce qui reste, en une phrase complète de 70 caractères maximum.' },
+    done: { type: 'string', description: 'What was achieved, in one complete sentence of at most 70 characters.' },
+    next: { type: 'string', description: 'What it is waiting for now (a decision from the user, or something running on its own: CI, deployment, review…) or what is left, in one complete sentence of at most 70 characters.' },
     state: {
       type: 'string',
       enum: STATES,
-      description: '"fini" : la tâche est faite, il n’attend rien. "question" : il pose une question ou attend une décision de l’utilisateur. "attente" : il attend quelque chose qui tourne sans l’utilisateur (CI, déploiement, revue, calcul, autre agent).',
+      description: '"fini": the task is done and it is waiting for nothing. "question": it asks a question or waits for a decision from the user. "attente": it waits for something that runs without the user (CI, deployment, review, computation, another agent).',
     },
   },
   required: ['done', 'next', 'state'],
   additionalProperties: false,
 }
 
-const STYLE = `Style : français très simple, pour quelqu'un qui n'est pas développeur. Parle du résultat fonctionnel
-(ce qui marche, ce qui change pour l'utilisateur ou le produit), jamais de la technique : pas de noms de fichiers,
-de branches, de commandes, d'outils, de code ni de jargon. Phrases courtes et concrètes.`
+const STYLE = `Style: very plain English, for someone who isn't a developer. Talk about the functional result
+(what works, what changes for the user or the product), never about the technical side: no file names, branches,
+commands, tools, code or jargon. Short, concrete sentences. Always answer in English.`
 
-const SYSTEM = `Tu résumes pour son utilisateur l'état d'une session de travail d'un agent, en deux phrases très courtes et complètes.
-"done" = ce qui a été obtenu ; "next" = ce que l'agent attend maintenant, ou ce qui reste.
-Lis surtout son dernier message : s'il attend quelque chose qui tourne sans l'utilisateur (la CI, un déploiement,
-une revue, un calcul, un autre agent), dis-le ("Attend le résultat de la CI pour fusionner") : ce n'est pas une
-consigne de l'utilisateur. S'il pose une question ou attend une décision, dis laquelle.
-Seulement si tout est fini et qu'il n'attend rien : "next" = "Rien : il attend ta prochaine consigne."
-"state" classe cet arrêt : "fini", "question" (même une simple proposition « je le fais ? ») ou "attente".
-Les messages très courts de l'utilisateur ("reprends", "continue", "ok") ne disent rien de la tâche : appuie-toi sur
-les échanges d'avant.
+const SYSTEM = `You summarize for its user the state of an agent's work session, in two very short, complete sentences.
+"done" = what was achieved; "next" = what the agent is waiting for now, or what is left.
+Read its last message above all: if it is waiting for something that runs without the user (CI, a deployment,
+a review, a computation, another agent), say so ("Waiting for CI results before merging"): that is not an
+instruction for the user. If it asks a question or waits for a decision, say which one.
+Only if everything is done and it waits for nothing: "next" = "Nothing: it is waiting for your next instruction."
+"state" classifies this stop: "fini", "question" (even a simple offer like "shall I do it?") or "attente".
+Very short user messages ("go on", "continue", "ok") say nothing about the task: rely on the earlier
+exchanges.
 ${STYLE}`
 
 /** One-shot, tool-less, structured call on a small model (still on the plan quota). */
@@ -64,7 +64,7 @@ async function ask<T>(system: string, schema: Record<string, unknown>, input: st
   return null
 }
 
-/** Two lines written when a priest stops: the latest exchange in, what was done and what is left out. */
+/** Two lines written when a session stops: the latest exchange in, what was done and what is left out. */
 export async function recap(transcript: string): Promise<Recap | null> {
   const out = await ask<Recap>(SYSTEM, SCHEMA, transcript, MAX_INPUT)
   // Never cut here: the texts are asked short, and shown in full.
@@ -75,14 +75,14 @@ export async function recap(transcript: string): Promise<Recap | null> {
 
 const DOING_SCHEMA = {
   type: 'object',
-  properties: { doing: { type: 'string', description: 'Ce que l’agent est en train d’accomplir, vu de l’utilisateur, en une phrase complète de 80 caractères maximum.' } },
+  properties: { doing: { type: 'string', description: 'What the agent is accomplishing, from the user’s point of view, in one complete sentence of at most 80 characters.' } },
   required: ['doing'],
   additionalProperties: false,
 }
 
-const DOING_SYSTEM = `Tu regardes travailler un agent. À partir de la demande et de ses derniers échanges, dis au présent,
-en une phrase complète et courte (80 caractères max), ce qu'il est en train d'accomplir, vu de l'utilisateur.
-Exemple : "Vérifie que les montants des factures sont justes" plutôt que "Lance les tests du module billing".
+const DOING_SYSTEM = `You are watching an agent work. From the request and its latest exchanges, say in the present tense,
+in one short complete sentence (80 characters max), what it is accomplishing, from the user's point of view.
+Example: "Checking that invoice amounts are correct" rather than "Running the billing module tests".
 ${STYLE}`
 
 /** What a working session is doing overall, in one short sentence. */
@@ -96,17 +96,17 @@ export type Progress = { goal: string; state: string; next: string }
 const PROGRESS_SCHEMA = {
   type: 'object',
   properties: {
-    goal: { type: 'string', description: 'La tâche demandée, en une phrase.' },
-    state: { type: 'string', description: 'Où en est le travail sur cette tâche, en 2 ou 3 phrases concrètes.' },
-    next: { type: 'string', description: 'Ce qui reste à faire, ou ce qui est attendu de l’utilisateur, en une phrase.' },
+    goal: { type: 'string', description: 'The task requested, in one sentence.' },
+    state: { type: 'string', description: 'How far along the work on this task is, in 2 or 3 concrete sentences.' },
+    next: { type: 'string', description: 'What is left to do, or what is expected from the user, in one sentence.' },
   },
   required: ['goal', 'state', 'next'],
   additionalProperties: false,
 }
 
-const PROGRESS_SYSTEM = `Tu fais le point, pour son utilisateur, sur une session de travail d'un agent et de ses aides.
-À partir de la demande initiale et du fil de la session, dis : la tâche demandée, où en est le travail, et ce qui
-reste (ou la décision que l'agent attend de l'utilisateur).
+const PROGRESS_SYSTEM = `You give its user a progress update on an agent's work session and its helpers.
+From the initial request and the session thread, say: the task requested, how far along the work is, and what is
+left (or the decision the agent expects from the user).
 ${STYLE}`
 
 /** The big picture of a whole session: the task asked and how far along it is. */
@@ -119,16 +119,16 @@ export async function progress(transcript: string): Promise<Progress | null> {
 
 const LIFE_SCHEMA = {
   type: 'object',
-  properties: { summary: { type: 'string', description: 'La session entière, en une ou deux phrases courtes : ce qui a été demandé et ce qui en est sorti.' } },
+  properties: { summary: { type: 'string', description: 'The whole session, in one or two short sentences: what was asked and what came out of it.' } },
   required: ['summary'],
   additionalProperties: false,
 }
 
-const LIFE_SYSTEM = `Un agent vient d'être envoyé au nirvana (sa session est terminée). Résume toute sa session pour
-son utilisateur, en une ou deux phrases courtes et complètes : ce qui a été demandé, et ce qui en est sorti.
+const LIFE_SYSTEM = `An agent's session has just been closed. Summarize its whole session for its user, in one
+or two short, complete sentences: what was asked, and what came out of it.
 ${STYLE}`
 
-/** Whole-life summary of a session, written once it is sent to nirvana (dismissed). */
+/** Whole-life summary of a session, written once it is closed. */
 export async function lifeSummary(transcript: string): Promise<string | null> {
   const out = await ask<{ summary: string }>(LIFE_SYSTEM, LIFE_SCHEMA, transcript, 12_000)
   return typeof out?.summary === 'string' ? out.summary.trim() : null
@@ -139,26 +139,26 @@ const SCRIPT_SCHEMA = {
   properties: {
     summary: {
       type: 'string',
-      description: 'Ce que fait ce script, en une phrase très courte (12 mots maximum), sans jargon ni syntaxe de commande.',
+      description: 'What this script does, in one very short sentence (12 words max), with no jargon or command syntax.',
     },
   },
   required: ['summary'],
   additionalProperties: false,
 }
 
-const SCRIPT_SYSTEM = `Un agent a lancé un script en arrière-plan, qu'il attend souvent. Dis en une phrase très courte
-(12 mots maximum) ce qu'il fait, et pourquoi c'est important si cela se voit. Jamais la commande elle-même, jamais
-de nom de fichier, de flag ni de jargon technique. Exemples : « Lance les tests e2e du dossier client »,
-« Attend que la stack Docker locale démarre », « Surveille la CI de la PR #579 ».
+const SCRIPT_SYSTEM = `An agent started a script in the background, which it often waits on. Say in one very short
+sentence (12 words max) what it does, and why it matters if that is clear. Never the command itself, never a file
+name, flag or technical jargon. Examples: "Runs the client folder's end-to-end tests",
+"Waits for the local Docker stack to start", "Watches CI on PR #579".
 ${STYLE}`
 
-/** One short French sentence on what a background script does, written by a small model. */
+/** One short sentence on what a background script does, written by a small model. */
 export async function scriptSummary(command: string, title: string): Promise<string | null> {
   const out = await ask<{ summary: string }>(SCRIPT_SYSTEM, SCRIPT_SCHEMA, scriptPrompt(command, title), 2_000)
   return typeof out?.summary === 'string' ? cleanScriptSummary(out.summary) : null
 }
 
-/** One nirvana entry, as fed to the model: enough to judge whether it answers the question. */
+/** One closed session, as fed to the model: enough to judge whether it answers the question. */
 export type NirvanaSearchEntry = {
   id: string
   /** archivedAt, "YYYY-MM-DD". */
@@ -167,7 +167,7 @@ export type NirvanaSearchEntry = {
   branch: string | null
   agent: string
   note: string | null
-  /** His first message, already truncated. */
+  /** The user's first message, already truncated. */
   title: string
   summary: string | null
 }
@@ -181,7 +181,7 @@ const NIRVANA_SEARCH_SCHEMA = {
         type: 'object',
         properties: {
           id: { type: 'string' },
-          reason: { type: 'string', description: 'One short sentence in French saying why this session answers the question.' },
+          reason: { type: 'string', description: 'One short sentence in English saying why this session answers the question.' },
         },
         required: ['id', 'reason'],
         additionalProperties: false,
@@ -192,21 +192,20 @@ const NIRVANA_SEARCH_SCHEMA = {
   additionalProperties: false,
 }
 
-const NIRVANA_SEARCH_SYSTEM = `You search a list of a user's past agent sessions (dismissed ones, kept in Sangha's
-"nirvana") to answer a question of his. Each line below is one session: its id, the date it was dismissed, the
-project and git branch it worked on, which agent ran it, the user's own short note about it if he left one, its
-title (his first message, truncated) and a one- or two-sentence summary of what happened in it.
+const NIRVANA_SEARCH_SYSTEM = `You search a list of a user's past agent sessions (closed ones, kept in Sangha) to answer
+one of their questions. Each line below is one session: its id, the date it was closed, the project and git branch
+it worked on, which agent ran it, the user's own short note about it if they left one, its title (their first
+message, truncated) and a one- or two-sentence summary of what happened in it.
 Pick the sessions that best answer the question, best match first, at most 15; skip anything irrelevant. Only use
 ids that appear below: never invent one.
 Answer with strict JSON only: {"results":[{"id":"...","reason":"..."}]}.
-Write every "reason" as one short sentence in French explaining why that session matches — in French even though
-everything else here is in English.`
+Write every "reason" as one short sentence in English explaining why that session matches.`
 
 function nirvanaSearchLine(e: NirvanaSearchEntry): string {
   return `id=${e.id} date=${e.date} project=${e.project} branch=${e.branch ?? '-'} agent=${e.agent} note=${e.note ?? '-'} title=${e.title} summary=${e.summary ?? '-'}`
 }
 
-/** The model's whole input: one compact line per entry, then the question — in that order, so a
+/** The model's whole input: one compact line per entry, then the question, in that order, so a
  * truncation from the tail (see `ask`) drops the oldest entries rather than the question itself. */
 export function buildNirvanaSearchPrompt(entries: NirvanaSearchEntry[], question: string): string {
   return [...entries.map(nirvanaSearchLine), '', `QUESTION: ${question}`].join('\n')
@@ -225,7 +224,7 @@ export function parseNirvanaSearchResult(raw: unknown, validIds: Set<string>): N
   return { results }
 }
 
-/** Which past (nirvana) sessions best answer a question, best first — a small model reads a compact line per session. */
+/** Which closed sessions best answer a question, best first: a small model reads a compact line per session. */
 export async function nirvanaSearch(entries: NirvanaSearchEntry[], question: string): Promise<NirvanaSearchResult> {
   const prompt = buildNirvanaSearchPrompt(entries, question)
   const out = await ask<{ results: unknown }>(NIRVANA_SEARCH_SYSTEM, NIRVANA_SEARCH_SCHEMA, prompt, 40_000)
@@ -244,7 +243,7 @@ const WORKTREE_COMMENT_SCHEMA = {
         type: 'object',
         properties: {
           path: { type: 'string' },
-          comment: { type: 'string', description: 'Un commentaire en français, une ou deux phrases courtes : ce qu’est ce worktree, et s’il semble terminé ou fusionné.' },
+          comment: { type: 'string', description: 'A comment in English, one or two short sentences: what this worktree is, and whether it looks finished or merged.' },
         },
         required: ['path', 'comment'],
         additionalProperties: false,
@@ -255,17 +254,17 @@ const WORKTREE_COMMENT_SCHEMA = {
   additionalProperties: false,
 }
 
-const WORKTREE_COMMENT_SYSTEM = `Tu regardes une liste de worktrees git (des copies de travail) restés sur le disque d'un utilisateur.
-Pour chacun, on te donne son chemin, sa branche, ses trois derniers commits, s'il a des modifications non
-commitées ou des commits jamais poussés, et le prêtre (agent) qui l'a créé quand on le connaît.
-Pour chacun, écris un commentaire ("comment") d'une ou deux phrases courtes en français : ce qu'est ce worktree
-(à quoi il a servi, d'après ses commits) et s'il semble terminé ou fusionné, ou encore utile à garder.
+const WORKTREE_COMMENT_SYSTEM = `You are looking at a list of git worktrees (working copies) left on a user's disk.
+For each one you get its path, its branch, its last three commits, whether it has uncommitted changes or commits
+never pushed, and the session (agent) that created it when known.
+For each one, write a comment ("comment") of one or two short sentences in English: what this worktree is
+(what it was used for, from its commits) and whether it looks finished or merged, or still worth keeping.
 ${STYLE}
-Réponds en JSON strict : {"comments":[{"path":"...","comment":"..."}]}. N'invente jamais de chemin : utilise
-uniquement ceux donnés ci-dessous.`
+Answer with strict JSON: {"comments":[{"path":"...","comment":"..."}]}. Never invent a path: only use
+the ones given below.`
 
 function worktreeCommentLine(e: WorktreeCommentInput): string {
-  return `path=${e.path} branche=${e.branch ?? '-'} commits=${e.commits.join(' | ') || '-'} modifs=${e.dirty} non_poussés=${e.unpushed} prêtre=${e.owner ?? '-'}`
+  return `path=${e.path} branch=${e.branch ?? '-'} commits=${e.commits.join(' | ') || '-'} dirty=${e.dirty} unpushed=${e.unpushed} session=${e.owner ?? '-'}`
 }
 
 /** The model's whole input: one compact line per worktree. */
@@ -284,7 +283,7 @@ export function parseWorktreeComments(raw: unknown, validPaths: Set<string>): Re
   return map
 }
 
-/** One batched call for every worktree given: {path: comment} in French, filtered against the paths asked about. */
+/** One batched call for every worktree given: {path: comment} in English, filtered against the paths asked about. */
 export async function worktreeComments(entries: WorktreeCommentInput[]): Promise<Record<string, string>> {
   if (!entries.length) return {}
   const out = await ask<{ comments: unknown }>(WORKTREE_COMMENT_SYSTEM, WORKTREE_COMMENT_SCHEMA, buildWorktreeCommentsPrompt(entries), 20_000)

@@ -11,7 +11,7 @@ describe('parseElderResponse', () => {
   })
 
   it('keeps a topic update when its id is known', () => {
-    const out = parseElderResponse({ report: 'rien à signaler', topics: [{ id: 't1', scope: 'sangha', title: 'x', detail: 'y', evidence: [] }] }, new Set(['t1']), LEVELS, PROJECTS)
+    const out = parseElderResponse({ report: 'nothing to report', topics: [{ id: 't1', scope: 'sangha', title: 'x', detail: 'y', evidence: [] }] }, new Set(['t1']), LEVELS, PROJECTS)
     expect(out?.topics).toEqual([{ id: 't1', scope: 'sangha', title: 'x', detail: 'y', evidence: [] }])
   })
 

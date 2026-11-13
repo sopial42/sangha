@@ -5,10 +5,10 @@ import type { HookCallbackMatcher } from '@anthropic-ai/claude-agent-sdk'
 import type { GitIdentity } from '@sangha/shared'
 
 /**
- * The name and email every priest commits with, set once for all of Sangha (nothing by default: you
- * must fill it before they may use git). Priests read it from a Git global config of Sangha's own
+ * The name and email every session commits with, set once for all of Sangha (nothing by default: you
+ * must fill it in before they may use git). Sessions read it from a Git global config of Sangha's own
  * (GIT_CONFIG_GLOBAL), which pulls yours in first (aliases, credentials, signing…) and only overrides
- * your identity. Rewritten on every change, so running priests commit with the new one right away.
+ * your identity. Rewritten on every change, so running sessions commit with the new one right away.
  */
 
 export const validIdentity = (v: Partial<GitIdentity> | null | undefined): v is GitIdentity =>
@@ -29,7 +29,7 @@ export function gitConfigText(identity: GitIdentity | null, includes: string[]):
 export const usesGit = (command: string) => /(^|[\s;&|(`$!{])git(\s|$|;|&|\||\))/.test(command)
 
 export const MISSING_IDENTITY =
-  "Git est bloqué : l'identité git des commits n'est pas renseignée dans Sangha. Demande à l'utilisateur de la remplir (bouton « Git » de la page d'accueil de Sangha), puis réessaie. N'essaie pas de contourner ce blocage."
+  "Git is blocked: the git identity for commits is not set in Sangha. Ask the user to fill it in (Settings > Git identity in Sangha), then try again. Do not try to work around this block."
 
 export class GitIdentitySetting {
   readonly path: string
@@ -53,12 +53,12 @@ export class GitIdentitySetting {
     this.sync()
   }
 
-  /** The environment that makes a priest's git read Sangha's config. */
+  /** The environment that makes a session's git read Sangha's config. */
   env(): Record<string, string> {
     return { GIT_CONFIG_GLOBAL: this.path }
   }
 
-  /** Refuses his git commands (his novices' too) while no identity is set. */
+  /** Refuses the session's git commands (its subagents' too) while no identity is set. */
   hooks(): { PreToolUse: HookCallbackMatcher[] } {
     return {
       PreToolUse: [

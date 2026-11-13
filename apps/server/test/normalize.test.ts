@@ -13,7 +13,7 @@ function replay(name: string): MonasteryEvent[] {
     .flatMap((m) => n.push(m))
 }
 
-describe('Normalizer on a real two-monk session', () => {
+describe('Normalizer on a real two-subagent session', () => {
   const events = replay('parallel-monks.jsonl')
   const of = <T extends MonasteryEvent['t']>(t: T) => events.filter((e): e is Extract<MonasteryEvent, { t: T }> => e.t === t)
 
@@ -23,13 +23,13 @@ describe('Normalizer on a real two-monk session', () => {
     expect(started.claudeSessionId).toBeTruthy()
   })
 
-  it('summons each monk once, keyed by the summoning tool_use id', () => {
+  it('summons each subagent once, keyed by the summoning tool_use id', () => {
     const summoned = of('monk.summoned')
     expect(summoned.map((s) => s.agentType).sort()).toEqual(['counter', 'reader'])
     expect(summoned.every((s) => s.monkId.startsWith('toolu_'))).toBe(true)
   })
 
-  it('attributes monk tools and completion to the right monk', () => {
+  it('attributes subagent tools and completion to the right subagent', () => {
     const ids = new Map(of('monk.summoned').map((s) => [s.agentType, s.monkId]))
     const tools = of('monk.tool')
     expect(tools).toContainEqual(expect.objectContaining({ monkId: ids.get('reader'), tool: 'Read' }))
@@ -39,7 +39,7 @@ describe('Normalizer on a real two-monk session', () => {
     expect(done.every((d) => d.status === 'completed')).toBe(true)
   })
 
-  it('hides the summoning tool from Buddha but streams his words', () => {
+  it('hides the summoning tool from the orchestrator but streams its words', () => {
     expect(of('buddha.tool').some((e) => e.tool === 'Agent' || e.tool === 'Task')).toBe(false)
     expect(of('buddha.delta').length).toBeGreaterThan(0)
     expect(of('buddha.text').length).toBeGreaterThan(0)
@@ -54,7 +54,7 @@ describe('Normalizer on a real two-monk session', () => {
 })
 
 describe('errors', () => {
-  it('turns an auth failure into an actionable error instead of Buddha speech', () => {
+  it('turns an auth failure into an actionable error instead of orchestrator speech', () => {
     const n = new Normalizer()
     const evs = n.push({
       type: 'assistant',
@@ -76,7 +76,7 @@ describe('summarizeInput', () => {
 })
 
 describe('Normalizer.taskIdOfMonk', () => {
-  it('maps a monk back to the SDK task id stopTask expects, distinct from his monkId (the summoning tool_use id)', () => {
+  it('maps a subagent back to the SDK task id stopTask expects, distinct from its monkId (the summoning tool_use id)', () => {
     const n = new Normalizer()
     n.push({ type: 'system', subtype: 'task_started', task_id: 't1', tool_use_id: 'toolu_abc', task_type: 'local_agent', subagent_type: 'reader', description: 'd', prompt: 'p', spawn_depth: 1 } as never)
     expect(n.taskIdOfMonk('toolu_abc')).toBe('t1')
@@ -106,7 +106,7 @@ describe('Normalizer on background work', () => {
 })
 
 // His own /loop machinery: ScheduleWakeup (self-paced) or CronCreate/CronDelete (fixed interval), always as a
-// tool_use block on the priest's own turn (parent_tool_use_id null) — this is what Store.lastAutonomy reads
+// tool_use block on the session's own turn (parent_tool_use_id null): this is what Store.lastAutonomy reads
 // to know whether a loop keeps rescheduling itself or died.
 describe('Normalizer on /loop tools (ScheduleWakeup, CronCreate, CronDelete)', () => {
   const tool = (name: string, input: unknown, parent: string | null = null) => ({
@@ -152,7 +152,7 @@ describe('Normalizer on /loop tools (ScheduleWakeup, CronCreate, CronDelete)', (
     expect(evs.some((e) => e.t === 'buddha.tool' && e.tool === 'ScheduleWakeup')).toBe(true)
   })
 
-  it('a novice (parent set) calling these tools does not drive the priest’s own autonomy', () => {
+  it('a subagent (parent set) calling these tools does not drive the session’s own autonomy', () => {
     const n = new Normalizer()
     const evs = n.push(tool('ScheduleWakeup', { delaySeconds: 60 }, 'toolu_monk') as never)
     expect(evs.some((e) => e.t === 'loop.wake')).toBe(false)
@@ -207,7 +207,7 @@ describe('Normalizer on MCP tool failures', () => {
     expect(n.push(toolResult('toolu_1', true) as never)).toEqual([])
   })
 
-  it('ignores a novice’s own tool failure (parent set)', () => {
+  it('ignores a subagent’s own tool failure (parent set)', () => {
     const n = new Normalizer()
     n.push(toolUse('toolu_1', 'mcp__bitbucket__get_pr', 'toolu_monk') as never)
     expect(n.push(toolResult('toolu_1', true, 'boom', 'toolu_monk') as never)).toEqual([])
@@ -216,9 +216,9 @@ describe('Normalizer on MCP tool failures', () => {
   it('forgets a tool_use once its result arrives, success included (no unbounded growth over a long session)', () => {
     const n = new Normalizer()
     n.push(toolUse('toolu_1', 'mcp__bitbucket__get_pr') as never)
-    n.push(toolResult('toolu_1', false) as never) // succès : consomme l'entrée
-    // Un tool_result égaré qui reprend le même id (un comportement du SDK qu'on ne doit pas supposer impossible)
-    // ne doit retrouver ni nom ni serveur : l'entrée a déjà été oubliée.
+    n.push(toolResult('toolu_1', false) as never) // success: consumes the entry
+    // A stray tool_result reusing the same id (SDK behaviour we must not assume impossible)
+    // must find neither name nor server: the entry was already forgotten.
     const evs = n.push(toolResult('toolu_1', true, 'late') as never)
     expect(evs).toEqual([])
   })

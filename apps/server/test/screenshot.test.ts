@@ -33,7 +33,7 @@ describe('latestScreenshot', () => {
     const dir = desk([['Screenshot 2026-11-03 at 14.30.12.png', 1000]])
     const out = mkdtempSync(join(tmpdir(), 'out-'))
     const { path } = attachLatestScreenshot(dir, out)
-    expect(path).toMatch(/capture-1970-01-01-00-16-40\.png$/)
+    expect(path).toMatch(/screenshot-1970-01-01-00-16-40\.png$/)
     expect(readFileSync(path, 'utf8')).toBe('Screenshot 2026-11-03 at 14.30.12.png')
   })
 })

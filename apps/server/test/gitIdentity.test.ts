@@ -10,7 +10,7 @@ describe('git identity', () => {
   it('needs a name and a plausible email', () => {
     expect(validIdentity({ name: 'Axel', email: 'a@b.c' })).toBe(true)
     expect(validIdentity({ name: ' ', email: 'a@b.c' })).toBe(false)
-    expect(validIdentity({ name: 'Axel', email: 'pas un email' })).toBe(false)
+    expect(validIdentity({ name: 'Axel', email: 'not an email' })).toBe(false)
     expect(validIdentity(null)).toBe(false)
   })
 

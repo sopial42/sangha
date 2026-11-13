@@ -22,7 +22,7 @@ const SIZE_MS = 5 * 60_000
 const HISTORY = 180 // 30 min at one sample every 10 s
 export const RED_AFTER_MS = 5 * 60_000
 
-/** Run a command, its output in the C locale (macOS would print "132,1" in French). Null when it fails. */
+/** Run a command, its output in the C locale (in a French locale macOS prints "132,1"). Null when it fails. */
 function run(cmd: string, args: string[], timeout = 8_000): Promise<string | null> {
   return new Promise((resolve) =>
     execFile(cmd, args, { timeout, maxBuffer: 8 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C', LANG: 'C' } }, (err, out) =>
@@ -33,10 +33,10 @@ function run(cmd: string, args: string[], timeout = 8_000): Promise<string | nul
 
 export const GB = 1024 ** 3
 
-/** "12.3 Go", "512 Mo". */
+/** "12.3 GB", "512 MB". */
 export function bytes(n: number): string {
-  if (n >= GB) return `${(n / GB).toFixed(n >= 100 * GB ? 0 : 1)} Go`
-  return `${Math.round(n / 1024 ** 2)} Mo`
+  if (n >= GB) return `${(n / GB).toFixed(n >= 100 * GB ? 0 : 1)} GB`
+  return `${Math.round(n / 1024 ** 2)} MB`
 }
 
 // ── Parsers (pure, tested) ──────────────────────────────────────────────────
@@ -145,7 +145,7 @@ export function isInUse(path: string, cwds: string[]): boolean {
 
 /**
  * How a worktree not under workspaces/.worktrees/<project>/ is still named: under the repository itself
- * (e.g. a Claude Code sub-agent's `.claude/worktrees/agent-*`), or by its own basename as a last resort.
+ * (e.g. a Claude Code subagent's `.claude/worktrees/agent-*`), or by its own basename as a last resort.
  */
 export function worktreeName(path: string, repo: { name: string; path: string }, worktreesRoot: string): string {
   const groupPrefix = `${join(worktreesRoot, repo.name)}/`
@@ -158,10 +158,10 @@ export function worktreeName(path: string, repo: { name: string; path: string },
 /** The command offered to remove a worktree yourself: always scoped with -C (works from any cwd), never forced. */
 export const removeCommand = (path: string): string => `git -C "${path}" worktree remove "${path}"`
 
-/** A priest who may own a worktree (directly, or as the base name of one of its sub-agents): live or gone to nirvana. */
+/** A session that may own a worktree (directly, or as the base name of one of its subagents): live or closed. */
 export type OwnerCandidate = { sessionId: string; path: string; note: string | null; title: string; alive: boolean; working: boolean }
 
-/** Every priest who could own a worktree: live sessions (their own cwd) and archived ones (their worktree kept, see `Sessions.archivedWorktrees`). */
+/** Every session that could own a worktree: live sessions (their own cwd) and archived ones (their worktree kept, see `Sessions.archivedWorktrees`). */
 export function ownerCandidates(
   sessions: Pick<SessionSummary, 'id' | 'cwd' | 'note' | 'title' | 'status'>[],
   nirvana: HostNirvanaWorktree[],
@@ -175,10 +175,10 @@ export function ownerCandidates(
 const toOwner = (c: OwnerCandidate): NonNullable<HostWorktree['owner']> => ({ sessionId: c.sessionId, note: c.note, title: c.title, alive: c.alive, working: c.working })
 
 /**
- * What a worktree is: `priest` when a live session works right there; `subagent` when it was made for one
- * (nested under an owner's `.claude/worktrees/`, or named after an owner's worktree plus a `-` suffix, in
- * the same folder — the owner can be live or gone to nirvana); `orphan` otherwise, even when its path
- * matches a nirvana entry directly (that case keeps the plain nirvana naming, see `suggest`).
+ * What a worktree is: `priest` (a session's own) when a live session works right there; `subagent` when it was
+ * made for one (nested under an owner's `.claude/worktrees/`, or named after an owner's worktree plus a `-`
+ * suffix, in the same folder; the owner can be live or closed); `orphan` otherwise, even when its path
+ * matches a closed session's worktree directly (that case keeps the plain closed-session naming, see `suggest`).
  */
 export function classifyWorktree(path: string, candidates: OwnerCandidate[]): { kind: HostWorktree['kind']; owner: HostWorktree['owner'] } {
   if (candidates.some((c) => c.alive && c.path === path)) return { kind: 'priest', owner: null }
@@ -193,23 +193,23 @@ export function classifyWorktree(path: string, candidates: OwnerCandidate[]): { 
 
 const plural = (n: number, word: string, pluralWord = `${word}s`) => (n > 1 ? pluralWord : word)
 
-/** Safe to delete: never a priest's own worktree, and only once clean, fully pushed, unused, and its owner (if any) idle. */
+/** Safe to delete: never a live session's own worktree, and only once clean, fully pushed, unused, and its owner (if any) idle. */
 export function removableInfo(
   kind: HostWorktree['kind'],
   facts: { dirty: number; unpushed: number; inUse: boolean },
   owner: HostWorktree['owner'],
   where: { checked: boolean; external: boolean } = { checked: true, external: false },
 ): { removable: boolean; blocker: string | null } {
-  if (kind === 'priest') return { removable: false, blocker: "c'est le worktree d'un prêtre vivant : envoie-le au nirvana" }
-  // Not checked on disk yet: zero changes would only mean « not looked », never « safe ».
-  if (!where.checked) return { removable: false, blocker: 'vérification en cours' }
-  // Made outside Sangha (Kiat Operator under ~/.kiat-operator, scripts under /tmp…) and claimed by no priest: another
+  if (kind === 'priest') return { removable: false, blocker: "this is a live session's worktree: close the session first" }
+  // Not checked on disk yet: zero changes would only mean "not looked at", never "safe".
+  if (!where.checked) return { removable: false, blocker: 'still checking' }
+  // Made outside Sangha (Kiat Operator under ~/.kiat-operator, scripts under /tmp…) and claimed by no session: another
   // tool may rely on it, so Sangha never calls it safe to delete.
-  if (where.external && !owner) return { removable: false, blocker: 'créé hors de Sangha (Kiat Operator, script…) : vérifie qui s’en sert avant' }
-  if (facts.dirty > 0) return { removable: false, blocker: `${facts.dirty} ${plural(facts.dirty, 'fichier')} ${plural(facts.dirty, 'modifié', 'modifiés')}` }
-  if (facts.unpushed > 0) return { removable: false, blocker: `${facts.unpushed} ${plural(facts.unpushed, 'commit')} jamais ${plural(facts.unpushed, 'poussé', 'poussés')}` }
-  if (facts.inUse) return { removable: false, blocker: 'un process tourne dedans' }
-  if (owner?.working) return { removable: false, blocker: `son prêtre « ${owner.note ?? owner.title} » travaille encore` }
+  if (where.external && !owner) return { removable: false, blocker: 'created outside Sangha (Kiat Operator, a script…): check who uses it first' }
+  if (facts.dirty > 0) return { removable: false, blocker: `${facts.dirty} changed ${plural(facts.dirty, 'file')}` }
+  if (facts.unpushed > 0) return { removable: false, blocker: `${facts.unpushed} ${plural(facts.unpushed, 'commit')} never pushed` }
+  if (facts.inUse) return { removable: false, blocker: 'a process is running in it' }
+  if (owner?.working) return { removable: false, blocker: `its session "${owner.note ?? owner.title}" is still working` }
   return { removable: true, blocker: null }
 }
 
@@ -280,7 +280,7 @@ export class RedTracker {
 
 // ── Suggestions ─────────────────────────────────────────────────────────────
 
-/** An archived session that once worked in a worktree: enough to name it when it is now orphaned, or to own a sub-agent of his. */
+/** An archived session that once worked in a worktree: enough to name it when it is now orphaned, or to own one of its subagents. */
 export type HostNirvanaWorktree = { id: string; path: string; title: string; note: string | null; archivedAt: number }
 
 export type SuggestInput = {
@@ -294,7 +294,7 @@ export type SuggestInput = {
   nirvana?: HostNirvanaWorktree[]
 }
 
-/** Shortens a title kept to the word boundary, for a priest named beside his note. */
+/** Shortens a title to a word boundary, for a session named beside its note. */
 function shorten(s: string, max = 24): string {
   if (s.length <= max) return s
   const cut = s.slice(0, max)
@@ -302,12 +302,12 @@ function shorten(s: string, max = 24): string {
   return `${(i > 0 ? cut.slice(0, i) : cut).trimEnd()}…`
 }
 
-/** How a priest is named in a suggestion: his own note first (how you call him), his title alongside, shortened. */
+/** How a session is named in a suggestion: its own note first (what you call it), its title alongside, shortened. */
 function namePriest(note: string | null, title: string): string {
-  return note ? `« ${note} » (${shorten(title)})` : `« ${title} »`
+  return note ? `"${note}" (${shorten(title)})` : `"${title}"`
 }
 
-const dateFr = (ms: number) => new Date(ms).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })
+const dateFr = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 
 /** What to do about each metric red for longer than RED_AFTER_MS. Sangha only suggests: you run the commands. */
 export function suggest({ metrics, now, processes, containers, worktrees, sessions, nirvana = [] }: SuggestInput): HostSuggestion[] {
@@ -327,46 +327,46 @@ export function suggest({ metrics, now, processes, containers, worktrees, sessio
       out.push({
         id: `cpu:container:${c.name}`,
         metric: 'cpu',
-        title: `CPU saturé depuis ${minutes('cpu')} min : le conteneur ${c.name} prend ${Math.round(c.cpu)} %`,
-        detail: 'Arrête-le (ou la stack qui le contient) le temps que la machine respire ; il redémarrera avec docker start ou docker compose up.',
+        title: `CPU maxed out for ${minutes('cpu')} min: container ${c.name} uses ${Math.round(c.cpu)}%`,
+        detail: 'Stop it (or the stack it belongs to) while the machine catches its breath. It restarts with docker start or docker compose up.',
         command: `docker stop ${c.name}`,
       })
     else if (p)
       out.push({
         id: `cpu:process:${p.command}`,
         metric: 'cpu',
-        title: `CPU saturé depuis ${minutes('cpu')} min : ${p.command} prend ${Math.round(p.cpu)} %`,
-        detail: 'Le processus le plus gourmand. Vérifie qu’il n’est pas bloqué en boucle avant de l’arrêter.',
+        title: `CPU maxed out for ${minutes('cpu')} min: ${p.command} uses ${Math.round(p.cpu)}%`,
+        detail: 'The hungriest process. Check it is not stuck in a loop before you stop it.',
         command: `kill ${p.pid}`,
       })
     if (working.length >= 3)
       out.push({
         id: 'cpu:priests',
         metric: 'cpu',
-        title: `${working.length} prêtres travaillent en même temps`,
-        detail: 'Leurs builds et tests se marchent dessus. Interromps ceux qui peuvent attendre et relance-les un par un.',
+        title: `${working.length} sessions are working at the same time`,
+        detail: 'Their builds and tests slow each other down. Interrupt the ones that can wait and resume them one at a time.',
       })
   }
 
   if (long('memory') || long('swap')) {
     const key: HostMetricKey = long('memory') ? 'memory' : 'swap'
-    const what = key === 'memory' ? 'Mémoire saturée' : 'Swap saturé'
+    const what = key === 'memory' ? 'Memory full' : 'Swap full'
     const c = topContainer('memBytes')
     const p = [...processes].sort((a, b) => b.rssBytes - a.rssBytes)[0]
     if (c && c.memBytes >= GB)
       out.push({
         id: `${key}:container:${c.name}`,
         metric: key,
-        title: `${what} depuis ${minutes(key)} min : le conteneur ${c.name} occupe ${bytes(c.memBytes)}`,
-        detail: 'Arrête les stacks Docker dont tu n’as pas besoin maintenant ; la machine ne swappera plus pour elles.',
+        title: `${what} for ${minutes(key)} min: container ${c.name} holds ${bytes(c.memBytes)}`,
+        detail: 'Stop the Docker stacks you do not need right now, so the machine stops swapping for them.',
         command: `docker stop ${c.name}`,
       })
     else if (p)
       out.push({
         id: `${key}:process:${p.command}`,
         metric: key,
-        title: `${what} depuis ${minutes(key)} min : ${p.command} occupe ${bytes(p.rssBytes)}`,
-        detail: 'Le processus qui tient le plus de mémoire parmi les plus actifs. Ferme-le ou redémarre-le s’il fuit.',
+        title: `${what} for ${minutes(key)} min: ${p.command} holds ${bytes(p.rssBytes)}`,
+        detail: 'Among the busiest processes, this one holds the most memory. Close it, or restart it if it leaks.',
         command: `kill ${p.pid}`,
       })
     const idle = sessions.filter((s) => (s.status === 'idle' || s.status === 'waiting') && !s.external)
@@ -374,38 +374,38 @@ export function suggest({ metrics, now, processes, containers, worktrees, sessio
       out.push({
         id: `${key}:idle-priests`,
         metric: key,
-        title: `${idle.length} prêtres attendent sans rien faire`,
-        detail: 'Chacun garde son process Claude ouvert. Congédie ceux dont le travail est fini.',
+        title: `${idle.length} sessions are sitting idle`,
+        detail: 'Each one keeps its Claude process open. Close the ones whose work is done.',
       })
   }
 
   if (long('disk')) {
-    // Heaviest worktree of a priest who is not working: dismissing him frees it (Sangha checks nothing is lost first).
+    // Heaviest worktree of a session that is not working: closing it frees the worktree (Sangha checks nothing is lost first).
     const idle = worktrees.find((w) => w.sessionId && w.status !== 'working')
     if (idle)
       out.push({
         id: `disk:worktree:${idle.path}`,
         metric: 'disk',
-        title: `Disque plein depuis ${minutes('disk')} min : le worktree de ${namePriest(idle.sessionNote, idle.sessionTitle ?? '')} pèse ${bytes(idle.bytes)}`,
-        detail: 'Congédier ce prêtre supprime son worktree (Sangha refuse si du travail serait perdu).',
+        title: `Disk nearly full for ${minutes('disk')} min: the worktree of ${namePriest(idle.sessionNote, idle.sessionTitle ?? '')} takes ${bytes(idle.bytes)}`,
+        detail: 'Closing this session deletes its worktree (Sangha refuses if any work would be lost).',
         sessionId: idle.sessionId!,
       })
-    // Only ever a worktree Sangha knows is safe to delete: never a priest's own, and never one with anything to lose.
+    // Only ever a worktree Sangha knows is safe to delete: never a live session's own, and never one with anything to lose.
     const removable = worktrees.find((w) => w.removable)
     if (removable) {
       let who: string
       if (removable.kind === 'subagent' && removable.owner) {
-        const ownerName = removable.owner.note ? `« ${removable.owner.note} »` : `« ${removable.owner.title} »`
-        who = `un worktree de sous-agent de ${ownerName}${removable.owner.alive ? '' : ' (parti au nirvana)'}`
+        const ownerName = removable.owner.note ? `"${removable.owner.note}"` : `"${removable.owner.title}"`
+        who = `a subagent worktree of ${ownerName}${removable.owner.alive ? '' : ' (closed)'}`
       } else {
         const left = nirvana.find((n) => n.path === removable.path)
-        who = left ? `${namePriest(left.note, left.title)}, parti au nirvana le ${dateFr(left.archivedAt)}` : `${removable.project}/${removable.name}`
+        who = left ? `${namePriest(left.note, left.title)}, closed on ${dateFr(left.archivedAt)}` : `${removable.project}/${removable.name}`
       }
       out.push({
         id: `disk:orphan:${removable.path}`,
         metric: 'disk',
-        title: `Worktree sans prêtre : ${who} (${bytes(removable.bytes)})`,
-        detail: 'Plus aucun prêtre n’y travaille. Vérifie qu’il n’y reste rien à garder, puis retire-le toi-même.',
+        title: `Worktree with no session: ${who} (${bytes(removable.bytes)})`,
+        detail: 'No session works in it anymore. Check there is nothing left to keep, then remove it yourself.',
         command: removable.removeCommand,
       })
     }
@@ -413,8 +413,8 @@ export function suggest({ metrics, now, processes, containers, worktrees, sessio
       out.push({
         id: 'disk:docker',
         metric: 'disk',
-        title: 'Images, volumes et caches Docker',
-        detail: 'Regarde ce que Docker garde sur le disque ; le prune efface les images et caches inutilisés (à lancer toi-même, en connaissance de cause).',
+        title: 'Docker images, volumes and caches',
+        detail: 'See what Docker keeps on disk. The prune deletes unused images and caches (run it yourself, knowing what it removes).',
         command: 'docker system df && docker system prune',
       })
   }
@@ -456,9 +456,9 @@ export class HostMonitor {
   constructor(
     private workspacesDir: string,
     private sessions: () => SessionSummary[],
-    /** Archived sessions, so an orphan worktree can be named after who left it behind (see `suggest`), or own a sub-agent of his. */
+    /** Archived sessions, so an orphan worktree can be named after who left it behind (see `suggest`), or own one of its subagents. */
     private nirvana: () => HostNirvanaWorktree[] = () => [],
-    /** Whether the quota reserve holds every priest right now: Haiku comments on worktrees wait their turn like any other (see `Sessions.blocked`). */
+    /** Whether the quota reserve holds every session right now: Haiku comments on worktrees wait their turn like any other (see `Sessions.blocked`). */
     private reserveBlocked: () => boolean = () => false,
     /** Every project that is a git repository: name and root, to discover every worktree it has (see `Projects.repos`). */
     private projectRepos: () => { name: string; path: string }[] = () => [],
@@ -500,18 +500,18 @@ export class HostMonitor {
       // macOS grows its swap as needed: weigh what is swapped against the RAM, not against the swap's current size.
       const swapValue = swap ? Math.min(1, swap.used / ram) : 0
       return {
-        memory: { value: used, level: memLevel, detail: `${bytes(ram * used)} / ${bytes(ram)}${p >= 2 ? ` · pression ${p >= 4 ? 'critique' : 'élevée'}` : ''}` },
-        swap: { value: swapValue, level: levelOf(swapValue, { warn: 0.25, red: 0.5 }), detail: swap ? `${bytes(swap.used)} swappés` : 'inconnu' },
+        memory: { value: used, level: memLevel, detail: `${bytes(ram * used)} / ${bytes(ram)}${p >= 2 ? ` · ${p >= 4 ? 'critical' : 'high'} pressure` : ''}` },
+        swap: { value: swapValue, level: levelOf(swapValue, { warn: 0.25, red: 0.5 }), detail: swap ? `${bytes(swap.used)} swapped` : 'unknown' },
       }
     }
     const info = existsSync('/proc/meminfo') ? parseMeminfo(readFileSync('/proc/meminfo', 'utf8')) : null
-    if (!info) return { memory: { value: 0, level: 'ok', detail: 'inconnu' }, swap: { value: 0, level: 'ok', detail: 'inconnu' } }
+    if (!info) return { memory: { value: 0, level: 'ok', detail: 'unknown' }, swap: { value: 0, level: 'ok', detail: 'unknown' } }
     const used = 1 - info.available / info.total
     const swapUsed = info.swapTotal - info.swapFree
     const swapValue = info.swapTotal > 0 ? swapUsed / info.swapTotal : 0
     return {
       memory: { value: used, level: levelOf(used, THRESHOLDS.memory), detail: `${bytes(info.total - info.available)} / ${bytes(info.total)}` },
-      swap: { value: swapValue, level: levelOf(swapValue, THRESHOLDS.swap), detail: info.swapTotal > 0 ? `${bytes(swapUsed)} / ${bytes(info.swapTotal)}` : 'pas de swap' },
+      swap: { value: swapValue, level: levelOf(swapValue, THRESHOLDS.swap), detail: info.swapTotal > 0 ? `${bytes(swapUsed)} / ${bytes(info.swapTotal)}` : 'no swap' },
     }
   }
 
@@ -521,11 +521,11 @@ export class HostMonitor {
       const total = s.blocks * s.bsize
       const free = s.bavail * s.bsize
       const value = total > 0 ? 1 - free / total : 0
-      // A big disk can be 95 % full and still roomy; a few gigabytes left is tight whatever the size.
+      // A big disk can be 95% full and still roomy; a few gigabytes left is tight whatever the size.
       const level = free < 5 * GB ? 'red' : free < 15 * GB ? worst([levelOf(value, THRESHOLDS.disk), 'warn']) : levelOf(value, THRESHOLDS.disk)
-      return { value, level, detail: `${bytes(free)} libres sur ${bytes(total)}` }
+      return { value, level, detail: `${bytes(free)} free of ${bytes(total)}` }
     } catch {
-      return { value: 0, level: 'ok', detail: 'inconnu' }
+      return { value: 0, level: 'ok', detail: 'unknown' }
     }
   }
 
@@ -629,7 +629,7 @@ export class HostMonitor {
         const facts = checked ?? { dirty: 0, unpushed: 0, headSha: null, branch: null, commits: [] }
         const { kind, owner } = classifyWorktree(w.path, candidates)
         const inUse = isInUse(w.path, this.inUseCwds)
-        // Sangha's own: under its workspaces, or a Claude Code sub-agent worktree (`.claude/worktrees/`) inside a repo.
+        // Sangha's own: under its workspaces, or a Claude Code subagent worktree (`.claude/worktrees/`) inside a repo.
         const external = !w.path.startsWith(this.workspacesDir + '/') && !w.path.includes('/.claude/worktrees/')
         const { removable, blocker } = removableInfo(kind, { dirty: facts.dirty, unpushed: facts.unpushed, inUse }, owner, { checked: !!checked, external })
         return {
@@ -661,11 +661,11 @@ export class HostMonitor {
     const cpu = this.cpu()
     const [mem, disk, ps, containers] = await Promise.all([this.memory(), this.disk(), run('ps', ['-Ao', 'pid=,pcpu=,rss=,comm=']), this.docker()])
     const reading: Reading = {
-      cpu: { value: cpu, level: levelOf(cpu, THRESHOLDS.cpu), detail: `${Math.round(cpu * 100)} % de ${cpus().length} cœurs` },
+      cpu: { value: cpu, level: levelOf(cpu, THRESHOLDS.cpu), detail: `${Math.round(cpu * 100)}% of ${cpus().length} cores` },
       ...mem,
       disk,
     }
-    const labels: Record<HostMetricKey, string> = { cpu: 'CPU', memory: 'Mémoire', swap: 'Swap', disk: 'Disque' }
+    const labels: Record<HostMetricKey, string> = { cpu: 'CPU', memory: 'Memory', swap: 'Swap', disk: 'Disk' }
     const metrics: HostMetric[] = (Object.keys(labels) as HostMetricKey[]).map((key) => ({
       key,
       label: labels[key],

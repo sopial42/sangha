@@ -37,18 +37,18 @@ describe('buildContext', () => {
   it('includes pending feedback, counted in newItems', () => {
     const store = new Store(':memory:')
     store.createSession(row('a'))
-    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'down', comment: 'trop long', excerpt: 'x', createdAt: 1, processedAt: null })
+    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'down', comment: 'too long', excerpt: 'x', createdAt: 1, processedAt: null })
     const ctx = buildContext(SETTINGS, 0, store)
-    expect(ctx.text).toContain('trop long')
+    expect(ctx.text).toContain('too long')
     expect(ctx.newItems).toBe(1)
   })
 
   it('omits the feedback block when the manual level is off', () => {
     const store = new Store(':memory:')
     store.createSession(row('a'))
-    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'down', comment: 'trop long', excerpt: 'x', createdAt: 1, processedAt: null })
+    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'down', comment: 'too long', excerpt: 'x', createdAt: 1, processedAt: null })
     const ctx = buildContext({ ...SETTINGS, levels: { ...SETTINGS.levels, manual: false } }, 0, store)
-    expect(ctx.text).not.toContain('trop long')
+    expect(ctx.text).not.toContain('too long')
     expect(ctx.newItems).toBe(0)
   })
 
@@ -56,20 +56,20 @@ describe('buildContext', () => {
     const store = new Store(':memory:')
     store.createSession(row('a', 'other'))
     store.archive('a')
-    store.setNote('a', 'nirvana', String(store.getSession('a')!.archivedAt), { summary: 'résumé secret' })
-    const ctx = buildContext(SETTINGS, 0, store) // 'other' n'est pas dans settings.projects
-    expect(ctx.text).not.toContain('résumé secret')
+    store.setNote('a', 'nirvana', String(store.getSession('a')!.archivedAt), { summary: 'secret summary' })
+    const ctx = buildContext(SETTINGS, 0, store) // 'other' is not in settings.projects
+    expect(ctx.text).not.toContain('secret summary')
   })
 
   it('restricts to one session for a conversation-end pass, skipping the project and sangha blocks', () => {
     const store = new Store(':memory:')
     store.createSession(row('a'))
     store.createSession(row('b'))
-    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'up', comment: 'pour a', excerpt: 'x', createdAt: 1, processedAt: null })
-    store.addFeedback({ id: 'f2', sessionId: 'b', eventSeq: null, rating: 'up', comment: 'pour b', excerpt: 'x', createdAt: 1, processedAt: null })
+    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'up', comment: 'for a', excerpt: 'x', createdAt: 1, processedAt: null })
+    store.addFeedback({ id: 'f2', sessionId: 'b', eventSeq: null, rating: 'up', comment: 'for b', excerpt: 'x', createdAt: 1, processedAt: null })
     const ctx = buildContext(SETTINGS, 0, store, 'a')
-    expect(ctx.text).toContain('pour a')
-    expect(ctx.text).not.toContain('pour b')
+    expect(ctx.text).toContain('for a')
+    expect(ctx.text).not.toContain('for b')
     expect(ctx.newItems).toBe(1)
   })
 
@@ -105,9 +105,9 @@ describe('buildContext', () => {
   it('includes no feedback id when the manual level is off, even for a conversation-end pass', () => {
     const store = new Store(':memory:')
     store.createSession(row('a'))
-    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'up', comment: 'trop verbeux', excerpt: 'x', createdAt: 1, processedAt: null })
+    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'up', comment: 'too verbose', excerpt: 'x', createdAt: 1, processedAt: null })
     const ctx = buildContext({ ...SETTINGS, levels: { ...SETTINGS.levels, manual: false } }, 0, store, 'a')
     expect(ctx.feedbackIds).toEqual([])
-    expect(ctx.text).not.toContain('trop verbeux')
+    expect(ctx.text).not.toContain('too verbose')
   })
 })

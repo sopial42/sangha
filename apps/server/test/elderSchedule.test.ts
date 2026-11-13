@@ -16,7 +16,7 @@ const PROVIDER_SETTINGS: ElderSettings = { ...SETTINGS, model: 'ovh::llama-4' }
 
 const quota = (pct: number | null): Quota | null => (pct === null ? null : { status: 'allowed', fiveHour: null, sevenDay: { utilization: pct / 100, resetsAt: null } })
 
-// 2026-01-01 est un jeudi ; 2026-01-02 un vendredi.
+// 2026-01-01 is a Thursday; 2026-01-02 a Friday.
 const THURSDAY_NOON = new Date(2026, 0, 1, 12, 0, 0).getTime()
 const FRIDAY_2300 = new Date(2026, 0, 2, 23, 0, 0).getTime()
 
@@ -28,7 +28,7 @@ describe('elderEngine', () => {
   })
 })
 
-describe('due — weekly (Claude)', () => {
+describe('due: weekly (Claude)', () => {
   it('fires at Thursday 12:00 when the week quota is OK', () => {
     expect(due(THURSDAY_NOON, SETTINGS, quota(15), [])).toEqual({ kind: 'weekly' })
   })
@@ -64,7 +64,7 @@ describe('due — weekly (Claude)', () => {
   })
 })
 
-describe('due — daily and end-of-conversation (a fournisseur)', () => {
+describe('due: daily and end-of-conversation (a provider)', () => {
   const morning = new Date(2026, 0, 5, 8, 0, 0).getTime()
   const session = (over: Partial<PendingSession>): PendingSession => ({ id: 's1', archived: false, idleMs: 0, hasPendingFeedback: false, ...over })
 
@@ -76,7 +76,7 @@ describe('due — daily and end-of-conversation (a fournisseur)', () => {
     expect(due(morning + 1, { ...PROVIDER_SETTINGS, lastRunAt: morning }, null, [])).toBeNull()
   })
 
-  it('fires on a session sent to nirvana with an unprocessed feedback', () => {
+  it('fires on a closed session with an unprocessed feedback', () => {
     const noon = morning + 4 * 3600_000
     expect(due(noon, { ...PROVIDER_SETTINGS, lastRunAt: morning }, null, [session({ archived: true, hasPendingFeedback: true })])).toEqual({ kind: 'conversation', sessionId: 's1' })
   })
@@ -97,7 +97,7 @@ describe('due — daily and end-of-conversation (a fournisseur)', () => {
   })
 })
 
-describe('due — backoff after a failed model call (retryAfter)', () => {
+describe('due: backoff after a failed model call (retryAfter)', () => {
   it('suppresses a weekly pass still inside the backoff window', () => {
     expect(due(THURSDAY_NOON, SETTINGS, quota(10), [], { retryAfter: THURSDAY_NOON + 1 })).toBeNull()
   })
@@ -119,7 +119,7 @@ describe('due — backoff after a failed model call (retryAfter)', () => {
   })
 })
 
-describe('due — blocked sessions (repeated conversation failures)', () => {
+describe('due: blocked sessions (repeated conversation failures)', () => {
   it('skips a session on the block list for the conversation pass', () => {
     const morning = new Date(2026, 0, 5, 8, 0, 0).getTime()
     const noon = morning + 4 * 3600_000
@@ -128,7 +128,7 @@ describe('due — blocked sessions (repeated conversation failures)', () => {
   })
 })
 
-describe('due — the manual level off disables the conversation pass', () => {
+describe('due: the manual level off disables the conversation pass', () => {
   it('never proposes a conversation pass when the manual level is off', () => {
     const morning = new Date(2026, 0, 5, 8, 0, 0).getTime()
     const noon = morning + 4 * 3600_000

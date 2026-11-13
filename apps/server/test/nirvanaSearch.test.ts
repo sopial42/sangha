@@ -11,23 +11,23 @@ const entry = (over: Partial<NirvanaSearchEntry> = {}): NirvanaSearchEntry => ({
   branch: 'sangha/x',
   agent: 'claude',
   note: 'RIB ET MAIL',
-  title: 'je corrige le panier',
-  summary: 'A corrigé le calcul du panier.',
+  title: 'fixing the cart',
+  summary: 'Fixed the cart total.',
   ...over,
 })
 
 describe('buildNirvanaSearchPrompt', () => {
   it('writes one compact line per entry, then the question', () => {
-    const prompt = buildNirvanaSearchPrompt([entry()], 'le panier ?')
+    const prompt = buildNirvanaSearchPrompt([entry()], 'the cart?')
     expect(prompt).toContain('id=p1')
     expect(prompt).toContain('date=2026-03-07')
     expect(prompt).toContain('project=robia')
     expect(prompt).toContain('branch=sangha/x')
     expect(prompt).toContain('agent=claude')
     expect(prompt).toContain('note=RIB ET MAIL')
-    expect(prompt).toContain('title=je corrige le panier')
-    expect(prompt).toContain('summary=A corrigé le calcul du panier.')
-    expect(prompt).toContain('QUESTION: le panier ?')
+    expect(prompt).toContain('title=fixing the cart')
+    expect(prompt).toContain('summary=Fixed the cart total.')
+    expect(prompt).toContain('QUESTION: the cart?')
   })
 
   it('marks a missing note or summary rather than leaving it blank', () => {
@@ -45,17 +45,17 @@ describe('buildNirvanaSearchPrompt', () => {
 
 describe('parseNirvanaSearchResult', () => {
   it('keeps results whose id is known, in the order given', () => {
-    const raw = { results: [{ id: 'a', reason: 'une raison' }, { id: 'b', reason: 'une autre' }] }
-    expect(parseNirvanaSearchResult(raw, new Set(['a', 'b']))).toEqual({ results: [{ id: 'a', reason: 'une raison' }, { id: 'b', reason: 'une autre' }] })
+    const raw = { results: [{ id: 'a', reason: 'a reason' }, { id: 'b', reason: 'another one' }] }
+    expect(parseNirvanaSearchResult(raw, new Set(['a', 'b']))).toEqual({ results: [{ id: 'a', reason: 'a reason' }, { id: 'b', reason: 'another one' }] })
   })
 
   it('drops results whose id is not among the known ones', () => {
-    const raw = { results: [{ id: 'a', reason: 'ok' }, { id: 'ghost', reason: 'inventé' }] }
+    const raw = { results: [{ id: 'a', reason: 'ok' }, { id: 'ghost', reason: 'made up' }] }
     expect(parseNirvanaSearchResult(raw, new Set(['a']))).toEqual({ results: [{ id: 'a', reason: 'ok' }] })
   })
 
   it('drops malformed entries (missing or wrong-typed id/reason)', () => {
-    const raw = { results: [{ id: 'a', reason: 'ok' }, { id: 'b' }, { reason: 'sans id' }, null, 'x'] }
+    const raw = { results: [{ id: 'a', reason: 'ok' }, { id: 'b' }, { reason: 'no id' }, null, 'x'] }
     expect(parseNirvanaSearchResult(raw, new Set(['a', 'b']))).toEqual({ results: [{ id: 'a', reason: 'ok' }] })
   })
 
@@ -79,11 +79,11 @@ describe('nirvanaSearch', () => {
   it('asks the model and filters its answer against the entries given', async () => {
     vi.mocked(query).mockReturnValue({
       [Symbol.asyncIterator]: async function* () {
-        yield resultMessage({ results: [{ id: 'p1', reason: 'corrige le panier' }, { id: 'ghost', reason: 'ne devrait pas apparaître' }] })
+        yield resultMessage({ results: [{ id: 'p1', reason: 'fixed the cart' }, { id: 'ghost', reason: 'should not show up' }] })
       },
     } as never)
-    const out = await nirvanaSearch([entry({ id: 'p1' })], 'qui a touché au panier ?')
-    expect(out).toEqual({ results: [{ id: 'p1', reason: 'corrige le panier' }] })
+    const out = await nirvanaSearch([entry({ id: 'p1' })], 'who touched the cart?')
+    expect(out).toEqual({ results: [{ id: 'p1', reason: 'fixed the cart' }] })
   })
 
   it('is an empty result when the model gives nothing back', async () => {

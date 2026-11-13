@@ -28,15 +28,15 @@ while True:
 
 const URL_RE = /https:\/\/claude\.ai\/code\/session_[A-Za-z0-9]+/
 const ANSI = /\x1b\[[0-9;?<>=]*[a-zA-Z]|\x1b\][^\x07]*\x07/g
-// Inherited from a Claude process above Sangha, these would turn his transcript saving off.
+// Inherited from a Claude process above Sangha, these would turn the session's transcript saving off.
 const CHILD_MARKERS = ['CLAUDECODE', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_ENTRYPOINT']
 
-/** `closed`: resolves once the process has actually ended (whoever stopped it) — never two processes on
- * one conversation, so a caller taking him back from the remote must wait on this before touching `ensureLive`. */
+/** `closed`: resolves once the process has actually ended (whoever stopped it). There are never two processes on
+ * one conversation, so a caller taking the session back from the remote must wait on this before touching `ensureLive`. */
 export type RemoteControl = { url: string; stop: () => void; closed: Promise<void> }
 
 /**
- * Resumes his conversation in an interactive `claude --remote-control` and resolves with the claude.ai/code
+ * Resumes the session's conversation in an interactive `claude --remote-control` and resolves with the claude.ai/code
  * link once it is up. `onExit` fires when that process ends, whoever stopped it.
  */
 export function startRemote(
@@ -60,7 +60,7 @@ export function startRemote(
     let url: string | null = null
     const timer = setTimeout(() => {
       stop()
-      reject(new Error(`pas de lien Remote Control après 60 s : ${out.replace(ANSI, '').replace(/\s+/g, ' ').slice(-300)}`))
+      reject(new Error(`no Remote Control link after 60 s: ${out.replace(ANSI, '').replace(/\s+/g, ' ').slice(-300)}`))
     }, 60_000)
     proc.stdout.on('data', (chunk: Buffer) => {
       if (url) return
@@ -81,7 +81,7 @@ export function startRemote(
       if (url) {
         onExit()
         resolveClosed()
-      } else reject(new Error(`claude s'est arrêté avant le lien : ${out.replace(ANSI, '').replace(/\s+/g, ' ').slice(-300)}`))
+      } else reject(new Error(`claude stopped before giving the link: ${out.replace(ANSI, '').replace(/\s+/g, ' ').slice(-300)}`))
     })
   })
 }

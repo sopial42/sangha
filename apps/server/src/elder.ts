@@ -9,17 +9,17 @@ import { parseElderResponse } from './elderParse'
 import { UserError } from './session'
 
 const BACKOFF_STEPS_HOURS = [1, 2, 4, 6]
-/** Recul après un échec consécutif d'un passage programmé (quotidien ou hebdomadaire) : 1 h, 2 h, 4 h, plafonné à 6 h. */
+/** Backoff after consecutive failures of a scheduled pass (daily or weekly): 1 h, 2 h, 4 h, capped at 6 h. */
 export function elderBackoffMs(consecutiveFailures: number): number {
   const step = Math.min(consecutiveFailures, BACKOFF_STEPS_HOURS.length) - 1
   return BACKOFF_STEPS_HOURS[Math.max(0, step)]! * 3600_000
 }
 
-/** Un passage « fin de conversation » n'est plus retenté pour une même session passé ce nombre d'échecs de suite. */
+/** An end-of-conversation pass is no longer retried for a session after this many failures in a row. */
 const CONVERSATION_FAILURE_LIMIT = 3
 
 export const DEFAULT_ELDER_SETTINGS: ElderSettings = {
-  // Le passage hebdomadaire est déjà protégé par la garde de quota : activer Ananda par défaut ne mange rien.
+  // The weekly pass is already protected by the quota guard: enabling the Advisor by default costs nothing.
   enabled: true,
   model: 'sonnet',
   levels: { manual: true, sangha: true, project: false },
@@ -33,14 +33,14 @@ export const DEFAULT_ELDER_SETTINGS: ElderSettings = {
 const ANSWER_SCHEMA = {
   type: 'object',
   properties: {
-    report: { type: 'string', description: '5 à 15 lignes, en français, pour l’utilisateur.' },
+    report: { type: 'string', description: '5 to 15 lines, in English, for the user.' },
     topics: {
       type: 'array',
       items: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'Un id de sujet existant, pour le mettre à jour.' },
-          scope: { type: 'string', description: "'manual' | 'sangha' | 'project:<nom>'" },
+          id: { type: 'string', description: 'An existing topic id, to update it.' },
+          scope: { type: 'string', description: "'manual' | 'sangha' | 'project:<name>'" },
           title: { type: 'string' },
           detail: { type: 'string' },
           evidence: { type: 'array', items: { type: 'string' } },
@@ -54,39 +54,39 @@ const ANSWER_SCHEMA = {
   additionalProperties: false,
 }
 
-const SYSTEM = `Tu es Ananda, un vieux moine bienveillant assis sous l'arbre de la Bodhi. Tu relis ce qui se passe dans
-le monastère et proposes des suggestions d'amélioration concrètes ; tu ne modifies jamais rien toi-même.
-Règles : regroupe les retours qui disent la même chose en un seul sujet ; ne reproposes jamais un sujet déjà
-rejeté (listé dans la Mémoire ci-dessous) ; préfère mettre à jour un sujet existant (en reprenant son id) plutôt
-qu'en créer un doublon ; au plus 5 sujets nouveaux par passage. Écris "report" en français simple et concret,
-5 à 15 lignes.`
+const SYSTEM = `You are the Sangha Advisor. You review what is happening across the user's projects and sessions
+and propose concrete improvements; you never change anything yourself.
+Rules: group feedback that says the same thing into a single topic; never propose again a topic that was
+already rejected (listed under Memory below); prefer updating an existing topic (reusing its id) over
+creating a duplicate; at most 5 new topics per pass. Write "report" in plain, concrete English,
+5 to 15 lines. Always answer in English.`
 
 function isHHMM(s: unknown): s is string {
   return typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s)
 }
 
-/** Fusionne un changement partiel (niveaux/hebdomadaire inclus) et vérifie qu'il reste sain. */
+/** Merges a partial change (levels and weekly included) and checks the result is still valid. */
 export function mergeElderSettings(current: ElderSettings, patch: ElderSettingsPatch): ElderSettings {
   const next: ElderSettings = { ...current, ...patch, levels: { ...current.levels, ...patch.levels }, weekly: { ...current.weekly, ...patch.weekly } }
-  if (typeof next.enabled !== 'boolean') throw new UserError('enabled doit être vrai ou faux')
-  if (typeof next.model !== 'string' || !next.model.trim()) throw new UserError('un moteur est requis')
-  if (!isHHMM(next.dailyAt)) throw new UserError('heure quotidienne invalide (HH:MM)')
-  if (!Number.isInteger(next.weekly.day) || next.weekly.day < 0 || next.weekly.day > 6) throw new UserError('jour hebdomadaire invalide (0-6)')
-  if (!isHHMM(next.weekly.at)) throw new UserError('heure hebdomadaire invalide (HH:MM)')
-  if (!Number.isFinite(next.weekly.maxWeekUsedPct) || next.weekly.maxWeekUsedPct < 0 || next.weekly.maxWeekUsedPct > 100) throw new UserError('seuil hebdomadaire invalide (0-100)')
-  if (!Number.isInteger(next.maxInputChars) || next.maxInputChars < 1000) throw new UserError('plafond de contexte trop petit (min 1000)')
-  if (!Array.isArray(next.projects) || !next.projects.every((p) => typeof p === 'string')) throw new UserError('projets suivis invalides')
-  if (typeof next.levels.manual !== 'boolean' || typeof next.levels.sangha !== 'boolean' || typeof next.levels.project !== 'boolean') throw new UserError('niveaux invalides')
+  if (typeof next.enabled !== 'boolean') throw new UserError('enabled must be true or false')
+  if (typeof next.model !== 'string' || !next.model.trim()) throw new UserError('a model is required')
+  if (!isHHMM(next.dailyAt)) throw new UserError('invalid daily time (HH:MM)')
+  if (!Number.isInteger(next.weekly.day) || next.weekly.day < 0 || next.weekly.day > 6) throw new UserError('invalid weekly day (0-6)')
+  if (!isHHMM(next.weekly.at)) throw new UserError('invalid weekly time (HH:MM)')
+  if (!Number.isFinite(next.weekly.maxWeekUsedPct) || next.weekly.maxWeekUsedPct < 0 || next.weekly.maxWeekUsedPct > 100) throw new UserError('invalid weekly threshold (0-100)')
+  if (!Number.isInteger(next.maxInputChars) || next.maxInputChars < 1000) throw new UserError('context limit too small (min 1000)')
+  if (!Array.isArray(next.projects) || !next.projects.every((p) => typeof p === 'string')) throw new UserError('invalid followed projects')
+  if (typeof next.levels.manual !== 'boolean' || typeof next.levels.sangha !== 'boolean' || typeof next.levels.project !== 'boolean') throw new UserError('invalid levels')
   return next
 }
 
-/** 👍 accepte, 👎 rejette, recliquer le même vote revient à « proposed ». */
+/** 👍 accepts, 👎 rejects, clicking the same vote again goes back to "proposed". */
 export function nextVoteStatus(current: ElderTopicStatus, vote: 'up' | 'down'): ElderTopicStatus {
   const target: ElderTopicStatus = vote === 'up' ? 'accepted' : 'rejected'
   return current === target ? 'proposed' : target
 }
 
-/** Best-effort, pour l'affichage seulement : la vraie décision reste celle de `due()`. */
+/** Best effort, for display only: the real decision is still made by `due()`. */
 export function nextRunAt(now: number, settings: ElderSettings): number | null {
   if (!settings.enabled) return null
   const d = new Date(now)
@@ -110,12 +110,12 @@ export class Elder {
   private lastError: string | null = null
   private timer: NodeJS.Timeout | null = null
   private listeners = new Set<(ev: Extract<GlobalEvent, { kind: 'elder' }>) => void>()
-  // Recul après l'échec d'un passage programmé (quotidien/hebdomadaire) : en mémoire suffit, remis à zéro au
-  // succès. « Médite maintenant » n'appelle jamais `tick()`/`due()` : il ignore ce recul par construction.
+  // Backoff after a failed scheduled pass (daily or weekly): in memory is enough, reset on success.
+  // "Run now" never calls `tick()`/`due()`, so it ignores this backoff by design.
   private consecutiveFailures = 0
   private retryAfter: number | null = null
-  // Échecs de suite d'un passage « fin de conversation », par session : passé la limite, due() ne la reproposera
-  // plus (ses retours restent en attente : le prochain passage quotidien/hebdomadaire, non restreint, les reprendra).
+  // Consecutive end-of-conversation failures, per session: past the limit, due() stops offering it (its feedback
+  // stays pending, and the next unrestricted daily or weekly pass will pick it up).
   private conversationFailures = new Map<string, number>()
 
   constructor(
@@ -177,7 +177,7 @@ export class Elder {
     return new Set([...this.conversationFailures.entries()].filter(([, n]) => n >= CONVERSATION_FAILURE_LIMIT).map(([id]) => id))
   }
 
-  /** Décide si un passage est dû et le lance. Piloté par le minuteur ; exposé (plutôt que privé) pour les tests. */
+  /** Decides whether a pass is due and runs it. Driven by the timer; public (rather than private) for tests. */
   async tick() {
     if (this.running) return
     const pass = due(Date.now(), this.settings(), this.quota(), this.pendingSessions(Date.now()), { retryAfter: this.retryAfter, blockedSessions: this.blockedSessions() })
@@ -187,12 +187,12 @@ export class Elder {
   }
 
   private skip() {
-    this.store.addElderReport({ id: randomUUID(), kind: 'skipped', text: 'Semaine sautée : quota du plan trop utilisé.', topicIds: [], costUsd: null, tokens: null, createdAt: Date.now() })
+    this.store.addElderReport({ id: randomUUID(), kind: 'skipped', text: 'Week skipped: the plan quota was too heavily used.', topicIds: [], costUsd: null, tokens: null, createdAt: Date.now() })
     this.store.setSetting('elder', { ...this.settings(), lastRunAt: Date.now() })
     this.broadcast()
   }
 
-  /** Un passage programmé ou manuel. `sessionId` : restreint le contexte à une session (fin de conversation). */
+  /** A scheduled or manual pass. `sessionId` limits the context to one session (end of conversation). */
   async runPass(kind: ElderReportKind, sessionId?: string) {
     if (this.running) return
     this.running = true
@@ -204,18 +204,18 @@ export class Elder {
       const ctx = buildContext(settings, since, this.store, sessionId)
       if (ctx.newItems === 0 && kind !== 'manual') return
       const choice = await this.providers.choice(settings.model)
-      if (!choice) throw new Error(`modèle indisponible : ${settings.model}`)
+      if (!choice) throw new Error(`model unavailable: ${settings.model}`)
       const env = this.providers.env(choice.engine, choice.model)
       const knownIds = new Set(this.store.elderTopics().map((t) => t.id))
       const result = await this.callModel(choice.model ?? choice.id, env, ctx.text)
       const parsed = parseElderResponse(result.output, knownIds, settings.levels, settings.projects)
-      if (!parsed) throw new Error('réponse du modèle invalide')
+      if (!parsed) throw new Error('invalid model response')
       this.applyAnswer(kind, parsed, result.costUsd, result.tokens)
-      // Ne marque traités que les retours réellement envoyés au modèle (après troncature et limite de 50) :
-      // un retour écarté par `buildContext` n'a jamais été lu, il ne doit pas disparaître de la file.
+      // Only mark as processed the feedback actually sent to the model (after truncation and the 50 limit):
+      // an item dropped by `buildContext` was never read and must not disappear from the queue.
       this.store.markFeedbackProcessed(ctx.feedbackIds, Date.now())
-      // Une « fin de conversation » ne couvre qu'une session : avancer lastRunAt lui ferait perdre, au
-      // passage quotidien suivant, les résumés de projet et les signaux Sangha de la période sautée.
+      // An end-of-conversation pass covers only one session: moving lastRunAt forward would make the next
+      // daily pass miss the project summaries and Sangha signals of the skipped period.
       if (kind !== 'conversation') this.store.setSetting('elder', { ...settings, lastRunAt: Date.now() })
       this.onPassSettled(kind, sessionId, true)
     } catch (e) {
@@ -228,8 +228,8 @@ export class Elder {
     }
   }
 
-  /** Tient les compteurs de recul à jour : remis à zéro au succès, armés à l'échec — jamais pour « manual »,
-   *  qui ignore le recul par construction (il ne passe jamais par `due()`). */
+  /** Keeps the backoff counters up to date: reset on success, armed on failure, never for "manual",
+   *  which ignores the backoff by design (it never goes through `due()`). */
   private onPassSettled(kind: ElderReportKind, sessionId: string | undefined, ok: boolean) {
     if (kind === 'manual') return
     if (kind === 'conversation') {
@@ -272,7 +272,7 @@ export class Elder {
 
   voteTopic(id: string, vote: 'up' | 'down'): ElderTopic {
     const t = this.store.elderTopic(id)
-    if (!t) throw new UserError('sujet inconnu')
+    if (!t) throw new UserError('unknown topic')
     const updated: ElderTopic = { ...t, status: nextVoteStatus(t.status, vote), updatedAt: Date.now() }
     this.store.upsertElderTopic(updated)
     this.broadcast()
@@ -281,8 +281,8 @@ export class Elder {
 
   doneTopic(id: string): ElderTopic {
     const t = this.store.elderTopic(id)
-    if (!t) throw new UserError('sujet inconnu')
-    if (t.status !== 'accepted') throw new UserError('seul un sujet accepté peut être marqué fait')
+    if (!t) throw new UserError('unknown topic')
+    if (t.status !== 'accepted') throw new UserError('only an accepted topic can be marked done')
     const updated: ElderTopic = { ...t, status: 'done', updatedAt: Date.now() }
     this.store.upsertElderTopic(updated)
     this.broadcast()
@@ -290,7 +290,7 @@ export class Elder {
   }
 
   addFeedback(input: { sessionId: string; eventSeq?: number; rating?: 'up' | 'down'; comment?: string }): Feedback {
-    if (input.rating !== undefined && input.rating !== 'up' && input.rating !== 'down') throw new UserError('note invalide (up ou down)')
+    if (input.rating !== undefined && input.rating !== 'up' && input.rating !== 'down') throw new UserError('invalid rating (up or down)')
     const f: Feedback = {
       id: randomUUID(),
       sessionId: input.sessionId,
@@ -306,21 +306,21 @@ export class Elder {
     return f
   }
 
-  /** Une question libre, hors programme : sujets ouverts, 3 derniers rapports, 20 derniers messages. N'enregistre
-   *  la question et la réponse que si le modèle a bien répondu : sinon rien n'est écrit dans la discussion. */
+  /** A free question, outside the schedule: open topics, last 3 reports, last 20 messages. The question and the
+   *  answer are saved only if the model actually answered: otherwise nothing is written to the chat. */
   async ask(text: string): Promise<{ reply: string }> {
     const settings = this.settings()
     const choice = await this.providers.choice(settings.model)
-    if (!choice) throw new UserError(`modèle indisponible : ${settings.model}`)
+    if (!choice) throw new UserError(`model unavailable: ${settings.model}`)
     const env = this.providers.env(choice.engine, choice.model)
     const topics = this.store.elderTopics().filter((t) => t.status !== 'rejected')
     const reports = this.store.elderReports(3)
     const history = this.store.elderChat(20)
     const input = [
-      topics.length ? `Sujets :\n${topics.map((t) => `- [${t.status}] ${t.title} : ${t.detail}`).join('\n')}` : '',
-      reports.length ? `Derniers rapports :\n${reports.map((r) => `- ${r.text}`).join('\n')}` : '',
-      history.length ? history.map((h) => `${h.role === 'user' ? 'Toi' : 'Ananda'} : ${h.text}`).join('\n') : '',
-      `Toi : ${text}`,
+      topics.length ? `Topics:\n${topics.map((t) => `- [${t.status}] ${t.title}: ${t.detail}`).join('\n')}` : '',
+      reports.length ? `Latest reports:\n${reports.map((r) => `- ${r.text}`).join('\n')}` : '',
+      history.length ? history.map((h) => `${h.role === 'user' ? 'User' : 'Advisor'}: ${h.text}`).join('\n') : '',
+      `User: ${text}`,
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -332,12 +332,12 @@ export class Elder {
       for await (const m of q) {
         if (m.type !== 'result') continue
         if (m.subtype === 'success') reply = m.result
-        else detail = `échec (${m.subtype})`
+        else detail = `failed (${m.subtype})`
       }
     } catch (e) {
       detail = e instanceof Error ? e.message : String(e)
     }
-    if (!reply.trim()) throw new UserError(`Ananda n'a pas pu répondre : ${detail ?? 'réponse vide'}`)
+    if (!reply.trim()) throw new UserError(`The Advisor could not answer: ${detail ?? 'empty answer'}`)
 
     this.store.addElderChatMessage('user', text, Date.now())
     this.store.addElderChatMessage('elder', reply, Date.now())

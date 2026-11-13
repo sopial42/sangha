@@ -12,7 +12,7 @@ function scopeAllowed(scope: string, levels: ElderSettings['levels'], projects: 
   return !!m && levels.project && projects.includes(m[1]!)
 }
 
-/** Ids inconnus traités comme nouveaux (titre requis), portée interdite rejetée, au plus 5 sujets nouveaux, champs vides rejetés. */
+/** Unknown ids are treated as new topics (title required), disallowed scopes are rejected, at most 5 new topics, empty fields are rejected. */
 export function parseElderResponse(raw: unknown, knownTopicIds: Set<string>, levels: ElderSettings['levels'], projects: string[]): ElderAnswer | null {
   if (!raw || typeof raw !== 'object') return null
   const rec = raw as Record<string, unknown>

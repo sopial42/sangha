@@ -9,7 +9,7 @@ const counts = (w: QuotaWindow | null | undefined, nowSec: number): w is QuotaWi
 /**
  * Whether the reserve bites right now, on the week (the only window the plan still reports). It only
  * counts if it exists and its `resetsAt` is null or still ahead: one just passed means the SDK is about
- * to report a fresh window, so holding priests on that stale number would be wrong. Reached: the reserve
+ * to report a fresh window, so holding sessions on that stale number would be wrong. Reached: the reserve
  * is on and the week's usage reaches 100 - pct %.
  */
 export function reserveState(reserve: QuotaReserve, quota: Quota | null, nowSec: number): QuotaReserveState {
@@ -19,8 +19,8 @@ export function reserveState(reserve: QuotaReserve, quota: Quota | null, nowSec:
 
 /** Merges a patch onto a reserve and checks it is sound; throws a plain Error (turned into a UserError by callers) otherwise. */
 function validate(reserve: QuotaReserve): QuotaReserve {
-  if (typeof reserve.enabled !== 'boolean') throw new Error('enabled doit être vrai ou faux')
-  if (!Number.isInteger(reserve.pct) || reserve.pct < 0 || reserve.pct > 50) throw new Error('pct doit être un entier entre 0 et 50')
+  if (typeof reserve.enabled !== 'boolean') throw new Error('enabled must be true or false')
+  if (!Number.isInteger(reserve.pct) || reserve.pct < 0 || reserve.pct > 50) throw new Error('pct must be a whole number between 0 and 50')
   return reserve
 }
 
@@ -43,9 +43,9 @@ export class QuotaReserveSetting {
   }
 }
 
-/** Shown to a held priest (his session's own error event, and his tools' denial reason) and announced in his session. */
+/** Shown to a held session (its own error event, and its tools' denial reason) and announced in that session. */
 export function reserveMessage(state: QuotaReserveState, quota: Quota | null): string {
   const resetsAt = state.window ? (quota?.[state.window]?.resetsAt ?? null) : null
-  const until = resetsAt ? new Date(resetsAt * 1000).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'la prochaine fenêtre'
-  return `Réserve de quota atteinte (${state.pct} % gardés) : prêtre mis en pause jusqu'à ${until}.`
+  const until = resetsAt ? new Date(resetsAt * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) : 'the next window'
+  return `Quota reserve reached (${state.pct}% kept): session paused until ${until}.`
 }

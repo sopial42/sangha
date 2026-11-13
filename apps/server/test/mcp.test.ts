@@ -10,7 +10,7 @@ const json = {
   },
 }
 
-describe('MCP servers a priest does not load himself', () => {
+describe('MCP servers a session does not load itself', () => {
   it('come from your user scope and from the project folder (local scope) only', () => {
     expect(Object.keys(catalogFrom(json, '/p/Robia')).sort()).toEqual(['atlassian', 'playwright'])
     expect(catalogFrom(json, '/p/Robia').playwright?.scope).toBe('local')
@@ -23,7 +23,7 @@ describe('MCP servers a priest does not load himself', () => {
     expect(enabledExtras(catalog, { playwright: true, atlassian: false, 'claude.ai Gmail': true })).toEqual({ playwright: json.projects['/p/Robia'].mcpServers.playwright })
   })
 
-  it('are listed as off until loaded, alongside what the priest runs', () => {
+  it('are listed as off until loaded, alongside what the session runs', () => {
     const list = mcpList(
       [
         { name: 'claude.ai Gmail', status: 'disabled', scope: 'claudeai' },
@@ -43,7 +43,7 @@ describe('MCP servers a priest does not load himself', () => {
     ])
   })
 
-  it('switches are kept for all of Sangha, and a priest can override them', () => {
+  it('switches are kept for all of Sangha, and a session can override them', () => {
     const store = new Store(':memory:')
     store.setMcpPref('playwright', true)
     store.setMcpPref('claude.ai Gmail', false)

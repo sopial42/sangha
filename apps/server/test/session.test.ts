@@ -18,8 +18,8 @@ vi.mock('../src/remote', () => ({ startRemote: vi.fn() }))
 function mockQuery(sent: string[]) {
   vi.mocked(query).mockImplementation(({ prompt }) => {
     // A one-shot small-model call (recap.ts's `ask`, for scripts/doing/progress/recap summaries): a plain
-    // string prompt, not a priest's Inbox. It must not fall into the drain loop below (a string is itself
-    // iterable, char by char) — answer with no result, exactly like a model that found nothing to say.
+    // string prompt, not a session's Inbox. It must not fall into the drain loop below (a string is itself
+    // iterable, char by char): answer with no result, exactly like a model that found nothing to say.
     if (typeof prompt === 'string') return { [Symbol.asyncIterator]: async function* () {} } as unknown as Query
     const outbox: unknown[] = []
     let wake: (() => void) | null = null
@@ -102,11 +102,11 @@ describe('Sessions autonomy and interrupt', () => {
   })
 
   it('sends /goal <text> as a bare slash command, without the standing-instruction reminder', async () => {
-    sessions.reminder(row.id, 'sois concis')
-    await sessions.autonomy(row.id, { mode: 'goal', text: 'continue jusqu’à la prod' })
+    sessions.reminder(row.id, 'be concise')
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'keep going until prod' })
     await tick()
-    expect(sent.at(-1)).toBe('/goal continue jusqu’à la prod')
-    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'continue jusqu’à la prod', active: true })
+    expect(sent.at(-1)).toBe('/goal keep going until prod')
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'keep going until prod', active: true })
   })
 
   it('goes out right away even mid-turn, rather than waiting in the editable queue', async () => {
@@ -118,12 +118,12 @@ describe('Sessions autonomy and interrupt', () => {
   })
 
   it('stops an active goal outright for a null patch', async () => {
-    await sessions.autonomy(row.id, { mode: 'goal', text: 'un objectif' })
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'a goal' })
     await tick()
     await sessions.autonomy(row.id, null)
     await tick()
     expect(sent.at(-1)).toBe('/goal clear')
-    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'un objectif', active: false })
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'a goal', active: false })
   })
 
   it('does nothing for a null patch when he never had an autonomy', async () => {
@@ -133,7 +133,7 @@ describe('Sessions autonomy and interrupt', () => {
     expect(sent.length).toBe(before)
   })
 
-  it('refuses an autonomy for Buddha', async () => {
+  it('refuses an autonomy for the orchestrator', async () => {
     await expect(sessions.autonomy(BUDDHA_SESSION_ID, { mode: 'goal', text: 'x' })).rejects.toThrow(UserError)
   })
 
@@ -142,50 +142,50 @@ describe('Sessions autonomy and interrupt', () => {
   })
 
   it('sends /loop <text> for a self-paced loop (no interval)', async () => {
-    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille le déploiement' })
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'watch the deploy' })
     await tick()
-    expect(sent.at(-1)).toBe('/loop surveille le déploiement')
-    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'surveille le déploiement', interval: null, nextAt: null, active: true })
+    expect(sent.at(-1)).toBe('/loop watch the deploy')
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'watch the deploy', interval: null, nextAt: null, active: true })
   })
 
   it('sends /loop <interval> <text> for a fixed-interval loop', async () => {
-    await sessions.autonomy(row.id, { mode: 'loop', text: 'vérifie le déploiement', interval: '5m' })
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'check the deploy', interval: '5m' })
     await tick()
-    expect(sent.at(-1)).toBe('/loop 5m vérifie le déploiement')
-    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'vérifie le déploiement', interval: '5m', nextAt: null, active: true })
+    expect(sent.at(-1)).toBe('/loop 5m check the deploy')
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'check the deploy', interval: '5m', nextAt: null, active: true })
   })
 
   it('stops an active loop outright for a null patch: interrupts his turn, then sends the stop text', async () => {
     const q = vi.mocked(query).mock.results[0]!.value
-    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille' })
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'watch' })
     await tick()
     await sessions.autonomy(row.id, null)
     await tick()
     expect(q.interrupt).toHaveBeenCalledOnce()
     expect(sent.at(-1)).toBe(LOOP_STOP_MESSAGE)
-    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: false })
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'watch', interval: null, nextAt: null, active: false })
   })
 
   it('switching from an active goal to a loop stops the goal first, never leaving both active', async () => {
-    await sessions.autonomy(row.id, { mode: 'goal', text: 'un objectif' })
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'a goal' })
     await tick()
-    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille' })
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'watch' })
     await tick()
-    expect(sent.slice(-2)).toEqual(['/goal clear', '/loop surveille'])
-    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: true })
+    expect(sent.slice(-2)).toEqual(['/goal clear', '/loop watch'])
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'watch', interval: null, nextAt: null, active: true })
   })
 
   it('switching from an active loop to a goal sends the stop text first, never leaving both active', async () => {
-    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille' })
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'watch' })
     await tick()
-    await sessions.autonomy(row.id, { mode: 'goal', text: 'un objectif' })
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'a goal' })
     await tick()
-    expect(sent.slice(-2)).toEqual([LOOP_STOP_MESSAGE, '/goal un objectif'])
-    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'un objectif', active: true })
+    expect(sent.slice(-2)).toEqual([LOOP_STOP_MESSAGE, '/goal a goal'])
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'a goal', active: true })
   })
 
-  it('interrupt stops his background scripts and his live novices, not only his current turn', async () => {
-    // A novice (subagent): task_started's own task id differs from his monkId (the summoning tool_use id).
+  it('interrupt stops his background scripts and his live subagents, not only his current turn', async () => {
+    // A subagent: task_started's own task id differs from its monkId (the tool_use id that started it).
     vi.mocked(query).mock.results[0]!.value.push({
       type: 'system',
       subtype: 'task_started',
@@ -193,7 +193,7 @@ describe('Sessions autonomy and interrupt', () => {
       tool_use_id: 'toolu_novice',
       task_type: 'local_agent',
       subagent_type: 'reader',
-      description: 'lit des fichiers',
+      description: 'reads files',
       prompt: '',
       spawn_depth: 1,
     })
@@ -201,7 +201,7 @@ describe('Sessions autonomy and interrupt', () => {
     vi.mocked(query).mock.results[0]!.value.push({
       type: 'system',
       subtype: 'background_tasks_changed',
-      tasks: [{ task_id: 'task-script-1', task_type: 'local_bash', description: 'lance les tests' }],
+      tasks: [{ task_id: 'task-script-1', task_type: 'local_bash', description: 'runs the tests' }],
     })
     await tick()
     expect(sessions.summaryOf(row.id)?.novices.map((n) => n.monkId)).toEqual(['toolu_novice'])
@@ -230,23 +230,23 @@ describe('Sessions autonomy and interrupt', () => {
   })
 
   it('clears an active /goal on interrupt, so it does not relaunch him', async () => {
-    await sessions.autonomy(row.id, { mode: 'goal', text: 'continue jusqu’à la prod' })
+    await sessions.autonomy(row.id, { mode: 'goal', text: 'keep going until prod' })
     await tick()
     expect(sessions.summaryOf(row.id)?.autonomy?.active).toBe(true)
     await sessions.interrupt(row.id)
     await tick()
     expect(sent.at(-1)).toBe('/goal clear')
-    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'continue jusqu’à la prod', active: false })
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'goal', text: 'keep going until prod', active: false })
   })
 
   it('stops an active loop on interrupt, by sending its stop text (his turn is already being stopped)', async () => {
-    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille' })
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'watch' })
     await tick()
     expect(sessions.summaryOf(row.id)?.autonomy?.active).toBe(true)
     await sessions.interrupt(row.id)
     await tick()
     expect(sent.at(-1)).toBe(LOOP_STOP_MESSAGE)
-    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'surveille', interval: null, nextAt: null, active: false })
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'watch', interval: null, nextAt: null, active: false })
   })
 
   it('leaves an already-inactive goal alone on interrupt (no needless /goal clear)', async () => {
@@ -257,7 +257,7 @@ describe('Sessions autonomy and interrupt', () => {
   })
 })
 
-describe('Sessions lotus', () => {
+describe('Sessions set aside', () => {
   let store: Store
   let sessions: Sessions
   let row: SessionRow
@@ -289,11 +289,11 @@ describe('Sessions lotus', () => {
     vi.clearAllMocks()
   })
 
-  it('starts out of the lotus pond', () => {
+  it('starts not set aside', () => {
     expect(sessions.summaryOf(row.id)?.lotus).toBe(false)
   })
 
-  it('sets a priest aside in the lotus pond and tells every open tab', () => {
+  it('sets a session aside and tells every open tab', () => {
     const events: unknown[] = []
     sessions.subscribeAll((e) => events.push(e))
     sessions.lotus(row.id, true)
@@ -301,7 +301,7 @@ describe('Sessions lotus', () => {
     expect(events).toContainEqual({ kind: 'session', session: expect.objectContaining({ id: row.id, lotus: true }) })
   })
 
-  it('takes him back out of the lotus pond', () => {
+  it('brings it back', () => {
     sessions.lotus(row.id, true)
     sessions.lotus(row.id, false)
     expect(sessions.summaryOf(row.id)?.lotus).toBe(false)
@@ -353,7 +353,7 @@ describe('Sessions loop re-arming', () => {
   })
 
   it('re-arms an active fixed-interval loop right when a fresh process starts (restart), before anything else', async () => {
-    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille le déploiement', interval: '5m' })
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'watch the deploy', interval: '5m' })
     await tick()
     const before = sent.length
 
@@ -361,19 +361,19 @@ describe('Sessions loop re-arming', () => {
     await tick()
     await tick() // mcpReady() resolves: the RESTARTED notice follows, but his process is already "turning"
     // (reading the rearm command) so it waits behind it rather than jumping ahead, editable like any other.
-    expect(sent.slice(before)).toEqual(['/loop 5m surveille le déploiement'])
+    expect(sent.slice(before)).toEqual(['/loop 5m watch the deploy'])
     expect(store.queued(row.id).map((m) => m.text)).toEqual([RESTARTED])
 
     // His turn over (the rearmed /loop handled): the restart notice follows right after, never ahead of it.
     vi.mocked(query).mock.results.at(-1)!.value.push(resultMessage())
     await tick()
 
-    expect(sent.slice(before)).toEqual(['/loop 5m surveille le déploiement', RESTARTED])
-    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'surveille le déploiement', interval: '5m', nextAt: null, active: true })
+    expect(sent.slice(before)).toEqual(['/loop 5m watch the deploy', RESTARTED])
+    expect(sessions.summaryOf(row.id)?.autonomy).toEqual({ mode: 'loop', text: 'watch the deploy', interval: '5m', nextAt: null, active: true })
   })
 
   it('does not re-arm a self-paced loop that is no longer active', async () => {
-    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille' })
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'watch' })
     await tick()
     // A turn ends without rescheduling himself (no loop.wake since the /loop message): the loop died quietly.
     vi.mocked(query).mock.results[0]!.value.push(resultMessage())
@@ -389,7 +389,7 @@ describe('Sessions loop re-arming', () => {
   })
 
   it('never re-arms into a process that is already alive: a plain message does not re-send /loop', async () => {
-    await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille', interval: '5m' })
+    await sessions.autonomy(row.id, { mode: 'loop', text: 'watch', interval: '5m' })
     await tick()
     // A fixed-interval loop needs no turn-by-turn reschedule to stay active; ends his turn so the message
     // below is delivered right away rather than queued (a queued message would still be undelivered when
@@ -399,10 +399,10 @@ describe('Sessions loop re-arming', () => {
     expect(sessions.summaryOf(row.id)?.autonomy?.active).toBe(true)
     const before = sent.length
 
-    sessions.send(row.id, 'coucou')
+    sessions.send(row.id, 'hi there')
     await tick()
 
-    expect(sent.slice(before)).toEqual(['coucou'])
+    expect(sent.slice(before)).toEqual(['hi there'])
   })
 
   it('never idle-closes a process with an active loop, however long it stays still', async () => {
@@ -410,7 +410,7 @@ describe('Sessions loop re-arming', () => {
     config.idleCloseMs = 10
     try {
       // Fixed-interval: unlike a self-paced one, it stays active across a quiet turn (no reschedule needed).
-      await sessions.autonomy(row.id, { mode: 'loop', text: 'surveille', interval: '5m' })
+      await sessions.autonomy(row.id, { mode: 'loop', text: 'watch', interval: '5m' })
       await tick()
       vi.mocked(query).mock.results[0]!.value.push(resultMessage())
       await tick()
@@ -418,11 +418,11 @@ describe('Sessions loop re-arming', () => {
       await new Promise((r) => setTimeout(r, 50)) // real wait, well past idleCloseMs
       const callsBefore = vi.mocked(query).mock.calls.length
 
-      sessions.send(row.id, 'toujours là ?')
+      sessions.send(row.id, 'still there?')
       await tick()
 
       expect(vi.mocked(query).mock.calls.length).toBe(callsBefore) // same process: none was spun up
-      expect(sent.at(-1)).toBe('toujours là ?')
+      expect(sent.at(-1)).toBe('still there?')
     } finally {
       config.idleCloseMs = was
     }
@@ -437,7 +437,7 @@ describe('Sessions loop re-arming', () => {
       await new Promise((r) => setTimeout(r, 50))
       const callsBefore = vi.mocked(query).mock.calls.length
 
-      sessions.send(row.id, 'toujours là ?')
+      sessions.send(row.id, 'still there?')
       await tick()
 
       expect(vi.mocked(query).mock.calls.length).toBe(callsBefore + 1) // a fresh process was spun up
@@ -546,11 +546,11 @@ describe('Sessions remote control', () => {
     await sessions.remoteControl(row.id)
     expect(sessions.summaryOf(row.id)?.remote).toBeTruthy()
 
-    sessions.send(row.id, 'coucou')
+    sessions.send(row.id, 'hi there')
     await tick()
 
     expect(sessions.summaryOf(row.id)?.remote).toBeFalsy() // taken back: the remote was stopped
-    expect(sent.at(-1)).toBe('coucou') // and delivered, not stuck in the queue forever
+    expect(sent.at(-1)).toBe('hi there') // and delivered, not stuck in the queue forever
   })
 
   it('autonomy takes him back from remote control instead of refusing', async () => {
@@ -568,7 +568,7 @@ describe('Sessions remote control', () => {
   })
 })
 
-describe('Sessions nirvana', () => {
+describe('Sessions closed', () => {
   let store: Store
   let sessions: Sessions
 
@@ -578,11 +578,11 @@ describe('Sessions nirvana', () => {
     sessions = new Sessions(store, fakeProjects, () => ({}), new QuotaReserveSetting(() => null, () => undefined))
   })
 
-  it('keeps a note across a dismissal: it still shows on the nirvana entry', () => {
-    store.createSession({ ...baseRow(), id: 'p1', title: 'RIB ET MAIL' })
-    store.setSessionNote('p1', 'je veux developper deux écrans de paiement')
+  it('keeps a note across closing: it still shows on the closed entry', () => {
+    store.createSession({ ...baseRow(), id: 'p1', title: 'BANK DETAILS AND EMAIL' })
+    store.setSessionNote('p1', 'I want to build two payment screens')
     store.archive('p1')
-    expect(sessions.nirvana().find((e) => e.id === 'p1')?.note).toBe('je veux developper deux écrans de paiement')
+    expect(sessions.nirvana().find((e) => e.id === 'p1')?.note).toBe('I want to build two payment screens')
   })
 
   it('reports null when he never had a note', () => {
@@ -592,10 +592,10 @@ describe('Sessions nirvana', () => {
   })
 
   it('lists archived sessions by worktree, with their note and title, for an orphan worktree lookup', () => {
-    store.createSession({ ...baseRow(), id: 'p3', title: 'je corrige le panier', worktree: '/w/.worktrees/p/old' })
-    store.setSessionNote('p3', 'RIB ET MAIL')
+    store.createSession({ ...baseRow(), id: 'p3', title: 'fixing the cart', worktree: '/w/.worktrees/p/old' })
+    store.setSessionNote('p3', 'BANK DETAILS AND EMAIL')
     store.archive('p3')
-    expect(sessions.archivedWorktrees()).toEqual([{ id: 'p3', path: '/w/.worktrees/p/old', title: 'je corrige le panier', note: 'RIB ET MAIL', archivedAt: expect.any(Number) }])
+    expect(sessions.archivedWorktrees()).toEqual([{ id: 'p3', path: '/w/.worktrees/p/old', title: 'fixing the cart', note: 'BANK DETAILS AND EMAIL', archivedAt: expect.any(Number) }])
   })
 
   it('excludes archived sessions that never had a worktree', () => {
@@ -605,7 +605,7 @@ describe('Sessions nirvana', () => {
   })
 })
 
-describe('Sessions nirvana search', () => {
+describe('Sessions closed search', () => {
   let store: Store
   let sessions: Sessions
 
@@ -621,12 +621,12 @@ describe('Sessions nirvana search', () => {
 
   it('refuses while the quota reserve is reached', async () => {
     sessions.reserve = { enabled: true, pct: 10, reached: true, window: 'sevenDay' }
-    await expect(sessions.searchNirvana('le panier ?')).rejects.toThrow(UserError)
+    await expect(sessions.searchNirvana('the cart?')).rejects.toThrow(UserError)
   })
 
   it('asks the model a compact line per archived session, with the note, and returns its filtered matches', async () => {
-    store.createSession({ ...baseRow(), id: 'p1', title: 'je corrige le panier' })
-    store.setSessionNote('p1', 'RIB ET MAIL')
+    store.createSession({ ...baseRow(), id: 'p1', title: 'fixing the cart' })
+    store.setSessionNote('p1', 'BANK DETAILS AND EMAIL')
     store.archive('p1')
     let seenPrompt = ''
     vi.mocked(query).mockImplementation(({ prompt }) => {
@@ -634,16 +634,16 @@ describe('Sessions nirvana search', () => {
       seenPrompt = prompt
       return {
         [Symbol.asyncIterator]: async function* () {
-          yield { type: 'result', subtype: 'success', structured_output: { results: [{ id: 'p1', reason: 'corrige le panier' }, { id: 'ghost', reason: 'inventé' }] } }
+          yield { type: 'result', subtype: 'success', structured_output: { results: [{ id: 'p1', reason: 'fixes the cart' }, { id: 'ghost', reason: 'made up' }] } }
         },
       } as unknown as Query
     })
 
-    const out = await sessions.searchNirvana('qui a touché au panier ?')
+    const out = await sessions.searchNirvana('who touched the cart?')
 
     expect(seenPrompt).toContain('id=p1')
-    expect(seenPrompt).toContain('note=RIB ET MAIL')
-    expect(seenPrompt).toContain('QUESTION: qui a touché au panier ?')
-    expect(out).toEqual({ results: [{ id: 'p1', reason: 'corrige le panier' }] }) // "ghost" filtered out: not a real id
+    expect(seenPrompt).toContain('note=BANK DETAILS AND EMAIL')
+    expect(seenPrompt).toContain('QUESTION: who touched the cart?')
+    expect(out).toEqual({ results: [{ id: 'p1', reason: 'fixes the cart' }] }) // "ghost" filtered out: not a real id
   })
 })

@@ -58,7 +58,7 @@ export async function lookupPullRequest(folder: string): Promise<PullRequest | n
 
 /**
  * Per-folder cache of pull requests, read synchronously by summaries. Refreshed in the background, one
- * `gh` call at a time, at most every two minutes per folder — mirrors the "doing" refresher in session.ts.
+ * `gh` call at a time, at most every two minutes per folder (mirrors the "doing" refresher in session.ts).
  */
 export class PullRequests {
   private cache = new Map<string, PullRequest | null>()

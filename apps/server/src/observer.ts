@@ -92,7 +92,7 @@ async function cwdOf(pid: number): Promise<string | null> {
 }
 
 /**
- * Sees Claude Code sessions started outside Sangha (a terminal, an IDE) on the monastery's projects,
+ * Sees Claude Code sessions started outside Sangha (a terminal, an IDE) on Sangha's projects,
  * including in their git worktrees, by reading ~/.claude/projects transcripts. Read-only.
  */
 export class Observer {
@@ -113,7 +113,7 @@ export class Observer {
   constructor(
     private store: Store,
     private projects: Projects,
-    /** Claude Code session id → Sangha session id, for Sangha's own priests. */
+    /** Claude Code session id → Sangha session id, for Sangha's own sessions. */
     private ownSessionIds: () => Map<string, string>,
     private onChange: (changed: SessionSummary[], removed: string[]) => void,
     private onProjectsAdded: () => void,
@@ -123,12 +123,12 @@ export class Observer {
     this.hidden = store.hiddenSessions()
   }
 
-  // Sessions sent away from the courtyard, with the activity they had then: they return if they move again.
+  // Sessions hidden from the board, with the activity they had then: they return if they move again.
   // Kept in the database so a server restart does not bring them back.
   private hidden: Map<string, number>
 
   /**
-   * Send an outside session away from the courtyard (its terminal is not touched). It stays away while it
+   * Hide an outside session from the board (its terminal is not touched). It stays away while it
    * works on its own, and comes back only when you write to it again; never if `forever` (it moved on to
    * a fresh session).
    */
@@ -157,7 +157,7 @@ export class Observer {
   fileOf = (id: string) => this.found.get(id)?.file ?? null
   procOf = (id: string) => this.found.get(id)?.proc ?? null
 
-  /** Transcript of one of an outside session's novices, by the tool_use id that summoned him. */
+  /** Transcript of one of an outside session's subagents, by the tool_use id that summoned it. */
   noviceFile(id: string, monkId: string): string | null {
     const file = this.fileOf(id)
     if (!file) return null
@@ -211,10 +211,10 @@ export class Observer {
         const launcher = this.children.get(f.path) ?? null
         const tail = readTailLines(f.path, 256 * 1024).map(parseLine).filter((l) => l !== null)
         // Sessions driven through an SDK (Sangha itself, other tools) are not someone at a terminal; unless a
-        // session launched it (`claude -p` from his shell): then it is one of his own monks.
+        // session launched it (`claude -p` from its shell): then it is one of that session's own subagents.
         if (!launcher && tail.some((l) => l.entrypoint?.startsWith('sdk'))) continue
         // The latest folder that belongs to a project (tools may briefly cd into scratch folders);
-        // if none does yet, the session's own folder becomes a project: every agent gets its pavilion.
+        // if none does yet, the session's own folder becomes a project: every agent gets its project.
         const cwds = [...new Set([...tail].reverse().flatMap((l) => (l.cwd ? [l.cwd] : [])))]
         if (proc && !cwds.includes(proc.cwd)) cwds.push(proc.cwd)
         let cwd: string | null = null
@@ -245,10 +245,10 @@ export class Observer {
         // Sent away: it comes back only once you wrote to it after that, not because it keeps working.
         const hiddenAt = this.hidden.get(id)
         if (hiddenAt !== undefined && hiddenAt >= (lastUserMessageAt(tail) ?? 0)) continue
-        // A headless monk works as long as his process runs: it ends with his task.
+        // A headless child session works as long as its process runs: it ends with its task.
         const working = now - lastMove < WORKING_MS || (!!launcher && !!proc)
         // Sessions found at startup count as already seen: only new activity should call for you. A launched
-        // monk never calls for you: he answers to the session that launched him.
+        // child session never calls for you: it answers to the session that launched it.
         if (launcher || (this.first && !this.seenAt.has(id))) this.seenAt.set(id, lastMove)
         // Not working: it ended its turn and waits for your input.
         const status = working ? 'working' : 'waiting'
@@ -256,7 +256,7 @@ export class Observer {
         const cached = this.recapOf(id)
         const title = aiTitle(tail) ?? latestPrompt(tail) ?? this.titles.get(id) ?? this.title(f.path)
         this.titles.set(id, title)
-        // The agent he runs as (`claude --agent kiat-team-lead`), else plain Claude.
+        // The agent it runs as (`claude --agent kiat-team-lead`), else plain Claude.
         const agent = mainAgent(tail) ?? this.agents.get(id) ?? this.agentFromHead(f.path)
         this.agents.set(id, agent)
         next.set(id, {
@@ -269,7 +269,7 @@ export class Observer {
             title,
             createdAt: f.birth,
             claudeSessionId: sessionId,
-            // Where he is now, asked to git rather than to the transcript.
+            // Where it is now, asked to git rather than to the transcript.
             branch: realBranch((await currentBranch(cwd)) ?? [...tail].reverse().find((l) => l.gitBranch)?.gitBranch ?? null),
             status,
             activity: working ? formatTool(lastTool(tail)) : null,
@@ -282,7 +282,7 @@ export class Observer {
             lotus: false, // decorated by Sessions
             note: null, // decorated by Sessions
             reminder: null,
-            // Not tracked for an outside session: his `/goal` or `/loop` would go straight to his own terminal,
+            // Not tracked for an outside session: its `/goal` or `/loop` would go straight to its own terminal,
             // never through Sangha's event log `lastAutonomy` reads from.
             autonomy: null,
             env: {},
@@ -300,7 +300,7 @@ export class Observer {
       }
     }
     this.first = false
-    // A launcher Sangha does not see (gone, hidden, outside any project): his monks stand on their own.
+    // A launcher Sangha does not see (gone, hidden, outside any project): its child sessions stand on their own.
     for (const f of next.values()) {
       const p = f.summary.parent
       if (p?.startsWith(EXTERNAL_PREFIX) && !next.has(p)) f.summary = { ...f.summary, parent: null }
@@ -377,7 +377,7 @@ export class Observer {
       .split('\n')
       .map(parseLine)
       .filter((l) => l !== null)
-    return firstPrompt(head) ?? 'Session Claude Code'
+    return firstPrompt(head) ?? 'Claude Code session'
   }
 
   /** Subagents live next to the transcript: <session>/subagents/agent-*.jsonl with a .meta.json. */
@@ -394,7 +394,7 @@ export class Observer {
       try {
         meta = JSON.parse(readFileSync(path.replace(/\.jsonl$/, '.meta.json'), 'utf8'))
       } catch {
-        // no meta: still a novice
+        // no meta: still a subagent
       }
       const lines = now - mtime < WORKING_MS ? readTailLines(path, 64 * 1024).map(parseLine).filter((l) => l !== null) : []
       out.push({
@@ -423,9 +423,9 @@ function lastExchange(file: string): string {
   return events
     .slice(Math.max(0, from))
     .flatMap((ev) => {
-      if (ev.t === 'user.message') return [`UTILISATEUR : ${ev.text.slice(0, 2000)}`]
-      if (ev.t === 'buddha.text') return [`AGENT : ${ev.text.slice(0, 3000)}`]
-      if (ev.t === 'monk.done') return [`SOUS-AGENT (${ev.status}) : ${ev.summary.slice(0, 1200)}`]
+      if (ev.t === 'user.message') return [`USER: ${ev.text.slice(0, 2000)}`]
+      if (ev.t === 'buddha.text') return [`AGENT: ${ev.text.slice(0, 3000)}`]
+      if (ev.t === 'monk.done') return [`SUBAGENT (${ev.status}): ${ev.summary.slice(0, 1200)}`]
       return []
     })
     .join('\n\n')

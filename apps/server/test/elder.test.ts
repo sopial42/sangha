@@ -47,17 +47,17 @@ describe('Elder.runPass', () => {
   it('writes a report and topics from a successful model answer, and marks feedback processed', async () => {
     const store = new Store(':memory:')
     store.createSession(row('a'))
-    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'down', comment: 'trop verbeux', excerpt: 'x', createdAt: 1, processedAt: null })
+    store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'down', comment: 'too verbose', excerpt: 'x', createdAt: 1, processedAt: null })
     store.setSetting('elder', { ...DEFAULT_ELDER_SETTINGS, enabled: true })
     vi.mocked(query).mockReturnValue({
       [Symbol.asyncIterator]: async function* () {
-        yield resultMessage({ report: 'Un sujet à retenir.', topics: [{ scope: 'manual', title: 'Trop verbeux', detail: 'Plusieurs retours le disent', evidence: ['f1'] }] })
+        yield resultMessage({ report: 'One topic worth keeping.', topics: [{ scope: 'manual', title: 'Too verbose', detail: 'Several feedback items say so', evidence: ['f1'] }] })
       },
     } as never)
     const elder = new Elder(store, fakeProviders, noSessions, () => null)
     await elder.runPass('manual')
     const state = elder.state()
-    expect(state.reports[0]!.text).toBe('Un sujet à retenir.')
+    expect(state.reports[0]!.text).toBe('One topic worth keeping.')
     expect(state.topics).toHaveLength(1)
     expect(state.topics[0]!.status).toBe('proposed')
     expect(store.pendingFeedback()).toEqual([])
@@ -97,7 +97,7 @@ describe('Elder.runPass', () => {
     const elder = new Elder(store, fakeProviders, noSessions, () => null)
     const first = elder.runPass('manual')
     const second = elder.runPass('manual')
-    await Promise.resolve() // laisse `providers.choice()` se résoudre, jusqu'à ce que le générateur attende `release`
+    await Promise.resolve() // let `providers.choice()` resolve, until the generator waits on `release`
     release()
     await Promise.all([first, second])
     expect(query).toHaveBeenCalledTimes(1)
@@ -145,10 +145,10 @@ describe('Elder.addFeedback', () => {
   it('freezes an excerpt and stores it pending', () => {
     const store = new Store(':memory:')
     store.createSession(row('a'))
-    store.append('a', { t: 'buddha.text', text: 'bonjour' })
+    store.append('a', { t: 'buddha.text', text: 'hello' })
     const elder = new Elder(store, fakeProviders, noSessions, () => null)
     const f = elder.addFeedback({ sessionId: 'a', rating: 'up' })
-    expect(f.excerpt).toContain('bonjour')
+    expect(f.excerpt).toContain('hello')
     expect(store.pendingFeedback()).toHaveLength(1)
   })
 
@@ -171,7 +171,7 @@ describe('elderBackoffMs', () => {
   })
 })
 
-describe('Elder.tick — backoff after a failed scheduled pass (cost loop fix)', () => {
+describe('Elder.tick: backoff after a failed scheduled pass (cost loop fix)', () => {
   it('does not retry a scheduled pass again until the backoff window has passed', async () => {
     const store = new Store(':memory:')
     store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'down', comment: 'x', excerpt: 'x', createdAt: 1, processedAt: null })
@@ -181,16 +181,16 @@ describe('Elder.tick — backoff after a failed scheduled pass (cost loop fix)',
     await elder.tick()
     expect(query).toHaveBeenCalledTimes(1)
     await elder.tick()
-    expect(query).toHaveBeenCalledTimes(1) // encore dans le recul : pas de nouvel appel, pas de nouveau coût
+    expect(query).toHaveBeenCalledTimes(1) // still inside the backoff: no new call, no new cost
   })
 
-  it('"médite maintenant" ignores the backoff and still calls the model', async () => {
+  it('"run now" ignores the backoff and still calls the model', async () => {
     const store = new Store(':memory:')
     store.addFeedback({ id: 'f1', sessionId: 'a', eventSeq: null, rating: 'down', comment: 'x', excerpt: 'x', createdAt: 1, processedAt: null })
     store.setSetting('elder', { ...DEFAULT_ELDER_SETTINGS, enabled: true, model: 'ovh::llama-4', dailyAt: '00:00' })
     vi.mocked(query).mockReturnValue({ [Symbol.asyncIterator]: async function* () { yield resultMessage({ nope: true }) } } as never)
     const elder = new Elder(store, fakeProviders, noSessions, () => null)
-    await elder.tick() // échoue, arme le recul
+    await elder.tick() // fails, arms the backoff
     expect(query).toHaveBeenCalledTimes(1)
     vi.mocked(query).mockReturnValue({ [Symbol.asyncIterator]: async function* () { yield resultMessage({ report: 'r', topics: [] }) } } as never)
     await elder.runPass('manual')
@@ -198,7 +198,7 @@ describe('Elder.tick — backoff after a failed scheduled pass (cost loop fix)',
   })
 })
 
-describe('Elder.tick — a session’s conversation pass stops retrying after 3 consecutive failures', () => {
+describe('Elder.tick: a session’s conversation pass stops retrying after 3 consecutive failures', () => {
   it('leaves its feedback pending for the next scheduled pass instead of retrying forever', async () => {
     const store = new Store(':memory:')
     store.createSession(row('a'))
@@ -212,8 +212,8 @@ describe('Elder.tick — a session’s conversation pass stops retrying after 3 
     await elder.tick()
     expect(query).toHaveBeenCalledTimes(3)
     await elder.tick()
-    expect(query).toHaveBeenCalledTimes(3) // la 4e tentative est bloquée : 3 échecs de suite pour cette session
-    expect(store.pendingFeedback()).toHaveLength(1) // son retour reste en attente pour le prochain passage quotidien/hebdo
+    expect(query).toHaveBeenCalledTimes(3) // the 4th attempt is blocked: 3 failures in a row for this session
+    expect(store.pendingFeedback()).toHaveLength(1) // its feedback stays pending for the next daily or weekly pass
   })
 })
 
@@ -222,16 +222,16 @@ describe('Elder.ask', () => {
     const store = new Store(':memory:')
     vi.mocked(query).mockReturnValue({ [Symbol.asyncIterator]: async function* () { yield resultMessage(undefined) } } as never)
     const elder = new Elder(store, fakeProviders, noSessions, () => null)
-    const out = await elder.ask('Une question ?')
+    const out = await elder.ask('A question?')
     expect(out.reply).toBe('ok')
-    expect(store.elderChat().map((t) => t.text)).toEqual(['Une question ?', 'ok'])
+    expect(store.elderChat().map((t) => t.text)).toEqual(['A question?', 'ok'])
   })
 
   it('records nothing and throws a readable error when the model fails to answer', async () => {
     const store = new Store(':memory:')
     vi.mocked(query).mockReturnValue({ [Symbol.asyncIterator]: async function* () { yield { type: 'result', subtype: 'error_max_turns', result: '' } } } as never)
     const elder = new Elder(store, fakeProviders, noSessions, () => null)
-    await expect(elder.ask('Une question ?')).rejects.toThrow(/Ananda n'a pas pu répondre/)
+    await expect(elder.ask('A question?')).rejects.toThrow(/The Advisor could not answer/)
     expect(store.elderChat()).toEqual([])
   })
 
@@ -239,11 +239,11 @@ describe('Elder.ask', () => {
     const store = new Store(':memory:')
     vi.mocked(query).mockReturnValue({
       [Symbol.asyncIterator]: async function* () {
-        throw new Error('réseau coupé')
+        throw new Error('network down')
       },
     } as never)
     const elder = new Elder(store, fakeProviders, noSessions, () => null)
-    await expect(elder.ask('Une question ?')).rejects.toThrow(/Ananda n'a pas pu répondre/)
+    await expect(elder.ask('A question?')).rejects.toThrow(/The Advisor could not answer/)
     expect(store.elderChat()).toEqual([])
   })
 })

@@ -6,7 +6,7 @@ const row = (id: string, over: Partial<SessionRow> = {}): SessionRow => ({
   id,
   project: 'poc',
   agent: 'lead',
-  title: 'regarde les resultats du poc',
+  title: 'look at the poc results',
   createdAt: 1_000,
   claudeSessionId: null,
   branch: null,
@@ -37,7 +37,7 @@ describe('carriedOnIn', () => {
     expect(carriedOnIn(s, 'a')).toBe('b')
   })
 
-  it('is null when the chain ends in nirvana too', () => {
+  it('is null when every session of the chain is closed too', () => {
     const s = new Store(':memory:')
     s.createSession(row('a', { archivedAt: 2_000 }))
     s.createSession(row('b', { createdAt: 2_000, archivedAt: 3_000 }))

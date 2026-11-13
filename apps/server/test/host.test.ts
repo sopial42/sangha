@@ -120,7 +120,7 @@ describe('worktreeName', () => {
     expect(worktreeName('/w/.worktrees/p/lead-1', { name: 'p', path: '/w/p' }, root)).toBe('lead-1')
   })
 
-  it('names a worktree living inside the repository itself (e.g. a Claude Code sub-agent) by its path under the repo', () => {
+  it('names a worktree living inside the repository itself (e.g. a Claude Code subagent) by its path under the repo', () => {
     expect(worktreeName('/w/p/.claude/worktrees/agent-xyz', { name: 'p', path: '/w/p' }, root)).toBe('.claude/worktrees/agent-xyz')
   })
 
@@ -140,12 +140,12 @@ describe('ownerCandidates and classifyWorktree', () => {
   const liveIdle = { id: 's2', cwd: '/w/.worktrees/p/lead-2', note: null, title: 'Lead 2', status: 'idle' as const }
   const nirvanaEntry: HostNirvanaWorktree = { id: 'p3', path: '/w/.worktrees/p/lead-3', title: 'kiat team lead', note: '🦺🦺🦺🦺', archivedAt: 1 }
 
-  it('is a priest when a live session works right there', () => {
+  it('is a session worktree (priest) when a live session works right there', () => {
     const candidates = ownerCandidates([liveWorking], [])
     expect(classifyWorktree('/w/.worktrees/p/lead-1', candidates)).toEqual({ kind: 'priest', owner: null })
   })
 
-  it('is a subagent when nested under a live priest worktree\'s .claude/worktrees', () => {
+  it('is a subagent when nested under a live session worktree\'s .claude/worktrees', () => {
     const candidates = ownerCandidates([liveWorking], [])
     expect(classifyWorktree('/w/.worktrees/p/lead-1/.claude/worktrees/agent-abc', candidates)).toEqual({
       kind: 'subagent',
@@ -153,7 +153,7 @@ describe('ownerCandidates and classifyWorktree', () => {
     })
   })
 
-  it('is a subagent when nested under an archived (nirvana) priest\'s worktree', () => {
+  it('is a subagent when nested under a closed session\'s worktree', () => {
     const candidates = ownerCandidates([], [nirvanaEntry])
     expect(classifyWorktree('/w/.worktrees/p/lead-3/.claude/worktrees/agent-abc', candidates)).toEqual({
       kind: 'subagent',
@@ -175,12 +175,12 @@ describe('ownerCandidates and classifyWorktree', () => {
   })
 
   it('prefers an exact live match (priest) over a name-prefix match', () => {
-    // lead-2 happens to live in the same folder as a worktree literally named lead-2 itself: it is the priest, not a subagent of someone else.
+    // lead-2 happens to live in the same folder as a worktree literally named lead-2 itself: it is the session's own, not a subagent of someone else.
     const candidates = ownerCandidates([liveWorking, liveIdle], [])
     expect(classifyWorktree('/w/.worktrees/p/lead-2', candidates)).toEqual({ kind: 'priest', owner: null })
   })
 
-  it('is an orphan when nothing claims it, even if its path matches a nirvana entry directly (kept for the existing nirvana naming)', () => {
+  it('is an orphan when nothing claims it, even if its path matches a closed session directly (kept for the closed-session naming)', () => {
     const candidates = ownerCandidates([], [nirvanaEntry])
     expect(classifyWorktree('/w/.worktrees/p/lead-3', candidates)).toEqual({ kind: 'orphan', owner: null })
   })
@@ -196,7 +196,7 @@ describe('removableInfo', () => {
   const workingOwner = { sessionId: 's3', note: 'LGT', title: 'Sous-agent', alive: true, working: true }
 
   it('is never removable before it was checked on disk', () => {
-    expect(removableInfo('orphan', clean, null, { checked: false, external: false })).toEqual({ removable: false, blocker: 'vérification en cours' })
+    expect(removableInfo('orphan', clean, null, { checked: false, external: false })).toEqual({ removable: false, blocker: 'still checking' })
   })
 
   it('an orphan made outside Sangha (Kiat Operator, /tmp…) is never called safe', () => {
@@ -204,26 +204,26 @@ describe('removableInfo', () => {
     expect(removableInfo('orphan', clean, null, { checked: true, external: false }).removable).toBe(true)
   })
 
-  it('a priest\'s own worktree is never removable', () => {
-    expect(removableInfo('priest', clean, null)).toEqual({ removable: false, blocker: "c'est le worktree d'un prêtre vivant : envoie-le au nirvana" })
+  it('a live session\'s own worktree is never removable', () => {
+    expect(removableInfo('priest', clean, null)).toEqual({ removable: false, blocker: "this is a live session's worktree: close the session first" })
   })
 
   it('blocks on uncommitted changes, counting files', () => {
-    expect(removableInfo('orphan', { ...clean, dirty: 3 }, null)).toEqual({ removable: false, blocker: '3 fichiers modifiés' })
-    expect(removableInfo('orphan', { ...clean, dirty: 1 }, null)).toEqual({ removable: false, blocker: '1 fichier modifié' })
+    expect(removableInfo('orphan', { ...clean, dirty: 3 }, null)).toEqual({ removable: false, blocker: '3 changed files' })
+    expect(removableInfo('orphan', { ...clean, dirty: 1 }, null)).toEqual({ removable: false, blocker: '1 changed file' })
   })
 
   it('blocks on commits never pushed', () => {
-    expect(removableInfo('orphan', { ...clean, unpushed: 2 }, null)).toEqual({ removable: false, blocker: '2 commits jamais poussés' })
-    expect(removableInfo('orphan', { ...clean, unpushed: 1 }, null)).toEqual({ removable: false, blocker: '1 commit jamais poussé' })
+    expect(removableInfo('orphan', { ...clean, unpushed: 2 }, null)).toEqual({ removable: false, blocker: '2 commits never pushed' })
+    expect(removableInfo('orphan', { ...clean, unpushed: 1 }, null)).toEqual({ removable: false, blocker: '1 commit never pushed' })
   })
 
   it('blocks while a process runs inside', () => {
-    expect(removableInfo('orphan', { ...clean, inUse: true }, null)).toEqual({ removable: false, blocker: 'un process tourne dedans' })
+    expect(removableInfo('orphan', { ...clean, inUse: true }, null)).toEqual({ removable: false, blocker: 'a process is running in it' })
   })
 
   it('blocks a subagent whose owner still works', () => {
-    expect(removableInfo('subagent', clean, workingOwner)).toEqual({ removable: false, blocker: 'son prêtre « LGT » travaille encore' })
+    expect(removableInfo('subagent', clean, workingOwner)).toEqual({ removable: false, blocker: 'its session "LGT" is still working' })
   })
 
   it('is removable once clean, pushed, unused, and its owner (if any) is not working', () => {
@@ -283,16 +283,16 @@ describe('suggest', () => {
     expect(suggest({ ...base, metrics: [metric('cpu', now - RED_AFTER_MS)] })[0]).toMatchObject({ command: 'kill 7' })
   })
 
-  it('offers to dismiss the priest with the heaviest idle worktree, and to remove a removable orphan one', () => {
+  it('offers to close the session with the heaviest idle worktree, and to remove a removable orphan one', () => {
     const worktrees = [
-      wt({ path: '/w/.worktrees/p/busy', name: 'busy', bytes: 9 * GB, sessionId: 's1', sessionTitle: 'Busy', status: 'working', kind: 'priest', removable: false, blocker: "c'est le worktree d'un prêtre vivant : envoie-le au nirvana" }),
-      wt({ path: '/w/.worktrees/p/done', name: 'done', bytes: 4 * GB, sessionId: 's2', sessionTitle: 'Done', status: 'idle', kind: 'priest', removable: false, blocker: "c'est le worktree d'un prêtre vivant : envoie-le au nirvana" }),
+      wt({ path: '/w/.worktrees/p/busy', name: 'busy', bytes: 9 * GB, sessionId: 's1', sessionTitle: 'Busy', status: 'working', kind: 'priest', removable: false, blocker: "this is a live session's worktree: close the session first" }),
+      wt({ path: '/w/.worktrees/p/done', name: 'done', bytes: 4 * GB, sessionId: 's2', sessionTitle: 'Done', status: 'idle', kind: 'priest', removable: false, blocker: "this is a live session's worktree: close the session first" }),
       wt({ path: '/w/.worktrees/p/old', name: 'old', bytes: GB, removeCommand: removeCommand('/w/.worktrees/p/old') }),
     ]
     const s = suggest({ ...base, worktrees, metrics: [metric('disk', 0)] })
     expect(s.map((x) => x.id)).toEqual(['disk:worktree:/w/.worktrees/p/done', 'disk:orphan:/w/.worktrees/p/old'])
     expect(s[0]?.sessionId).toBe('s2')
-    expect(s[0]?.title).toContain('« Done »')
+    expect(s[0]?.title).toContain('"Done"')
   })
 
   it('uses the removable worktree\'s own remove command, scoped with -C', () => {
@@ -303,13 +303,13 @@ describe('suggest', () => {
 
   it('never suggests deleting a worktree that is not removable', () => {
     const worktrees = [
-      wt({ path: '/w/.worktrees/p/dirty', name: 'dirty', bytes: 3 * GB, removable: false, blocker: '3 fichiers modifiés' }),
+      wt({ path: '/w/.worktrees/p/dirty', name: 'dirty', bytes: 3 * GB, removable: false, blocker: '3 changed files' }),
     ]
     const s = suggest({ ...base, worktrees, metrics: [metric('disk', 0)] })
     expect(s.find((x) => x.id.startsWith('disk:orphan:'))).toBeUndefined()
   })
 
-  it('names a removable sub-agent worktree after its owner, note first, saying when he is gone to nirvana', () => {
+  it('names a removable subagent worktree after its owner, note first, saying when it is closed', () => {
     const worktrees = [
       wt({
         path: '/w/.worktrees/p/lead-3-e179',
@@ -321,46 +321,46 @@ describe('suggest', () => {
       }),
     ]
     const s = suggest({ ...base, worktrees, metrics: [metric('disk', 0)] })
-    expect(s[0]?.title).toBe('Worktree sans prêtre : un worktree de sous-agent de « 🦺🦺🦺🦺 » (parti au nirvana) (1.0 Go)')
+    expect(s[0]?.title).toBe('Worktree with no session: a subagent worktree of "🦺🦺🦺🦺" (closed) (1.0 GB)')
   })
 
-  it('names the idle priest by his note first, title shortened alongside, when he has one', () => {
+  it('names the idle session by its note first, title shortened alongside, when it has one', () => {
     const worktrees = [
       wt({
         path: '/w/.worktrees/p/done',
         name: 'done',
         bytes: 2 * GB,
         sessionId: 's2',
-        sessionTitle: 'je veux developper deux écrans de paiement',
+        sessionTitle: 'I want to build two payment screens',
         sessionNote: 'RIB ET MAIL',
         status: 'idle',
         kind: 'priest',
         removable: false,
-        blocker: "c'est le worktree d'un prêtre vivant : envoie-le au nirvana",
+        blocker: "this is a live session's worktree: close the session first",
       }),
     ]
     const s = suggest({ ...base, worktrees, metrics: [metric('disk', 0)] })
-    expect(s[0]?.title).toBe('Disque plein depuis 50 min : le worktree de « RIB ET MAIL » (je veux developper deux…) pèse 2.0 Go')
+    expect(s[0]?.title).toBe('Disk nearly full for 50 min: the worktree of "RIB ET MAIL" (I want to build two…) takes 2.0 GB')
   })
 
-  it('names an orphan worktree after the nirvana entry that used it, note first', () => {
+  it('names an orphan worktree after the closed session that used it, note first', () => {
     const worktrees = [wt({ path: '/w/.worktrees/p/old', name: 'old', bytes: GB, removeCommand: removeCommand('/w/.worktrees/p/old') })]
-    const nirvana = [{ id: 'n1', path: '/w/.worktrees/p/old', title: 'je corrige le panier', note: 'RIB ET MAIL', archivedAt: new Date(2026, 2, 7).getTime() }]
+    const nirvana = [{ id: 'n1', path: '/w/.worktrees/p/old', title: 'fixing the cart', note: 'RIB ET MAIL', archivedAt: new Date(2026, 2, 7).getTime() }]
     const s = suggest({ ...base, worktrees, nirvana, metrics: [metric('disk', 0)] })
-    expect(s[0]?.title).toBe('Worktree sans prêtre : « RIB ET MAIL » (je corrige le panier), parti au nirvana le 07/03 (1.0 Go)')
+    expect(s[0]?.title).toBe('Worktree with no session: "RIB ET MAIL" (fixing the cart), closed on Mar 7 (1.0 GB)')
   })
 
-  it('falls back to the title alone when the nirvana match has no note', () => {
+  it('falls back to the title alone when the closed session has no note', () => {
     const worktrees = [wt({ path: '/w/.worktrees/p/old', name: 'old', bytes: GB, removeCommand: removeCommand('/w/.worktrees/p/old') })]
-    const nirvana = [{ id: 'n1', path: '/w/.worktrees/p/old', title: 'je corrige le panier', note: null, archivedAt: new Date(2026, 2, 7).getTime() }]
+    const nirvana = [{ id: 'n1', path: '/w/.worktrees/p/old', title: 'fixing the cart', note: null, archivedAt: new Date(2026, 2, 7).getTime() }]
     const s = suggest({ ...base, worktrees, nirvana, metrics: [metric('disk', 0)] })
-    expect(s[0]?.title).toBe('Worktree sans prêtre : « je corrige le panier », parti au nirvana le 07/03 (1.0 Go)')
+    expect(s[0]?.title).toBe('Worktree with no session: "fixing the cart", closed on Mar 7 (1.0 GB)')
   })
 
-  it('keeps naming it by path when no nirvana entry ever used it', () => {
+  it('keeps naming it by path when no closed session ever used it', () => {
     const worktrees = [wt({ path: '/w/.worktrees/p/old', name: 'old', bytes: GB, removeCommand: removeCommand('/w/.worktrees/p/old') })]
     const s = suggest({ ...base, worktrees, nirvana: [], metrics: [metric('disk', 0)] })
-    expect(s[0]?.title).toBe('Worktree sans prêtre : p/old (1.0 Go)')
+    expect(s[0]?.title).toBe('Worktree with no session: p/old (1.0 GB)')
   })
 })
 
@@ -369,7 +369,7 @@ describe('WorktreeCommentCache', () => {
     path: '/w/.worktrees/p/old',
     name: 'p/old',
     branch: 'sangha/x',
-    commits: ['un commit'],
+    commits: ['a commit'],
     dirty: 0,
     unpushed: 0,
     owner: null,
@@ -386,11 +386,11 @@ describe('WorktreeCommentCache', () => {
     let asked: unknown[] = []
     const cache = new WorktreeCommentCache(async (entries) => {
       asked = entries
-      return { '/w/.worktrees/p/old': 'Un vieux brouillon, probablement fusionné.' }
+      return { '/w/.worktrees/p/old': 'An old draft, probably merged.' }
     })
     await cache.refresh([entry()])
     expect(asked).toHaveLength(1)
-    expect(cache.of('/w/.worktrees/p/old', 'sha1')).toBe('Un vieux brouillon, probablement fusionné.')
+    expect(cache.of('/w/.worktrees/p/old', 'sha1')).toBe('An old draft, probably merged.')
   })
 
   it('never asks again for the same path and HEAD sha', async () => {

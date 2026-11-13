@@ -4,9 +4,9 @@ import type { Store } from './db'
 export type ElderContext = { text: string; newItems: number; feedbackIds: string[] }
 
 /**
- * Seuls les retours entiers qui tiennent dans `maxChars` comptent comme inclus : un retour que la troncature
- * couperait en deux ne doit jamais être marqué traité (`Elder.runPass` ne marque que `feedbackIds`), sous
- * peine de perdre un retour qu'Ananda n'a en réalité jamais lu.
+ * Only whole feedback items that fit in `maxChars` count as included: an item the truncation would cut in
+ * half must never be marked processed (`Elder.runPass` only marks `feedbackIds`), or we would lose feedback
+ * the Advisor never actually read.
  */
 function feedbackBlock(store: Store, sessionId: string | undefined, maxChars: number, maxItems = 50): { text: string; ids: string[] } {
   const rows = store.pendingFeedback().filter((f) => !sessionId || f.sessionId === sessionId).slice(0, maxItems)
@@ -14,8 +14,8 @@ function feedbackBlock(store: Store, sessionId: string | undefined, maxChars: nu
   const ids: string[] = []
   let used = 0
   for (const f of rows) {
-    const line = `- [${f.id}] ${f.rating ?? 'sans note'}${f.comment ? ` : ${f.comment}` : ''}\n  ${f.excerpt}`
-    const extra = line.length + (lines.length ? 1 : 0) // +1 pour le '\n' de jointure
+    const line = `- [${f.id}] ${f.rating ?? 'no rating'}${f.comment ? ` : ${f.comment}` : ''}\n  ${f.excerpt}`
+    const extra = line.length + (lines.length ? 1 : 0) // +1 for the joining '\n'
     if (used + extra > maxChars) break
     lines.push(line)
     ids.push(f.id)
@@ -31,19 +31,19 @@ function projectBlock(store: Store, projects: string[], since: number): { text: 
     .map((r) => ({ r, summary: store.note<{ summary: string }>(r.id, 'nirvana')?.value.summary ?? null }))
     .filter((x): x is { r: (typeof rows)[number]; summary: string } => !!x.summary)
   if (!withSummary.length) return { text: '', count: 0 }
-  return { text: withSummary.map(({ r, summary }) => `- (${r.project}) ${r.title} : ${summary}`).join('\n'), count: withSummary.length }
+  return { text: withSummary.map(({ r, summary }) => `- (${r.project}) ${r.title}: ${summary}`).join('\n'), count: withSummary.length }
 }
 
 function sanghaBlock(store: Store, since: number): { text: string; hasNew: boolean } {
   const stats = store.elderSanghaStats(since)
   const lines: string[] = []
   const errs = Object.entries(stats.toolErrorsByServer)
-  if (errs.length) lines.push(`Échecs d'outils MCP : ${errs.map(([s, n]) => `${s} (${n})`).join(', ')}`)
-  if (stats.sessionErrors) lines.push(`Erreurs de session : ${stats.sessionErrors}`)
-  if (stats.interruptions) lines.push(`Sessions interrompues : ${stats.interruptions}`)
-  if (stats.renewals) lines.push(`Renouvellements (session neuve) : ${stats.renewals}`)
-  if (stats.shepherded) lines.push(`Sessions confiées à Bouddha : ${stats.shepherded}`)
-  if (stats.costUsd > 0) lines.push(`Coût total (équivalent API) : ${stats.costUsd.toFixed(2)} $`)
+  if (errs.length) lines.push(`MCP tool failures: ${errs.map(([s, n]) => `${s} (${n})`).join(', ')}`)
+  if (stats.sessionErrors) lines.push(`Session errors: ${stats.sessionErrors}`)
+  if (stats.interruptions) lines.push(`Interrupted sessions: ${stats.interruptions}`)
+  if (stats.renewals) lines.push(`Fresh starts (new session): ${stats.renewals}`)
+  if (stats.shepherded) lines.push(`Sessions handed to the orchestrator for a fresh start: ${stats.shepherded}`)
+  if (stats.costUsd > 0) lines.push(`Total cost (API equivalent): $${stats.costUsd.toFixed(2)}`)
   return { text: lines.join('\n'), hasNew: lines.length > 0 }
 }
 
@@ -52,8 +52,8 @@ function memoryBlock(store: Store): string {
   const open = topics.filter((t) => t.status === 'proposed' || t.status === 'accepted')
   const rejected = topics.filter((t) => t.status === 'rejected')
   const lines: string[] = []
-  if (open.length) lines.push(`Sujets ouverts :\n${open.map((t) => `- [${t.id}] (${t.status}) ${t.title}`).join('\n')}`)
-  if (rejected.length) lines.push(`Déjà rejetés, ne pas reproposer :\n${rejected.map((t) => `- ${t.title}`).join('\n')}`)
+  if (open.length) lines.push(`Open topics:\n${open.map((t) => `- [${t.id}] (${t.status}) ${t.title}`).join('\n')}`)
+  if (rejected.length) lines.push(`Already rejected, do not propose again:\n${rejected.map((t) => `- ${t.title}`).join('\n')}`)
   return lines.join('\n\n')
 }
 
@@ -69,10 +69,10 @@ function fit(blocks: { label: string; text: string }[], max: number): string {
   return parts.join('\n\n')
 }
 
-/** Le contexte envoyé au modèle, par blocs actifs selon le niveau, tronqué à `maxInputChars` (retours en priorité).
- *  `sessionId` : un passage de fin de conversation, restreint à cette session (ses retours, rien d'autre). Le
- *  niveau « manuel » gouverne entièrement les retours, même pour un passage de fin de conversation : il n'existe
- *  que pour eux, donc s'il est désactivé il n'y a rien à y envoyer. */
+/** The context sent to the model, in blocks enabled by level, truncated to `maxInputChars` (feedback first).
+ *  `sessionId`: an end-of-conversation pass, limited to that session (its feedback, nothing else). The
+ *  "manual" level fully governs feedback, even for an end-of-conversation pass: that pass exists only for
+ *  feedback, so when the level is off there is nothing to send. */
 export function buildContext(settings: ElderSettings, since: number, store: Store, sessionId?: string): ElderContext {
   const feedback = settings.levels.manual ? feedbackBlock(store, sessionId, settings.maxInputChars) : { text: '', ids: [] }
   const project = !sessionId && settings.levels.project ? projectBlock(store, settings.projects, since) : { text: '', count: 0 }
@@ -81,10 +81,10 @@ export function buildContext(settings: ElderSettings, since: number, store: Stor
 
   const text = fit(
     [
-      { label: 'Retours', text: feedback.text },
-      { label: 'Projets suivis', text: project.text },
+      { label: 'Feedback', text: feedback.text },
+      { label: 'Followed projects', text: project.text },
       { label: 'Sangha', text: sangha.text },
-      { label: 'Mémoire', text: memory },
+      { label: 'Memory', text: memory },
     ],
     settings.maxInputChars,
   )
